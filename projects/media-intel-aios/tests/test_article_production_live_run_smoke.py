@@ -215,6 +215,33 @@ def fake_zhihu_movie_hot_topics_success():
     }
 
 
+def fake_bilibili_movie_zone_hot_success():
+    return {
+        "source_id": "bilibili_movie_zone_hot",
+        "source_name": "B站电影分区热门 live signal",
+        "role": "P0_bilibili_movie_zone_hot",
+        "signal_role": "social_discussion_signal",
+        "narrative_roles": ["hot_search", "social_discussion"],
+        "allowed_use": ["movie-zone hot item discovery", "social discussion signal"],
+        "can_be_main_narrative_source": True,
+        "fetch_path": "direct_live",
+        "started_at": "2026-06-30T00:00:00+00:00",
+        "finished_at": "2026-06-30T00:00:01+00:00",
+        "duration_ms": 5,
+        "success": True,
+        "status": "focused_live_verified",
+        "fields_extracted": ["title", "rank", "heat", "danmaku", "like", "owner", "url"],
+        "structured_signals": {
+            "hot_items": [{"title": "电影解读视频冲上分区热门", "rank": 1, "heat": 120000, "danmaku": 2300, "like": 9000, "owner": "影迷UP", "url": "https://www.bilibili.com/video/BV1xx411c7mD"}],
+            "social_discussion": ["电影解读视频冲上分区热门"],
+        },
+        "signal_allowed_use_detail": ["movie-zone hot item discovery", "social discussion signal extraction", "video engagement signal extraction"],
+        "forbidden_use": ["verified_facts", "whole-network generalization", "single-video conclusion", "publish-ready evidence"],
+        "sample_signals": ["B站电影区热门：电影解读视频冲上分区热门（播放=120000）"],
+        "error": None,
+    }
+
+
 def fake_article_body_signal_fail():
     row = fake_article_body_signal_success()
     row.update({"success": False, "status": "ERROR", "error": "forced article body signal failure"})
@@ -236,6 +263,12 @@ def fake_weibo_entertainment_hotsearch_fail():
 def fake_zhihu_movie_hot_topics_fail():
     row = fake_zhihu_movie_hot_topics_success()
     row.update({"success": False, "status": "ERROR", "error": "forced zhihu failure", "fields_extracted": [], "sample_signals": []})
+    return row
+
+
+def fake_bilibili_movie_zone_hot_fail():
+    row = fake_bilibili_movie_zone_hot_success()
+    row.update({"success": False, "status": "ERROR", "error": "forced bilibili failure", "fields_extracted": [], "sample_signals": []})
     return row
 
 
@@ -278,7 +311,7 @@ def fake_guduo_fail():
     }
 
 
-def run_with_fakes(tmp_path, monkeypatch, maoyan_result=None, guduo_result=None, article_body_result=None, audience_result=None, weibo_result=None, weibo_topic_result=None, zhihu_result=None, run_id="smoke"):
+def run_with_fakes(tmp_path, monkeypatch, maoyan_result=None, guduo_result=None, article_body_result=None, audience_result=None, weibo_result=None, weibo_topic_result=None, zhihu_result=None, bilibili_result=None, run_id="smoke"):
     mod = load_module()
     monkeypatch.setattr(mod, "fetch_maoyan", lambda: maoyan_result if maoyan_result is not None else fake_maoyan_success())
     monkeypatch.setattr(mod, "fetch_guduo", lambda rank_date=None: guduo_result if guduo_result is not None else fake_guduo_success())
@@ -287,6 +320,7 @@ def run_with_fakes(tmp_path, monkeypatch, maoyan_result=None, guduo_result=None,
     monkeypatch.setattr(mod, "fetch_weibo_entertainment_hotsearch_signal", lambda: weibo_result if weibo_result is not None else fake_weibo_entertainment_hotsearch_success())
     monkeypatch.setattr(mod, "fetch_weibo_topic_search_signal", lambda: weibo_topic_result if weibo_topic_result is not None else fake_weibo_topic_search_success())
     monkeypatch.setattr(mod, "fetch_zhihu_movie_hot_topics_signal", lambda: zhihu_result if zhihu_result is not None else fake_zhihu_movie_hot_topics_success())
+    monkeypatch.setattr(mod, "fetch_bilibili_movie_zone_hot_signal", lambda: bilibili_result if bilibili_result is not None else fake_bilibili_movie_zone_hot_success())
     result = mod.run(tmp_path, run_id=run_id)
     out_dir = Path(result["output_dir"])
     return mod, result, out_dir
@@ -310,6 +344,7 @@ EXPECTED_SOURCE_POOL = {
     "weibo_entertainment_hotsearch",
     "weibo_topic_search",
     "zhihu_movie_hot_topics",
+    "bilibili_movie_zone_hot",
 }
 EXPECTED_DEFAULT_SUCCESS = {
     "maoyan_realtime_boxoffice",
@@ -318,6 +353,7 @@ EXPECTED_DEFAULT_SUCCESS = {
     "douban_reviews_discussions",
     "weibo_entertainment_hotsearch",
     "zhihu_movie_hot_topics",
+    "bilibili_movie_zone_hot",
 }
 
 
@@ -492,6 +528,7 @@ def test_maoyan_guduo_only_is_data_observation_not_final_quality_acceptance(tmp_
         audience_result=fake_audience_reaction_signal_fail(),
         weibo_result=fake_weibo_entertainment_hotsearch_fail(),
         zhihu_result=fake_zhihu_movie_hot_topics_fail(),
+        bilibili_result=fake_bilibili_movie_zone_hot_fail(),
         run_id="market_heat_only",
     )
     outputs = load_outputs(out_dir)
@@ -667,4 +704,61 @@ def test_weibo_entertainment_hotsearch_live_adapter_failure_is_safe(monkeypatch)
     assert result["fetch_path"] == "direct_live"
     assert result["fields_extracted"] == []
     assert "forced weibo timeout" in result["error"]
+    assert "verified_facts" in result["forbidden_use"]
+
+
+def test_bilibili_movie_zone_hot_live_adapter_success(monkeypatch):
+    mod = load_module()
+
+    def fake_fetch_json(url, **kwargs):
+        assert url == mod.BILIBILI_MOVIE_ZONE_HOT_URL
+        assert kwargs["headers"]["Referer"] == "https://www.bilibili.com/v/movie/"
+        return {
+            "code": 0,
+            "data": {
+                "list": [
+                    {
+                        "title": "电影解读视频冲上分区热门",
+                        "bvid": "BV1xx411c7mD",
+                        "owner": {"name": "影迷UP"},
+                        "stat": {"view": 120000, "danmaku": 2300, "like": 9000},
+                    },
+                    {
+                        "title": "暑期档新片讨论",
+                        "bvid": "BV1yy411c7mD",
+                        "owner": {"name": "电影观察"},
+                        "stat": {"view": 88000, "danmaku": 1200, "like": 5600},
+                    },
+                ]
+            },
+        }
+
+    monkeypatch.setattr(mod, "_fetch_json_url", fake_fetch_json)
+    result = mod.fetch_bilibili_movie_zone_hot_signal()
+    assert result["source_id"] == "bilibili_movie_zone_hot"
+    assert result["success"] is True
+    assert result["status"] == "focused_live_verified"
+    assert result["fetch_path"] == "direct_live"
+    assert result["signal_role"] == "social_discussion_signal"
+    assert result["narrative_roles"] == ["hot_search", "social_discussion"]
+    assert result["fields_extracted"] == ["title", "rank", "heat", "danmaku", "like", "owner", "url"]
+    assert result["structured_signals"]["hot_items"][0]["title"] == "电影解读视频冲上分区热门"
+    assert result["structured_signals"]["hot_items"][0]["url"] == "https://www.bilibili.com/video/BV1xx411c7mD"
+    assert "verified_facts" in result["forbidden_use"]
+
+
+def test_bilibili_movie_zone_hot_live_adapter_failure_is_safe(monkeypatch):
+    mod = load_module()
+
+    def fake_fetch_json(_url, **_kwargs):
+        return {"code": -352, "message": "risk control"}
+
+    monkeypatch.setattr(mod, "_fetch_json_url", fake_fetch_json)
+    result = mod.fetch_bilibili_movie_zone_hot_signal()
+    assert result["source_id"] == "bilibili_movie_zone_hot"
+    assert result["success"] is False
+    assert result["status"] == "live_inaccessible"
+    assert result["fetch_path"] == "direct_live"
+    assert result["fields_extracted"] == []
+    assert "risk control" in result["error"]
     assert "verified_facts" in result["forbidden_use"]

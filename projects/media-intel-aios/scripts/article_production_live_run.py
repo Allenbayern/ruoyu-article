@@ -37,6 +37,7 @@ DOUBAN_SUBJECT_ABSTRACT_URL = "https://movie.douban.com/j/subject_abstract?subje
 WEIBO_HOTSEARCH_URL = "https://weibo.com/ajax/side/hotSearch"
 WEIBO_TOPIC_SEARCH_URL = "https://weibo.com/ajax/search/all?containerid=100103type%3D1%26q%3D{query}"
 ZHIHU_HOT_LIST_URL = "https://www.zhihu.com/api/v3/feed/topstory/hot-lists/total?limit=20&desktop=true"
+BILIBILI_MOVIE_ZONE_HOT_URL = "https://api.bilibili.com/x/web-interface/ranking/v2?rid=23&type=all"
 DATA_OBSERVATION_LANE = "data_observation"
 SELF_MEDIA_CANDIDATE_LANE = "self_media_production_candidate"
 SUPPORT_SIGNAL_ROLES = {"market_signal", "heat_signal"}
@@ -189,6 +190,18 @@ VERIFIED_SOURCE_POOL = {
         "live_fetch_allowed": True,
         "production_eligible": True,
         "verification_status": "live_inaccessible_safe_failure_when_auth_required",
+    },
+    "bilibili_movie_zone_hot": {
+        "source_id": "bilibili_movie_zone_hot",
+        "source_name": "B站电影分区热门 live signal",
+        "role": "P0_bilibili_movie_zone_hot",
+        "signal_role": "social_discussion_signal",
+        "narrative_roles": ["hot_search", "social_discussion"],
+        "allowed_use": ["movie-zone hot item discovery", "social discussion signal"],
+        "can_be_main_narrative_source": True,
+        "live_fetch_allowed": True,
+        "production_eligible": True,
+        "verification_status": "live_inaccessible_safe_failure_when_access_denied",
     },
 }
 
@@ -477,6 +490,88 @@ def fetch_zhihu_movie_hot_topics_signal() -> dict[str, Any]:
             "fields_extracted": [],
             "signal_allowed_use_detail": ["movie hot-topic discovery", "question/argument signal extraction"],
             "forbidden_use": ["verified_facts", "whole-network generalization", "single-topic conclusion", "publish-ready evidence"],
+            "sample_signals": [],
+            "error": error_text,
+        }
+
+
+def fetch_bilibili_movie_zone_hot_signal() -> dict[str, Any]:
+    timer = time.perf_counter()
+    started_at = now_utc()
+    source_id = "bilibili_movie_zone_hot"
+    try:
+        payload = _fetch_json_url(
+            BILIBILI_MOVIE_ZONE_HOT_URL,
+            headers={
+                "Referer": "https://www.bilibili.com/v/movie/",
+                "Origin": "https://www.bilibili.com",
+            },
+        )
+        if payload.get("code") not in (0, None):
+            raise PermissionError(f"bilibili ranking returned code={payload.get('code')}: {payload.get('message')}")
+        rows = ((payload.get("data") or {}).get("list") or []) if isinstance(payload, dict) else []
+        signals: list[dict[str, Any]] = []
+        for index, row in enumerate(rows, start=1):
+            if not isinstance(row, dict):
+                continue
+            title = str(row.get("title") or "").strip()
+            if not title:
+                continue
+            owner = row.get("owner")
+            if not isinstance(owner, dict):
+                owner = {}
+            stat = row.get("stat")
+            if not isinstance(stat, dict):
+                stat = {}
+            bvid = str(row.get("bvid") or "").strip()
+            signals.append({
+                "title": title[:120],
+                "rank": index,
+                "heat": stat.get("view"),
+                "danmaku": stat.get("danmaku"),
+                "like": stat.get("like"),
+                "owner": str(owner.get("name") or "").strip(),
+                "url": f"https://www.bilibili.com/video/{bvid}" if bvid else None,
+            })
+            if len(signals) >= 5:
+                break
+        if not signals:
+            raise ValueError("bilibili movie ranking returned no usable hot rows")
+        return {
+            **_source_meta(source_id),
+            "fetch_path": "direct_live",
+            "started_at": started_at,
+            "finished_at": now_utc(),
+            "duration_ms": elapsed_ms(timer),
+            "success": True,
+            "status": "focused_live_verified",
+            "raw_url": BILIBILI_MOVIE_ZONE_HOT_URL,
+            "fields_extracted": ["title", "rank", "heat", "danmaku", "like", "owner", "url"],
+            "signal_allowed_use_detail": ["movie-zone hot item discovery", "social discussion signal extraction", "video engagement signal extraction"],
+            "forbidden_use": ["verified_facts", "whole-network generalization", "single-video conclusion", "publish-ready evidence"],
+            "structured_signals": {
+                "hot_items": signals,
+                "social_discussion": [item["title"] for item in signals],
+            },
+            "sample_signals": [f"B站电影区热门：{item['title']}（播放={item.get('heat')}）" for item in signals[:3]],
+            "error": None,
+        }
+    except Exception as exc:  # noqa: BLE001
+        error_text = repr(exc)
+        inaccessible_markers = ("401", "403", "412", "-352", "login", "forbidden", "risk", "access")
+        status = "live_inaccessible" if any(marker in error_text.lower() for marker in inaccessible_markers) else "ERROR"
+        return {
+            **_source_meta(source_id),
+            "fetch_path": "direct_live",
+            "started_at": started_at,
+            "finished_at": now_utc(),
+            "duration_ms": elapsed_ms(timer),
+            "success": False,
+            "status": status,
+            "raw_url": BILIBILI_MOVIE_ZONE_HOT_URL,
+            "fields_extracted": [],
+            "signal_allowed_use_detail": ["movie-zone hot item discovery", "social discussion signal extraction", "video engagement signal extraction"],
+            "forbidden_use": ["verified_facts", "whole-network generalization", "single-video conclusion", "publish-ready evidence"],
             "sample_signals": [],
             "error": error_text,
         }
@@ -946,6 +1041,7 @@ def run(output_base: Path, rank_date: str | None = None, run_id: str | None = No
         fetch_weibo_entertainment_hotsearch_signal,
         fetch_weibo_topic_search_signal,
         fetch_zhihu_movie_hot_topics_signal,
+        fetch_bilibili_movie_zone_hot_signal,
     ):
         try:
             source_results.append(fetcher())
@@ -958,7 +1054,7 @@ def run(output_base: Path, rank_date: str | None = None, run_id: str | None = No
     audience_result = next((r for r in source_results if r.get("source_id") == "douban_reviews_discussions"), {})
     social_results = [
         r for r in source_results
-        if r.get("source_id") in {"weibo_entertainment_hotsearch", "weibo_topic_search", "zhihu_movie_hot_topics"}
+        if r.get("source_id") in {"weibo_entertainment_hotsearch", "weibo_topic_search", "zhihu_movie_hot_topics", "bilibili_movie_zone_hot"}
     ]
     social_result = next((r for r in social_results if r.get("source_id") == "weibo_entertainment_hotsearch"), {})
     maoyan_items = top_maoyan_items(maoyan_result)
