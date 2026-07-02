@@ -1,0 +1,47 @@
+# Local secrets / credentials (never commit)
+.env
+.env.*
+!.env.example
+cookie.json
+**/cookie.json
+**/.env
+**/.env.*
+**/config/private/
+*.pem
+*.key
+*.p12
+
+# Python / test caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local temp/cache workdirs
+tmp/
+.tmp-*/
+*.tmp
+*.temp
+*.log
+
+# Local runtime state
+state/sessions/
+.clawhub/
+.openclaw/
+
+# External/vendor clones kept outside source control
+external/
+
+# Generated delivery/output artifacts kept as workspace assets, not repo source
+ruoyu-output/
+generated-assets/
+cleaned/
+
+# Handoff archives and transfer packages
+handoffs/**/*.tar.gz
+handoffs/**/tar-warnings.log
+handoffs/**/package-size.txt
+handoffs/**/manifests/

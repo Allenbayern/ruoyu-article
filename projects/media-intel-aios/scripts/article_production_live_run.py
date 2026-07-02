@@ -30,7 +30,7 @@ if str(SCRIPT_DIR) not in sys.path:
 import film_tv_maoyan_observation as maoyan  # noqa: E402
 import guduo_fetch as guduo  # noqa: E402
 
-RUNNER_VERSION = "0.3.1"
+RUNNER_VERSION = "0.3.4"
 DEFAULT_OUTPUT_BASE = ROOT / "outputs" / "article_production"
 DOUBAN_LIVE_SEARCH_URL = "https://movie.douban.com/j/search_subjects?type=movie&tag={tag}&sort=recommend&page_limit=3&page_start=0"
 DOUBAN_SUBJECT_ABSTRACT_URL = "https://movie.douban.com/j/subject_abstract?subject_id={subject_id}"
@@ -38,9 +38,23 @@ WEIBO_HOTSEARCH_URL = "https://weibo.com/ajax/side/hotSearch"
 WEIBO_TOPIC_SEARCH_URL = "https://weibo.com/ajax/search/all?containerid=100103type%3D1%26q%3D{query}"
 ZHIHU_HOT_LIST_URL = "https://www.zhihu.com/api/v3/feed/topstory/hot-lists/total?limit=20&desktop=true"
 BILIBILI_MOVIE_ZONE_HOT_URL = "https://api.bilibili.com/x/web-interface/ranking/v2?rid=23&type=all"
+XIAOHONGSHU_MOVIE_NOTES_SEARCH_URL = "https://edith.xiaohongshu.com/api/sns/web/v1/search/notes"
+DOUYIN_MOVIE_HOT_URL = "https://www.douyin.com/aweme/v1/web/hot/search/list/"
 DATA_OBSERVATION_LANE = "data_observation"
 SELF_MEDIA_CANDIDATE_LANE = "self_media_production_candidate"
 SUPPORT_SIGNAL_ROLES = {"market_signal", "heat_signal"}
+SOURCE_BUCKETS_BY_SIGNAL_ROLE = {
+    "market_results": "market_signal",
+    "heat_results": "heat_signal",
+    "article_body_results": "article_body_signal",
+    "audience_reaction_results": "audience_reaction_signal",
+    "social_results": "social_discussion_signal",
+    "box_office_results": "box_office_signal",
+    "industry_results": "industry_signal",
+    "news_results": "news_signal",
+    "media_results": "media_signal",
+}
+SOURCE_BUCKET_BY_SIGNAL_ROLE = {signal_role: bucket for bucket, signal_role in SOURCE_BUCKETS_BY_SIGNAL_ROLE.items()}
 SELF_MEDIA_NARRATIVE_SOURCE_ROLES = {
     "audience_sentiment",
     "social_discussion",
@@ -97,7 +111,7 @@ PRIORITY_SOURCE_REGISTRY = {
     "zhihu_movie_hot_topics": _planned_source("zhihu_movie_hot_topics", "P0", ["social_discussion", "audience_sentiment"], ["movie hot-topic discovery", "question/argument signal"]),
     "bilibili_movie_zone_hot": _planned_source("bilibili_movie_zone_hot", "P0", ["hot_search", "social_discussion"], ["movie-zone hot item discovery", "social discussion signal"]),
     "xiaohongshu_movie_notes": _planned_source("xiaohongshu_movie_notes", "P1", ["audience_sentiment", "social_discussion"], ["movie note sentiment", "social discussion signal"]),
-    "douyin_movie_hot": _planned_source("douyin_movie_hot", "P1", ["hot_search", "audience_sentiment"], ["short-video hot discovery", "audience sentiment signal"]),
+    "douyin_movie_hot": _planned_source("douyin_movie_hot", "P1", ["hot_search", "social_discussion"], ["short-video movie hot discovery", "social discussion signal"]),
     "toutiao_entertainment_hot": _planned_source("toutiao_entertainment_hot", "P1", ["hot_search", "social_discussion"], ["entertainment hot discovery", "discussion signal"]),
     "baidu_hot_search_entertainment": _planned_source("baidu_hot_search_entertainment", "P1", ["hot_search"], ["entertainment hot-search discovery"]),
     "1905_movie_news": _planned_source("1905_movie_news", "P2", ["plot_character_context"], ["movie news context", "plot/character context support"], auxiliary=True),
@@ -203,7 +217,32 @@ VERIFIED_SOURCE_POOL = {
         "production_eligible": True,
         "verification_status": "live_inaccessible_safe_failure_when_access_denied",
     },
+    "douyin_movie_hot": {
+        "source_id": "douyin_movie_hot",
+        "source_name": "抖音电影热点 live signal",
+        "role": "P1_douyin_movie_hot",
+        "signal_role": "social_discussion_signal",
+        "narrative_roles": ["hot_search", "social_discussion"],
+        "allowed_use": ["short-video movie hot discovery", "social discussion signal"],
+        "can_be_main_narrative_source": True,
+        "live_fetch_allowed": True,
+        "production_eligible": True,
+        "verification_status": "live_inaccessible_safe_failure_when_login_or_signature_required",
+    },
+    "xiaohongshu_movie_notes": {
+        "source_id": "xiaohongshu_movie_notes",
+        "source_name": "小红书影视笔记搜索 live signal",
+        "role": "P1_xiaohongshu_movie_notes",
+        "signal_role": "audience_reaction_signal",
+        "narrative_roles": ["audience_sentiment", "social_discussion"],
+        "allowed_use": ["movie note sentiment", "audience reaction signal"],
+        "can_be_main_narrative_source": True,
+        "live_fetch_allowed": True,
+        "production_eligible": True,
+        "verification_status": "live_inaccessible_safe_failure_when_login_or_signature_required",
+    },
 }
+
 
 
 def now_utc() -> str:
@@ -577,6 +616,169 @@ def fetch_bilibili_movie_zone_hot_signal() -> dict[str, Any]:
         }
 
 
+def fetch_xiaohongshu_movie_notes_signal() -> dict[str, Any]:
+    timer = time.perf_counter()
+    started_at = now_utc()
+    source_id = "xiaohongshu_movie_notes"
+    query = "影视"
+    try:
+        payload = _fetch_json_url(
+            XIAOHONGSHU_MOVIE_NOTES_SEARCH_URL,
+            headers={
+                "Referer": "https://www.xiaohongshu.com/",
+                "Origin": "https://www.xiaohongshu.com",
+                "X-S":"",
+                "X-T":"",
+            },
+        )
+        code = payload.get("code")
+        if code not in (0, None) or payload.get("success") is False:
+            raise PermissionError(f"xiaohongshu search returned code={code}: {payload.get('msg') or payload.get('message')}")
+        rows = (((payload.get("data") or {}).get("items") or []) if isinstance(payload, dict) else [])
+        signals: list[dict[str, Any]] = []
+        for index, row in enumerate(rows, start=1):
+            if not isinstance(row, dict):
+                continue
+            note_raw = row.get("note_card")
+            note = note_raw if isinstance(note_raw, dict) else row
+            title = str(note.get("display_title") or note.get("title") or "").strip()
+            desc = str(note.get("desc") or note.get("description") or "").strip()
+            if not title:
+                continue
+            interaction = note.get("interact_info") if isinstance(note.get("interact_info"), dict) else {}
+            note_id = str(row.get("id") or note.get("note_id") or "").strip()
+            signals.append({
+                "title": title[:120],
+                "rank": index,
+                "desc": desc[:180],
+                "like_count": interaction.get("liked_count") or interaction.get("like_count"),
+                "url": f"https://www.xiaohongshu.com/explore/{note_id}" if note_id else None,
+            })
+            if len(signals) >= 5:
+                break
+        if not signals:
+            raise ValueError("xiaohongshu search returned no usable movie note rows")
+        return {
+            **_source_meta(source_id),
+            "fetch_path": "direct_live",
+            "started_at": started_at,
+            "finished_at": now_utc(),
+            "duration_ms": elapsed_ms(timer),
+            "success": True,
+            "status": "focused_live_verified",
+            "raw_url": XIAOHONGSHU_MOVIE_NOTES_SEARCH_URL,
+            "query": query,
+            "fields_extracted": ["title", "rank", "desc", "like_count", "url"],
+            "signal_allowed_use_detail": ["movie note sentiment", "social discussion signal extraction", "note engagement signal extraction"],
+            "forbidden_use": ["verified_facts", "whole-network generalization", "single-note conclusion", "publish-ready evidence"],
+            "structured_signals": {
+                "note_items": signals,
+                "audience_reaction": [item["title"] for item in signals],
+            },
+            "sample_signals": [f"小红书影视笔记：{item['title']}" for item in signals[:3]],
+            "error": None,
+        }
+    except Exception as exc:  # noqa: BLE001
+        error_text = repr(exc)
+        inaccessible_markers = ("401", "403", "-101", "login", "登录", "forbidden", "risk", "sign", "signature", "x-s", "x-t")
+        status = "live_inaccessible" if any(marker in error_text.lower() for marker in inaccessible_markers) else "ERROR"
+        return {
+            **_source_meta(source_id),
+            "fetch_path": "direct_live",
+            "started_at": started_at,
+            "finished_at": now_utc(),
+            "duration_ms": elapsed_ms(timer),
+            "success": False,
+            "status": status,
+            "raw_url": XIAOHONGSHU_MOVIE_NOTES_SEARCH_URL,
+            "query": query,
+            "fields_extracted": [],
+            "signal_allowed_use_detail": ["movie note sentiment", "social discussion signal extraction", "note engagement signal extraction"],
+            "forbidden_use": ["verified_facts", "whole-network generalization", "single-note conclusion", "publish-ready evidence"],
+            "sample_signals": [],
+            "error": error_text,
+        }
+
+
+def fetch_douyin_movie_hot_signal() -> dict[str, Any]:
+    timer = time.perf_counter()
+    started_at = now_utc()
+    source_id = "douyin_movie_hot"
+    try:
+        payload = _fetch_json_url(
+            DOUYIN_MOVIE_HOT_URL,
+            headers={
+                "Referer": "https://www.douyin.com/",
+                "Origin": "https://www.douyin.com",
+            },
+        )
+        code = payload.get("status_code", payload.get("code"))
+        if code not in (0, None) or payload.get("success") is False:
+            raise PermissionError(f"douyin hot search returned code={code}: {payload.get('status_msg') or payload.get('message') or payload.get('msg')}")
+        rows: list[Any] = []
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if isinstance(data, dict):
+            rows = data.get("word_list") or data.get("list") or data.get("items") or []
+        elif isinstance(data, list):
+            rows = data
+        signals: list[dict[str, Any]] = []
+        for index, row in enumerate(rows, start=1):
+            if not isinstance(row, dict):
+                continue
+            word = str(row.get("word") or row.get("sentence") or row.get("title") or row.get("aweme_title") or "").strip()
+            if not word:
+                continue
+            signals.append({
+                "title": word[:120],
+                "rank": row.get("position") or row.get("rank") or index,
+                "heat": row.get("hot_value") or row.get("view_count") or row.get("heat"),
+                "video_count": row.get("video_count") or row.get("aweme_count"),
+                "url": f"https://www.douyin.com/search/{quote(word)}",
+            })
+            if len(signals) >= 5:
+                break
+        if not signals:
+            raise ValueError("douyin hot search returned no usable movie hot rows")
+        return {
+            **_source_meta(source_id),
+            "fetch_path": "direct_live",
+            "started_at": started_at,
+            "finished_at": now_utc(),
+            "duration_ms": elapsed_ms(timer),
+            "success": True,
+            "status": "focused_live_verified",
+            "raw_url": DOUYIN_MOVIE_HOT_URL,
+            "fields_extracted": ["title", "rank", "heat", "video_count", "url"],
+            "signal_allowed_use_detail": ["short-video hot discovery", "social discussion signal extraction", "video engagement signal extraction"],
+            "forbidden_use": ["verified_facts", "whole-network generalization", "single-video conclusion", "publish-ready evidence"],
+            "structured_signals": {
+                "hot_items": signals,
+                "social_discussion": [item["title"] for item in signals],
+            },
+            "sample_signals": [f"抖音电影热点：{item['title']}（热度={item.get('heat')}）" for item in signals[:3]],
+            "error": None,
+        }
+    except Exception as exc:  # noqa: BLE001
+        error_text = repr(exc)
+        inaccessible_markers = ("401", "403", "-1", "login", "登录", "forbidden", "risk", "verify", "captcha", "sign", "signature", "a-bogus")
+        status = "live_inaccessible" if any(marker in error_text.lower() for marker in inaccessible_markers) else "ERROR"
+        return {
+            **_source_meta(source_id),
+            "fetch_path": "direct_live",
+            "started_at": started_at,
+            "finished_at": now_utc(),
+            "duration_ms": elapsed_ms(timer),
+            "success": False,
+            "status": status,
+            "raw_url": DOUYIN_MOVIE_HOT_URL,
+            "fields_extracted": [],
+            "signal_allowed_use_detail": ["short-video hot discovery", "social discussion signal extraction", "video engagement signal extraction"],
+            "forbidden_use": ["verified_facts", "whole-network generalization", "single-video conclusion", "publish-ready evidence"],
+            "sample_signals": [],
+            "error": error_text,
+        }
+
+
 def fetch_maoyan() -> dict[str, Any]:
     timer = time.perf_counter()
     started_at = now_utc()
@@ -923,6 +1125,43 @@ def article_quality_gate_from_coverage(role_coverage: dict[str, Any]) -> dict[st
     }
 
 
+def source_skeleton_from_sources(source_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    skeleton: list[dict[str, Any]] = []
+    source_results_by_id = {
+        source.get("source_id"): source
+        for source in source_results
+        if source.get("source_id") in VERIFIED_SOURCE_POOL
+    }
+    for source_id, spec in VERIFIED_SOURCE_POOL.items():
+        source = source_results_by_id.get(source_id, spec)
+        signal_role = source.get("signal_role") or spec.get("signal_role")
+        source_bucket = SOURCE_BUCKET_BY_SIGNAL_ROLE.get(signal_role) if isinstance(signal_role, str) else None
+        skeleton.append({
+            "source_id": source_id,
+            "source_name": source.get("source_name") or spec.get("source_name"),
+            "role": source.get("role") or spec.get("role"),
+            "signal_role": signal_role,
+            "source_bucket": source_bucket or "unknown_results",
+            "narrative_roles": source.get("narrative_roles") or spec.get("narrative_roles") or [],
+            "allowed_use": source.get("allowed_use") or spec.get("allowed_use") or [],
+            "can_be_main_narrative_source": source.get("can_be_main_narrative_source", spec.get("can_be_main_narrative_source", False)),
+            "fetch_path": source.get("fetch_path") or ("disabled_by_default" if spec.get("enabled") is False else None),
+            "success": bool(source.get("success")),
+            "status": source.get("status") or ("disabled_by_default" if spec.get("enabled") is False else None),
+            "fields_extracted": source.get("fields_extracted") or [],
+            "html_social_results_eligible": signal_role == "social_discussion_signal",
+        })
+    return skeleton
+
+
+def source_buckets_from_skeleton(source_skeleton: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    buckets: dict[str, list[dict[str, Any]]] = {bucket: [] for bucket in SOURCE_BUCKETS_BY_SIGNAL_ROLE}
+    for source in source_skeleton:
+        bucket = str(source.get("source_bucket") or "unknown_results")
+        buckets.setdefault(bucket, []).append(source)
+    return buckets
+
+
 def article_lane_from_gate(article_quality_gate: dict[str, Any]) -> str:
     return SELF_MEDIA_CANDIDATE_LANE if article_quality_gate.get("status") == "PASS" else DATA_OBSERVATION_LANE
 
@@ -1042,6 +1281,8 @@ def run(output_base: Path, rank_date: str | None = None, run_id: str | None = No
         fetch_weibo_topic_search_signal,
         fetch_zhihu_movie_hot_topics_signal,
         fetch_bilibili_movie_zone_hot_signal,
+        fetch_xiaohongshu_movie_notes_signal,
+        fetch_douyin_movie_hot_signal,
     ):
         try:
             source_results.append(fetcher())
@@ -1054,7 +1295,7 @@ def run(output_base: Path, rank_date: str | None = None, run_id: str | None = No
     audience_result = next((r for r in source_results if r.get("source_id") == "douban_reviews_discussions"), {})
     social_results = [
         r for r in source_results
-        if r.get("source_id") in {"weibo_entertainment_hotsearch", "weibo_topic_search", "zhihu_movie_hot_topics", "bilibili_movie_zone_hot"}
+        if r.get("signal_role") == "social_discussion_signal"
     ]
     social_result = next((r for r in social_results if r.get("source_id") == "weibo_entertainment_hotsearch"), {})
     maoyan_items = top_maoyan_items(maoyan_result)
@@ -1065,6 +1306,8 @@ def run(output_base: Path, rank_date: str | None = None, run_id: str | None = No
     article_quality_gate = article_quality_gate_from_coverage(role_coverage)
     effective_article_lane = article_lane_from_gate(article_quality_gate)
     output_type = "self_media_candidate_draft" if article_quality_gate["status"] == "PASS" else "data_observation_draft"
+    source_skeleton = source_skeleton_from_sources(source_results)
+    source_buckets = source_buckets_from_skeleton(source_skeleton)
 
     if not any(result.get("success") for result in source_results):
         summary = {"run_id": run_id, "status": "FAIL", "reason": "all verified sources failed", "canonical_suite_green": False, "started_or_created_at": now_utc()}
@@ -1084,6 +1327,8 @@ def run(output_base: Path, rank_date: str | None = None, run_id: str | None = No
         "selected_score": topic["score"],
         "topic_type": topic["topic_type"],
         "selection_reason": topic["reason"],
+        "source_skeleton": source_skeleton,
+        "source_buckets": source_buckets,
         "sources": [
             {k: result.get(k) for k in ["source_id", "source_name", "role", "signal_role", "narrative_roles", "allowed_use", "can_be_main_narrative_source", "fetch_path", "success", "status", "fields_extracted"]} | {"raw_url": result.get("raw_url") or result.get("raw_url_pattern")}
             for result in source_results
@@ -1097,6 +1342,8 @@ def run(output_base: Path, rank_date: str | None = None, run_id: str | None = No
         "verified_source_pool": VERIFIED_SOURCE_POOL,
         "priority_source_registry": PRIORITY_SOURCE_REGISTRY,
         "priority_source_order": PRIORITY_SOURCE_ORDER,
+        "source_skeleton": source_skeleton,
+        "source_buckets": source_buckets,
         "sources": source_results,
         "fallback_policy": "Use any successful source from verified pool; fail only if all sources fail.",
     }
@@ -1108,6 +1355,7 @@ def run(output_base: Path, rank_date: str | None = None, run_id: str | None = No
         "article_lane": effective_article_lane,
         "output_type": output_type,
         "source_role_coverage": role_coverage,
+        "source_buckets": {bucket: [source["source_id"] for source in sources] for bucket, sources in source_buckets.items()},
         "self_media_ready": role_coverage["self_media_ready"],
         "missing_source_roles": role_coverage["missing_source_roles"],
         "article_quality_gate": article_quality_gate,

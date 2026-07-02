@@ -242,6 +242,56 @@ def fake_bilibili_movie_zone_hot_success():
     }
 
 
+def fake_xiaohongshu_movie_notes_success():
+    return {
+        "source_id": "xiaohongshu_movie_notes",
+        "source_name": "小红书影视笔记搜索 live signal",
+        "role": "P1_xiaohongshu_movie_notes",
+        "signal_role": "audience_reaction_signal",
+        "narrative_roles": ["audience_sentiment", "social_discussion"],
+        "allowed_use": ["movie note sentiment", "social discussion signal"],
+        "can_be_main_narrative_source": True,
+        "fetch_path": "direct_live",
+        "started_at": "2026-06-30T00:00:00+00:00",
+        "finished_at": "2026-06-30T00:00:01+00:00",
+        "duration_ms": 5,
+        "success": False,
+        "status": "live_inaccessible",
+        "fields_extracted": [],
+        "signal_allowed_use_detail": ["movie note sentiment", "social discussion signal extraction"],
+        "forbidden_use": ["verified_facts", "whole-network generalization", "single-note conclusion", "publish-ready evidence"],
+        "sample_signals": [],
+        "error": "PermissionError('xiaohongshu search requires login or signed request')",
+    }
+
+
+def fake_douyin_movie_hot_success():
+    return {
+        "source_id": "douyin_movie_hot",
+        "source_name": "抖音电影热点 live signal",
+        "role": "P1_douyin_movie_hot",
+        "signal_role": "social_discussion_signal",
+        "narrative_roles": ["hot_search", "social_discussion"],
+        "allowed_use": ["short-video hot discovery", "social discussion signal"],
+        "can_be_main_narrative_source": True,
+        "fetch_path": "direct_live",
+        "started_at": "2026-06-30T00:00:00+00:00",
+        "finished_at": "2026-06-30T00:00:01+00:00",
+        "duration_ms": 5,
+        "success": True,
+        "status": "focused_live_verified",
+        "fields_extracted": ["title", "rank", "heat", "video_count", "url"],
+        "structured_signals": {
+            "hot_items": [{"title": "电影名场面在抖音二创爆了", "rank": 1, "heat": 320000, "video_count": 1200, "url": "https://www.douyin.com/search/%E7%94%B5%E5%BD%B1"}],
+            "social_discussion": ["电影名场面在抖音二创爆了"],
+        },
+        "signal_allowed_use_detail": ["short-video hot discovery", "social discussion signal extraction", "video engagement signal extraction"],
+        "forbidden_use": ["verified_facts", "whole-network generalization", "single-video conclusion", "publish-ready evidence"],
+        "sample_signals": ["抖音电影热点：电影名场面在抖音二创爆了（热度=320000）"],
+        "error": None,
+    }
+
+
 def fake_article_body_signal_fail():
     row = fake_article_body_signal_success()
     row.update({"success": False, "status": "ERROR", "error": "forced article body signal failure"})
@@ -269,6 +319,18 @@ def fake_zhihu_movie_hot_topics_fail():
 def fake_bilibili_movie_zone_hot_fail():
     row = fake_bilibili_movie_zone_hot_success()
     row.update({"success": False, "status": "ERROR", "error": "forced bilibili failure", "fields_extracted": [], "sample_signals": []})
+    return row
+
+
+def fake_xiaohongshu_movie_notes_fail():
+    row = fake_xiaohongshu_movie_notes_success()
+    row.update({"success": False, "status": "ERROR", "error": "forced xiaohongshu failure", "fields_extracted": [], "sample_signals": []})
+    return row
+
+
+def fake_douyin_movie_hot_fail():
+    row = fake_douyin_movie_hot_success()
+    row.update({"success": False, "status": "ERROR", "error": "forced douyin failure", "fields_extracted": [], "sample_signals": []})
     return row
 
 
@@ -311,7 +373,7 @@ def fake_guduo_fail():
     }
 
 
-def run_with_fakes(tmp_path, monkeypatch, maoyan_result=None, guduo_result=None, article_body_result=None, audience_result=None, weibo_result=None, weibo_topic_result=None, zhihu_result=None, bilibili_result=None, run_id="smoke"):
+def run_with_fakes(tmp_path, monkeypatch, maoyan_result=None, guduo_result=None, article_body_result=None, audience_result=None, weibo_result=None, weibo_topic_result=None, zhihu_result=None, bilibili_result=None, xiaohongshu_result=None, douyin_result=None, run_id="smoke"):
     mod = load_module()
     monkeypatch.setattr(mod, "fetch_maoyan", lambda: maoyan_result if maoyan_result is not None else fake_maoyan_success())
     monkeypatch.setattr(mod, "fetch_guduo", lambda rank_date=None: guduo_result if guduo_result is not None else fake_guduo_success())
@@ -321,6 +383,8 @@ def run_with_fakes(tmp_path, monkeypatch, maoyan_result=None, guduo_result=None,
     monkeypatch.setattr(mod, "fetch_weibo_topic_search_signal", lambda: weibo_topic_result if weibo_topic_result is not None else fake_weibo_topic_search_success())
     monkeypatch.setattr(mod, "fetch_zhihu_movie_hot_topics_signal", lambda: zhihu_result if zhihu_result is not None else fake_zhihu_movie_hot_topics_success())
     monkeypatch.setattr(mod, "fetch_bilibili_movie_zone_hot_signal", lambda: bilibili_result if bilibili_result is not None else fake_bilibili_movie_zone_hot_success())
+    monkeypatch.setattr(mod, "fetch_xiaohongshu_movie_notes_signal", lambda: xiaohongshu_result if xiaohongshu_result is not None else fake_xiaohongshu_movie_notes_success())
+    monkeypatch.setattr(mod, "fetch_douyin_movie_hot_signal", lambda: douyin_result if douyin_result is not None else fake_douyin_movie_hot_success())
     result = mod.run(tmp_path, run_id=run_id)
     out_dir = Path(result["output_dir"])
     return mod, result, out_dir
@@ -345,6 +409,8 @@ EXPECTED_SOURCE_POOL = {
     "weibo_topic_search",
     "zhihu_movie_hot_topics",
     "bilibili_movie_zone_hot",
+    "xiaohongshu_movie_notes",
+    "douyin_movie_hot",
 }
 EXPECTED_DEFAULT_SUCCESS = {
     "maoyan_realtime_boxoffice",
@@ -354,12 +420,13 @@ EXPECTED_DEFAULT_SUCCESS = {
     "weibo_entertainment_hotsearch",
     "zhihu_movie_hot_topics",
     "bilibili_movie_zone_hot",
+    "douyin_movie_hot",
 }
 
 
 def test_runner_import_version_and_source_pool_guard():
     mod = load_module()
-    assert mod.RUNNER_VERSION == "0.3.1"
+    assert mod.RUNNER_VERSION == "0.3.4"
     assert set(mod.VERIFIED_SOURCE_POOL) == EXPECTED_SOURCE_POOL
     for source_id, spec in mod.VERIFIED_SOURCE_POOL.items():
         assert spec["source_id"] == source_id
@@ -426,13 +493,114 @@ def test_output_schema_and_cross_file_consistency(tmp_path, monkeypatch):
     assert verification["checks"]["summary_audit_success_sets_match"] is True
 
 
+def test_source_skeleton_and_buckets_are_persisted_by_signal_role(tmp_path, monkeypatch):
+    _mod, _result, out_dir = run_with_fakes(tmp_path, monkeypatch)
+    outputs = load_outputs(out_dir)
+    sources = outputs["sources"]
+    audit = outputs["audit"]
+    summary = outputs["summary"]
+    skeleton = sources["source_skeleton"]
+    buckets = sources["source_buckets"]
+
+    assert audit["source_skeleton"] == skeleton
+    assert audit["source_buckets"] == buckets
+    assert len(skeleton) == len(audit["sources"])
+    assert {entry["source_id"] for entry in skeleton} == EXPECTED_SOURCE_POOL
+    assert {bucket for bucket, entries in buckets.items() if entries} == {
+        "market_results",
+        "heat_results",
+        "article_body_results",
+        "audience_reaction_results",
+        "social_results",
+    }
+    assert summary["source_buckets"] == {
+        bucket: [entry["source_id"] for entry in entries]
+        for bucket, entries in buckets.items()
+    }
+    for entry in skeleton:
+        assert {
+            "source_id",
+            "source_name",
+            "role",
+            "signal_role",
+            "source_bucket",
+            "narrative_roles",
+            "allowed_use",
+            "can_be_main_narrative_source",
+            "fetch_path",
+            "success",
+            "status",
+            "fields_extracted",
+            "html_social_results_eligible",
+        }.issubset(entry)
+        assert entry["source_bucket"] in buckets
+        assert entry["source_id"] in summary["source_buckets"][entry["source_bucket"]]
+
+
+def test_social_results_bucket_is_exactly_html_social_discussion_signals(tmp_path, monkeypatch):
+    _mod, _result, out_dir = run_with_fakes(tmp_path, monkeypatch)
+    outputs = load_outputs(out_dir)
+    social_bucket = outputs["sources"]["source_buckets"]["social_results"]
+    audience_bucket = outputs["sources"]["source_buckets"]["audience_reaction_results"]
+
+    assert {entry["source_id"] for entry in social_bucket} == {
+        "weibo_entertainment_hotsearch",
+        "weibo_topic_search",
+        "zhihu_movie_hot_topics",
+        "bilibili_movie_zone_hot",
+        "douyin_movie_hot",
+    }
+    assert all(entry["signal_role"] == "social_discussion_signal" for entry in social_bucket)
+    assert all(entry["html_social_results_eligible"] is True for entry in social_bucket)
+    assert [entry["source_id"] for entry in audience_bucket] == ["douban_reviews_discussions", "xiaohongshu_movie_notes"]
+    assert all(entry["signal_role"] == "audience_reaction_signal" for entry in audience_bucket)
+    assert all(entry["html_social_results_eligible"] is False for entry in audience_bucket)
+    assert "douyin_movie_hot" in outputs["summary"]["source_buckets"]["social_results"]
+    assert "douban_reviews_discussions" not in outputs["summary"]["source_buckets"]["social_results"]
+    assert "xiaohongshu_movie_notes" not in outputs["summary"]["source_buckets"]["social_results"]
+
+
+def test_xiaohongshu_movie_notes_live_adapter_failure_is_safe(monkeypatch):
+    mod = load_module()
+
+    def fake_fetch_json(_url, **_kwargs):
+        return {"code": -101, "success": False, "msg": "无登录信息，或登录信息为空", "data": {}}
+
+    monkeypatch.setattr(mod, "_fetch_json_url", fake_fetch_json)
+    result = mod.fetch_xiaohongshu_movie_notes_signal()
+    assert result["source_id"] == "xiaohongshu_movie_notes"
+    assert result["success"] is False
+    assert result["status"] == "live_inaccessible"
+    assert result["fetch_path"] == "direct_live"
+    assert result["fields_extracted"] == []
+    assert "登录" in result["error"] or "login" in result["error"].lower()
+    assert "verified_facts" in result["forbidden_use"]
+
+
+def test_douyin_movie_hot_live_adapter_failure_is_safe(monkeypatch):
+    mod = load_module()
+
+    def fake_fetch_json(_url, **_kwargs):
+        return {"status_code": -1, "status_msg": "login required or signature verification failed", "data": {}}
+
+    monkeypatch.setattr(mod, "_fetch_json_url", fake_fetch_json)
+    result = mod.fetch_douyin_movie_hot_signal()
+    assert result["source_id"] == "douyin_movie_hot"
+    assert result["success"] is False
+    assert result["status"] == "live_inaccessible"
+    assert result["fetch_path"] == "direct_live"
+    assert result["fields_extracted"] == []
+    assert "login" in result["error"].lower() or "signature" in result["error"].lower()
+    assert "verified_facts" in result["forbidden_use"]
+
+
 def test_guduo_failure_maoyan_success_continues_and_audits_failure(tmp_path, monkeypatch):
     _mod, result, out_dir = run_with_fakes(tmp_path, monkeypatch, guduo_result=fake_guduo_fail(), run_id="guduo_fail")
     outputs = load_outputs(out_dir)
     assert result["verification"]["status"] == "PASS"
     assert outputs["summary"]["article_quality_gate"]["status"] == "PASS"
     assert set(outputs["summary"]["sources_successful"]) == EXPECTED_DEFAULT_SUCCESS - {"guduo"}
-    assert set(outputs["summary"]["sources_failed"]) == {"guduo", "weibo_topic_search"}
+    assert set(outputs["summary"]["sources_failed"]) == {"guduo", "weibo_topic_search", "xiaohongshu_movie_notes"}
     failed = [src for src in outputs["audit"]["sources"] if src["source_id"] == "guduo"][0]
     assert failed["success"] is False
     assert failed["error"]
@@ -445,7 +613,7 @@ def test_maoyan_failure_guduo_success_continues_and_audits_failure(tmp_path, mon
     assert result["verification"]["status"] == "PASS"
     assert outputs["summary"]["article_quality_gate"]["status"] == "PASS"
     assert set(outputs["summary"]["sources_successful"]) == EXPECTED_DEFAULT_SUCCESS - {"maoyan_realtime_boxoffice"}
-    assert set(outputs["summary"]["sources_failed"]) == {"maoyan_realtime_boxoffice", "weibo_topic_search"}
+    assert set(outputs["summary"]["sources_failed"]) == {"maoyan_realtime_boxoffice", "weibo_topic_search", "xiaohongshu_movie_notes"}
     failed = [src for src in outputs["audit"]["sources"] if src["source_id"] == "maoyan_realtime_boxoffice"][0]
     assert failed["success"] is False
     assert failed["error"]
@@ -458,6 +626,12 @@ def test_consecutive_runs_use_independent_output_dirs(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "fetch_guduo", lambda rank_date=None: fake_guduo_success())
     monkeypatch.setattr(mod, "fetch_article_body_signal", fake_article_body_signal_success)
     monkeypatch.setattr(mod, "fetch_audience_reaction_signal", fake_audience_reaction_signal_success)
+    monkeypatch.setattr(mod, "fetch_weibo_entertainment_hotsearch_signal", fake_weibo_entertainment_hotsearch_success)
+    monkeypatch.setattr(mod, "fetch_weibo_topic_search_signal", fake_weibo_topic_search_success)
+    monkeypatch.setattr(mod, "fetch_zhihu_movie_hot_topics_signal", fake_zhihu_movie_hot_topics_success)
+    monkeypatch.setattr(mod, "fetch_bilibili_movie_zone_hot_signal", fake_bilibili_movie_zone_hot_success)
+    monkeypatch.setattr(mod, "fetch_xiaohongshu_movie_notes_signal", fake_xiaohongshu_movie_notes_success)
+    monkeypatch.setattr(mod, "fetch_douyin_movie_hot_signal", fake_douyin_movie_hot_success)
     dirs = []
     for index in range(3):
         result = mod.run(tmp_path, run_id=f"stable_{index}")
@@ -529,6 +703,7 @@ def test_maoyan_guduo_only_is_data_observation_not_final_quality_acceptance(tmp_
         weibo_result=fake_weibo_entertainment_hotsearch_fail(),
         zhihu_result=fake_zhihu_movie_hot_topics_fail(),
         bilibili_result=fake_bilibili_movie_zone_hot_fail(),
+        douyin_result=fake_douyin_movie_hot_fail(),
         run_id="market_heat_only",
     )
     outputs = load_outputs(out_dir)
