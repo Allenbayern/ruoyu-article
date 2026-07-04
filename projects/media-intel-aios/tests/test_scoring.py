@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import os
 import sys
 from pathlib import Path
@@ -6,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 MODULE_PATH = ROOT / "scripts" / "run_daily_pipeline.py"
+TOUTIAO_STORY_FIXTURE = ROOT / "tests" / "fixtures" / "toutiao" / "story.html"
 
 
 def load_module():
@@ -248,7 +250,9 @@ def test_low_quality_article_candidates_build_executable_retry_request():
     assert {"douban_group", "xhs", "zhihu", "wechat"}.issubset(set(retry_plan["runnable_flags"]))
     assert retry_plan["queries"]
     assert any("某剧" in query for query in retry_plan["queries"])
-
+    assert retry_plan["next_actions"]
+    assert {"flag", "platform", "query_hint", "action", "verification"}.issubset(retry_plan["next_actions"][0])
+    assert any(action["flag"] == "zhihu" and "二跳正文" in action["action"] for action in retry_plan["next_actions"])
 
 
 def test_article_lane_retry_request_ignores_story_only_gaps():
@@ -358,22 +362,83 @@ def test_incubation_feedback_mentions_second_review_and_evidence_gaps():
     assert "《主角》" in approved
 
 
-def test_article_lane_default_sources_do_not_reopen_video_sources_or_write_video_approved(tmp_path, monkeypatch):
+def test_article_lane_dailyhot_input_does_not_reopen_sample_sources_or_write_video_approved(tmp_path, monkeypatch):
     mod = load_module()
     commands = []
+    dailyhot_input = tmp_path / "dailyhot.jsonl"
+    dailyhot_input.write_text('{"title":"影视热榜样本","source":"weibo","url":"https://example.test/hot"}\n', encoding="utf-8")
 
     def fake_run_json_command(name, command, cwd=None):
         commands.append((name, list(command)))
         return mod.StepResult(name=name, status="OK", detail={})
 
     monkeypatch.setattr(mod, "run_json_command", fake_run_json_command)
+    def fake_retry_loop(article_rows, story_rows, media_rows, date, refetch, lane="all"):
+        refetched = refetch({"runnable_flags": ["xhs", "zhihu", "douban_group", "wechat"]})
+        return {
+            "status": "ok",
+            "article_rows": article_rows,
+            "retry_request": {"retry_required": False, "targets": [], "reason": "", "next_actions": []},
+            "refetched_count": len(refetched),
+        }
+
+    monkeypatch.setattr(mod, "run_article_retry_loop", fake_retry_loop)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_daily_pipeline.py",
+            "--lane",
+            "article",
+            "--date",
+            "2026-07-02",
+            "--output-root",
+            str(tmp_path),
+            "--dailyhot-article",
+            str(dailyhot_input),
+        ],
+    )
+
+    assert mod.main() == 0
+
+    command_names = [name for name, _command in commands]
+    assert "douban_collect" not in command_names
+    assert "xhs_note_collect" not in command_names
+    assert "zhihu_collect" not in command_names
+    assert "douban_group_topic_fetch" not in command_names
+    assert "douban_group_collect" not in command_names
+    assert "wechat_collect" not in command_names
+    assert "zhihu_question_backfill" not in command_names
+    assert "video-approved-latest.md" not in {path.name for path in tmp_path.iterdir()}
+    assert (tmp_path / "article-approved-latest.md").exists()
+
+
+def test_article_lane_retry_request_writes_operator_next_actions(tmp_path, monkeypatch, capsys):
+    mod = load_module()
+    next_actions = [
+        {
+            "flag": "zhihu",
+            "platform": "知乎",
+            "query_hint": "某剧争议",
+            "action": "补问题二跳正文、回答正文或评论区高赞观点",
+            "verification": "确认 `zhihu-question-backfill.jsonl` 有 local_hit/正文命中",
+        }
+    ]
     monkeypatch.setattr(
         mod,
         "run_article_retry_loop",
         lambda article_rows, story_rows, media_rows, date, refetch, lane="all": {
-            "status": "ok",
+            "status": "retry_request",
             "article_rows": article_rows,
-            "retry_request": {"retry_required": False, "targets": [], "reason": ""},
+            "retry_request": {
+                "retry_required": True,
+                "targets": ["知乎"],
+                "runnable_flags": ["zhihu"],
+                "queries": ["某剧争议"],
+                "reason": "文章组高分候选缺今天写它的理由或缺二跳正文",
+                "evidence_backfill_tasks": [],
+                "next_actions": next_actions,
+            },
             "refetched_count": 0,
         },
     )
@@ -388,19 +453,236 @@ def test_article_lane_default_sources_do_not_reopen_video_sources_or_write_video
             "2026-07-02",
             "--output-root",
             str(tmp_path),
-            "--dailyhot-article",
-            "__DISABLED_FOR_TEST__",
         ],
     )
 
     assert mod.main() == 0
 
-    command_names = [name for name, _command in commands]
-    assert "douban_collect" in command_names
-    assert "xhs_note_collect" not in command_names
-    assert "zhihu_collect" not in command_names
+    summary = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert summary["needs_retry"] is True
+    assert summary["retry_request"]["next_actions"] == next_actions
+    feedback = (tmp_path / "latest-feedback.md").read_text(encoding="utf-8")
+    assert "## 重爬处置" in feedback
+    assert "知乎（zhihu）" in feedback
+    assert "补问题二跳正文" in feedback
+    assert "zhihu-question-backfill.jsonl" in feedback
+
+
+def test_article_lane_new_explicit_sources_do_not_export_story_or_video_rows(tmp_path, monkeypatch):
+    mod = load_module()
+    article_row = make_row(
+        "《长安的荔枝》观众争议集中在职场线，适合写成影视观察",
+        summary="评论区围绕职场隐喻和表演选择展开讨论。",
+        source="xhs",
+    )
+    story_row = {
+        "title": "故事母本样本不应进入文章组交付",
+        "summary": "这是完整故事母本。",
+        "source": "xhs",
+        "story_kind": "complete_story",
+        "content_type": "story",
+    }
+    writes = []
+
+    def fake_collect(output_root, *args, **kwargs):
+        return [], [dict(article_row)], [dict(story_row)], mod.SourceDecision("fake_source", "article_story_vault", "CONNECTED", "fake", [])
+
+    monkeypatch.setattr(mod, "collect_xhs_sample", fake_collect)
+    monkeypatch.setattr(mod, "collect_zhihu_sample", fake_collect)
+    monkeypatch.setattr(mod, "collect_tieba_mediacrawler_sample", fake_collect)
+    monkeypatch.setattr(mod, "collect_douban_group_topic", fake_collect)
+    monkeypatch.setattr(mod, "collect_toutiao_sample", fake_collect)
+    monkeypatch.setattr(mod, "collect_wechat_sample", fake_collect)
+    monkeypatch.setattr(mod, "run_zhihu_question_backfill", lambda output_root: mod.StepResult(name="zhihu_question_backfill", status="OK"))
+    monkeypatch.setattr(
+        mod,
+        "run_article_retry_loop",
+        lambda article_rows, story_rows, media_rows, date, refetch, lane="all": {
+            "status": "ok",
+            "article_rows": article_rows,
+            "retry_request": {"retry_required": False, "targets": [], "reason": "", "next_actions": []},
+            "refetched_count": 0,
+        },
+    )
+    original_write_jsonl = mod.write_jsonl
+
+    def tracking_write_jsonl(path, rows):
+        writes.append((path.name, [dict(row) for row in rows]))
+        original_write_jsonl(path, rows)
+
+    monkeypatch.setattr(mod, "write_jsonl", tracking_write_jsonl)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_daily_pipeline.py",
+            "--lane",
+            "article",
+            "--date",
+            "2026-07-02",
+            "--output-root",
+            str(tmp_path),
+            "--run-xhs",
+            "--run-zhihu",
+            "--run-tieba",
+            "--run-douban-group",
+            "--run-toutiao",
+            "--run-wechat",
+        ],
+    )
+
+    assert mod.main() == 0
+
+    exported_reference_rows = next(rows for name, rows in writes if name == "reference-candidate-export.jsonl")
+    assert {row["kind"] for row in exported_reference_rows} <= {"article"}
+    assert "story-leads" not in {path.name for path in tmp_path.iterdir()}
     assert "video-approved-latest.md" not in {path.name for path in tmp_path.iterdir()}
     assert (tmp_path / "article-approved-latest.md").exists()
+
+
+def test_toutiao_default_sample_uses_scrubbed_test_fixture():
+    mod = load_module()
+    assert mod.default_toutiao_sample_html() == TOUTIAO_STORY_FIXTURE
+    assert str(mod.default_toutiao_sample_html()).endswith("tests/fixtures/toutiao/story.html")
+
+
+def test_article_lane_default_local_samples_are_connected(tmp_path):
+    mod = load_module()
+    vocus_sample = mod.ARTICLE_SAMPLES / "vocus" / "vocus_article_sample_01.json"
+    douban_sample = mod.ARTICLE_SAMPLES / "douban" / "douban_review_sample_01.html"
+    hotboard_sample = mod.HOTBOARD_SAMPLES / "hotlist_web_sample_01.json"
+
+    assert vocus_sample.exists()
+    assert douban_sample.exists()
+    assert hotboard_sample.exists()
+
+    vocus_steps, vocus_articles, _vocus_stories, vocus_decision = mod.collect_vocus_sample(tmp_path, vocus_sample)
+    douban_steps, douban_articles, _douban_stories, douban_decision = mod.collect_douban_sample(tmp_path, douban_sample)
+    hotboard_steps, hotboard_rows, hotboard_decision = mod.collect_hotboard_sample(tmp_path, hotboard_sample)
+
+    assert all(step.status == "OK" for step in vocus_steps + douban_steps + hotboard_steps)
+    assert vocus_decision.status == "CONNECTED"
+    assert douban_decision.status == "CONNECTED"
+    assert hotboard_decision.status == "CONNECTED"
+    assert vocus_articles
+    assert douban_articles
+    assert hotboard_rows
+
+
+def test_article_lane_missing_optional_sources_are_skipped_not_step_errors(tmp_path, monkeypatch, capsys):
+    mod = load_module()
+    monkeypatch.setattr(
+        mod,
+        "run_article_retry_loop",
+        lambda article_rows, story_rows, media_rows, date, refetch, lane="all": {
+            "status": "ok",
+            "article_rows": article_rows,
+            "retry_request": {"retry_required": False, "targets": [], "reason": "", "next_actions": []},
+            "refetched_count": 0,
+        },
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_daily_pipeline.py",
+            "--lane",
+            "article",
+            "--date",
+            "2026-07-02",
+            "--output-root",
+            str(tmp_path),
+            "--run-news-fallback",
+            "--run-xiniu",
+        ],
+    )
+
+    assert mod.main() == 0
+
+    summary = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert not [step for step in summary["steps"] if step["status"] == "ERROR"]
+    decisions = {decision["name"]: decision for decision in summary["source_decisions"]}
+    assert decisions["news_fallback"]["status"] == "SKIPPED"
+    assert decisions["xiniu"]["status"] == "SKIPPED"
+    assert "缺少输入" in decisions["news_fallback"]["reason"]
+    assert "缺少样本" in decisions["xiniu"]["reason"]
+
+
+def test_video_lane_shared_sources_route_only_story_outputs(tmp_path, monkeypatch):
+    mod = load_module()
+    article_row = make_row(
+        "文章组候选不应进入视频组交付",
+        summary="这是文章选题。",
+        source="xhs",
+    )
+    story_row = {
+        "title": "高赞反转故事适合视频组",
+        "summary": "这是完整故事母本。",
+        "source": "xhs",
+        "story_kind": "complete_story",
+        "content_type": "story",
+        "score": 9.1,
+    }
+    calls = []
+    decisions = []
+
+    def fake_collect(output_root, *args, **kwargs):
+        lane = args[-1] if args else kwargs.get("lane")
+        calls.append(lane)
+        article_output, story_output = mod.lane_scoped_dual_outputs(output_root, "fake", lane)
+        decision = mod.lane_scoped_dual_decision("fake_source", lane, "CONNECTED", "fake", article_output, story_output)
+        decisions.append(decision)
+        return [], [dict(article_row)], [dict(story_row)], decision
+
+    monkeypatch.setattr(mod, "collect_xhs_sample", fake_collect)
+    monkeypatch.setattr(mod, "collect_zhihu_sample", fake_collect)
+    monkeypatch.setattr(mod, "collect_tieba_mediacrawler_sample", fake_collect)
+    monkeypatch.setattr(mod, "collect_douban_group_topic", fake_collect)
+    monkeypatch.setattr(mod, "collect_toutiao_sample", fake_collect)
+    monkeypatch.setattr(mod, "collect_wechat_sample", fake_collect)
+    monkeypatch.setattr(
+        mod,
+        "run_article_retry_loop",
+        lambda article_rows, story_rows, media_rows, date, refetch, lane="all": {
+            "status": "ok",
+            "article_rows": article_rows,
+            "retry_request": {"retry_required": False, "targets": [], "reason": "", "next_actions": []},
+            "refetched_count": 0,
+        },
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_daily_pipeline.py",
+            "--lane",
+            "video",
+            "--date",
+            "2026-07-02",
+            "--output-root",
+            str(tmp_path),
+            "--run-xhs",
+            "--run-zhihu",
+            "--run-tieba",
+            "--run-douban-group",
+            "--run-toutiao",
+            "--run-wechat",
+        ],
+    )
+
+    assert mod.main() == 0
+
+    assert calls == ["video", "video", "video", "video", "video", "video"]
+    assert {decision.category for decision in decisions} == {"story_vault"}
+    assert all(decision.category != "article_story_vault" for decision in decisions)
+    assert all(
+        output.endswith("/story-leads/fake_story_leads.jsonl")
+        for decision in decisions
+        for output in decision.outputs
+    )
+    assert all("/article-leads/" not in output for decision in decisions for output in decision.outputs)
+    assert (tmp_path / "video-approved-latest.md").exists()
+    assert "article-approved-latest.md" not in {path.name for path in tmp_path.iterdir()}
 
 
 if __name__ == "__main__":

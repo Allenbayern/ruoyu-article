@@ -21,6 +21,9 @@ import openai
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "scripts"
+CONFIG_DIR = ROOT / "config"
+WECHAT_SUBSCRIPTIONS = CONFIG_DIR / "wechat_article_subscriptions.json"
+WECHAT_ALBUM_SUBSCRIPTIONS = CONFIG_DIR / "wechat_album_subscriptions.json"
 WORKSPACE = ROOT.parent.parent
 HANDOVER = WORKSPACE / "handover-hotspot"
 QUALITY = HANDOVER / "04-QUALITY-FEEDBACK"
@@ -461,6 +464,28 @@ class SourceDecision:
     outputs: list[str]
 
 
+def lane_scoped_dual_outputs(output_root: Path, source_name: str, lane: str) -> tuple[Path, Path]:
+    article_dir = output_root / "article-leads" if lane != "video" else output_root / "tmp" / "lane-discard" / "article-leads"
+    story_dir = output_root / "story-leads" if lane != "article" else output_root / "tmp" / "lane-discard" / "story-leads"
+    return article_dir / f"{source_name}_article_leads.jsonl", story_dir / f"{source_name}_story_leads.jsonl"
+
+
+def lane_scoped_dual_decision(
+    source_name: str,
+    lane: str,
+    status: str,
+    reason: str,
+    article_output: Path,
+    story_output: Path,
+    extra_outputs: list[str] | None = None,
+) -> SourceDecision:
+    if lane == "article":
+        return SourceDecision(source_name, "article_vault", status, reason, [*(extra_outputs or []), str(article_output)])
+    if lane == "video":
+        return SourceDecision(source_name, "story_vault", status, reason, [*(extra_outputs or []), str(story_output)])
+    return SourceDecision(source_name, "article_story_vault", status, reason, [*(extra_outputs or []), str(article_output), str(story_output)])
+
+
 def run_json_command(name: str, command: list[str], cwd: Path | None = None) -> StepResult:
     try:
         proc = subprocess.run(
@@ -733,6 +758,57 @@ RETRY_TARGET_FLAGS = {
 }
 
 
+RETRY_NEXT_ACTIONS = {
+    "douban_group": {
+        "label": "豆瓣小组",
+        "action": "补同题讨论串、长评或高赞回复，优先找普通观众站队/吐槽/反转证据",
+        "check": "确认 `article-approved-latest.md` 出现主稿/备稿，或 `today-hook-dispatch.md` 出现可写钩子",
+    },
+    "xhs": {
+        "label": "小红书",
+        "action": "补真实用户笔记和评论区高共鸣表达，避免只补宣发搬运",
+        "check": "确认候选具备评论区观点、人物/作品锚点和今天写它的理由",
+    },
+    "zhihu": {
+        "label": "知乎",
+        "action": "补问题二跳正文、回答正文或评论区高赞观点；若 backfill blocked，改用浏览器态会话",
+        "check": "确认 `zhihu-question-backfill.jsonl` 有 local_hit/正文命中，且 retry_request 不再只因缺二跳保留",
+    },
+    "wechat": {
+        "label": "微信公众号",
+        "action": "补可核验长文、行业/人物背景或争议脉络，作为文章分析层证据",
+        "check": "确认候选不只是资讯摘要，而有可引用的长文观点或事实链",
+    },
+    "bilibili": {
+        "label": "B站",
+        "action": "补视频评论/弹幕/切片反馈，优先找故事母本或观众情绪爆点",
+        "check": "确认 `video-approved-latest.md` 或故事源队列出现可复核母本",
+    },
+    "douyin": {
+        "label": "抖音",
+        "action": "补短视频评论区、真实讲述或情绪反应样本，优先找可改编叙事",
+        "check": "确认故事候选有关系、冲突、秘密、反转等结构要素",
+    },
+}
+
+
+def build_retry_next_actions(runnable_flags: list[str], queries: list[str]) -> list[dict[str, Any]]:
+    actions: list[dict[str, Any]] = []
+    query_hint = " / ".join(queries[:3]) if queries else "沿用今日候选标题与关键词"
+    for flag in list(dict.fromkeys(runnable_flags)):
+        spec = RETRY_NEXT_ACTIONS.get(flag)
+        if not spec:
+            continue
+        actions.append({
+            "flag": flag,
+            "platform": spec["label"],
+            "query_hint": query_hint,
+            "action": spec["action"],
+            "verification": spec["check"],
+        })
+    return actions
+
+
 def _retry_query_text(row: dict[str, Any]) -> str:
     return compact_text(
         merged_text(row.get("title"), row.get("summary"), row.get("content"), row.get("keyword")),
@@ -786,6 +862,7 @@ def build_retry_request(
     query_candidates = [_retry_query_text(row) for row in sort_article_rows(article_rows)[:3]]
     query_candidates.extend(task["query"] for task in evidence_backfill_tasks)
     queries = [query for query in dict.fromkeys(query_candidates) if query]
+    next_actions = build_retry_next_actions(runnable_flags, queries)
     return {
         "status": "retry_request" if retry_required or evidence_backfill_tasks else "ok",
         "retry_required": retry_required or bool(evidence_backfill_tasks),
@@ -794,6 +871,7 @@ def build_retry_request(
         "queries": queries,
         "reason": reason,
         "evidence_backfill_tasks": evidence_backfill_tasks,
+        "next_actions": next_actions,
     }
 
 
@@ -3046,6 +3124,20 @@ def build_director_review(
 """
 
 
+def format_retry_next_actions(next_actions: list[dict[str, Any]]) -> str:
+    if not next_actions:
+        return "- 无"
+    lines: list[str] = []
+    for action in next_actions:
+        platform = action.get("platform") or action.get("flag") or "未知平台"
+        flag = action.get("flag") or "unknown"
+        query_hint = action.get("query_hint") or "沿用今日候选标题与关键词"
+        action_text = action.get("action") or "补充可核验证据后再复跑"
+        verification = action.get("verification") or "复跑后查看白名单与 retry_request 状态"
+        lines.append(f"- {platform}（{flag}）：{action_text}｜检索词：{query_hint}｜验收：{verification}")
+    return "\n".join(lines)
+
+
 def build_feedback(
     date: str,
     article_rows: list[dict[str, Any]],
@@ -3056,6 +3148,7 @@ def build_feedback(
     needs_retry: bool,
     retry_targets: list[str],
     retry_reason: str,
+    retry_next_actions: list[dict[str, Any]],
     dedupe_summary: str,
     cross_day_hits: dict[str, int],
 ) -> str:
@@ -3130,6 +3223,9 @@ def build_feedback(
 - 重爬标记：{'需要重爬' if needs_retry else '无需重爬'}
 - 重爬原因：{retry_reason}
 - 重爬优先平台：{' / '.join(retry_targets) if retry_targets else '无'}
+
+## 重爬处置
+{format_retry_next_actions(retry_next_actions)}
 
 ## 总监复评层
 - 见 `director-review-latest.md`
@@ -3870,17 +3966,16 @@ def collect_vocus_sample(output_root: Path, sample_path: Path) -> tuple[list[Ste
     return results, article_rows, story_rows, SourceDecision("vocus", "article_vault", "CONNECTED", "已用通过 validate 的本地真实样本接入", [str(article_output), str(story_output)])
 
 
-def collect_xhs_sample(output_root: Path, sample_path: Path) -> tuple[list[StepResult], list[dict[str, Any]], list[dict[str, Any]], SourceDecision]:
+def collect_xhs_sample(output_root: Path, sample_path: Path, lane: str = "all") -> tuple[list[StepResult], list[dict[str, Any]], list[dict[str, Any]], SourceDecision]:
     normalized_output = output_root / "sources" / "xhs_note_normalized.jsonl"
-    article_output = output_root / "article-leads" / "xhs_article_leads.jsonl"
-    story_output = output_root / "story-leads" / "xhs_story_leads.jsonl"
+    article_output, story_output = lane_scoped_dual_outputs(output_root, "xhs", lane)
     results = [run_json_command("mediacrawler_xhs_note_normalize", [sys.executable, str(SCRIPTS / "mediacrawler_xhs_note_normalize.py"), "--input", str(sample_path), "--output", str(normalized_output)], cwd=ROOT)]
     if results[-1].status != "OK":
-        return results, [], [], SourceDecision("xhs_note", "article_story_vault", "SKIPPED", "normalize 失败", [])
+        return results, [], [], lane_scoped_dual_decision("xhs_note", lane, "SKIPPED", "normalize 失败", article_output, story_output, [str(normalized_output)])
     results.append(run_json_command("xhs_note_collect", [sys.executable, str(SCRIPTS / "xhs_note_collect.py"), "--input", str(normalized_output), "--article-output", str(article_output), "--story-output", str(story_output)], cwd=ROOT))
     article_rows = load_jsonl(article_output)
     story_rows = load_jsonl(story_output)
-    return results, article_rows, story_rows, SourceDecision("xhs_note", "article_story_vault", "CONNECTED", "已用 MediaCrawler 真实样本接入 article/story 双路", [str(normalized_output), str(article_output), str(story_output)])
+    return results, article_rows, story_rows, lane_scoped_dual_decision("xhs_note", lane, "CONNECTED", "已用 MediaCrawler 真实样本按 lane 拆分接入", article_output, story_output, [str(normalized_output)])
 
 
 def collect_netease_renjian_sample(output_root: Path, sample_path: Path) -> tuple[list[StepResult], list[dict[str, Any]], SourceDecision]:
@@ -3894,23 +3989,21 @@ def collect_netease_renjian_sample(output_root: Path, sample_path: Path) -> tupl
     return results, story_rows, SourceDecision("netease_renjian", "story_vault", "CONNECTED", "已用通过 validate 的真实故事 HTML 样本接入", [str(story_output)])
 
 
-def collect_zhihu_sample(output_root: Path, sample_path: Path) -> tuple[list[StepResult], list[dict[str, Any]], list[dict[str, Any]], SourceDecision]:
+def collect_zhihu_sample(output_root: Path, sample_path: Path, lane: str = "all") -> tuple[list[StepResult], list[dict[str, Any]], list[dict[str, Any]], SourceDecision]:
     fetch_output = output_root / "sources" / "zhihu_fetch.json"
-    article_output = output_root / "article-leads" / "zhihu_article_leads.jsonl"
-    story_output = output_root / "story-leads" / "zhihu_story_leads.jsonl"
+    article_output, story_output = lane_scoped_dual_outputs(output_root, "zhihu", lane)
     results = [run_json_command("zhihu_fetch", [sys.executable, str(SCRIPTS / "zhihu_fetch.py"), "--sample-html", str(sample_path), "--output", str(fetch_output)], cwd=ROOT)]
     if results[-1].status != "OK":
-        return results, [], [], SourceDecision("zhihu", "article_story_vault", "SKIPPED", "fetch 失败", [])
+        return results, [], [], lane_scoped_dual_decision("zhihu", lane, "SKIPPED", "fetch 失败", article_output, story_output, [str(fetch_output)])
     results.append(run_json_command("zhihu_collect", [sys.executable, str(SCRIPTS / "zhihu_collect.py"), "--input", str(fetch_output), "--article-output", str(article_output), "--story-output", str(story_output)], cwd=ROOT))
     article_rows = load_jsonl(article_output)
     story_rows = load_jsonl(story_output)
-    return results, article_rows, story_rows, SourceDecision("zhihu", "article_story_vault", "CONNECTED", "已用通过 validate 的知乎本地样本接入 article/story 双路", [str(article_output), str(story_output)])
+    return results, article_rows, story_rows, lane_scoped_dual_decision("zhihu", lane, "CONNECTED", "已用通过 validate 的知乎本地样本按 lane 拆分接入", article_output, story_output)
 
 
-def collect_zhihu_mediacrawler_sample(output_root: Path, sample_path: Path) -> tuple[list[StepResult], list[dict[str, Any]], list[dict[str, Any]], SourceDecision]:
+def collect_zhihu_mediacrawler_sample(output_root: Path, sample_path: Path, lane: str = "all") -> tuple[list[StepResult], list[dict[str, Any]], list[dict[str, Any]], SourceDecision]:
     normalized_output = output_root / "sources" / "zhihu_fetch.json"
-    article_output = output_root / "article-leads" / "zhihu_article_leads.jsonl"
-    story_output = output_root / "story-leads" / "zhihu_story_leads.jsonl"
+    article_output, story_output = lane_scoped_dual_outputs(output_root, "zhihu", lane)
     results = [
         run_json_command(
             "mediacrawler_zhihu_content_normalize",
@@ -3919,17 +4012,16 @@ def collect_zhihu_mediacrawler_sample(output_root: Path, sample_path: Path) -> t
         )
     ]
     if results[-1].status != "OK":
-        return results, [], [], SourceDecision("zhihu", "article_story_vault", "SKIPPED", "mediacrawler normalize 失败", [])
+        return results, [], [], lane_scoped_dual_decision("zhihu", lane, "SKIPPED", "mediacrawler normalize 失败", article_output, story_output, [str(normalized_output)])
     results.append(run_json_command("zhihu_collect", [sys.executable, str(SCRIPTS / "zhihu_collect.py"), "--input", str(normalized_output), "--article-output", str(article_output), "--story-output", str(story_output)], cwd=ROOT))
     article_rows = load_jsonl(article_output)
     story_rows = load_jsonl(story_output)
-    return results, article_rows, story_rows, SourceDecision("zhihu", "article_story_vault", "CONNECTED", "已用 MediaCrawler 知乎内容样本接入 article/story 双路", [str(article_output), str(story_output)])
+    return results, article_rows, story_rows, lane_scoped_dual_decision("zhihu", lane, "CONNECTED", "已用 MediaCrawler 知乎内容样本按 lane 拆分接入", article_output, story_output, [str(normalized_output)])
 
 
-def collect_tieba_mediacrawler_sample(output_root: Path, sample_path: Path) -> tuple[list[StepResult], list[dict[str, Any]], list[dict[str, Any]], SourceDecision]:
+def collect_tieba_mediacrawler_sample(output_root: Path, sample_path: Path, lane: str = "all") -> tuple[list[StepResult], list[dict[str, Any]], list[dict[str, Any]], SourceDecision]:
     normalized_output = output_root / "sources" / "tieba_fetch.json"
-    article_output = output_root / "article-leads" / "tieba_article_leads.jsonl"
-    story_output = output_root / "story-leads" / "tieba_story_leads.jsonl"
+    article_output, story_output = lane_scoped_dual_outputs(output_root, "tieba", lane)
     results = [
         run_json_command(
             "mediacrawler_tieba_note_normalize",
@@ -3938,31 +4030,29 @@ def collect_tieba_mediacrawler_sample(output_root: Path, sample_path: Path) -> t
         )
     ]
     if results[-1].status != "OK":
-        return results, [], [], SourceDecision("tieba", "article_story_vault", "SKIPPED", "mediacrawler normalize 失败", [])
+        return results, [], [], lane_scoped_dual_decision("tieba", lane, "SKIPPED", "mediacrawler normalize 失败", article_output, story_output, [str(normalized_output)])
     results.append(run_json_command("tieba_collect", [sys.executable, str(SCRIPTS / "tieba_collect.py"), "--input", str(normalized_output), "--article-output", str(article_output), "--story-output", str(story_output)], cwd=ROOT))
     article_rows = load_jsonl(article_output)
     story_rows = load_jsonl(story_output)
-    return results, article_rows, story_rows, SourceDecision("tieba", "article_story_vault", "CONNECTED", "已用 MediaCrawler 贴吧帖子样本接入 article/story 双路", [str(article_output), str(story_output)])
+    return results, article_rows, story_rows, lane_scoped_dual_decision("tieba", lane, "CONNECTED", "已用 MediaCrawler 贴吧帖子样本按 lane 拆分接入", article_output, story_output, [str(normalized_output)])
 
 
-def collect_douban_group_sample(output_root: Path, sample_path: Path) -> tuple[list[StepResult], list[dict[str, Any]], list[dict[str, Any]], SourceDecision]:
+def collect_douban_group_sample(output_root: Path, sample_path: Path, lane: str = "all") -> tuple[list[StepResult], list[dict[str, Any]], list[dict[str, Any]], SourceDecision]:
     fetch_output = output_root / "sources" / "douban_group_fetch.json"
-    article_output = output_root / "article-leads" / "douban_group_article_leads.jsonl"
-    story_output = output_root / "story-leads" / "douban_group_story_leads.jsonl"
+    article_output, story_output = lane_scoped_dual_outputs(output_root, "douban_group", lane)
     results = [run_json_command("douban_group_fetch", [sys.executable, str(SCRIPTS / "douban_group_fetch.py"), "--sample-html", str(sample_path), "--output", str(fetch_output)], cwd=ROOT)]
     if results[-1].status != "OK":
-        return results, [], [], SourceDecision("douban_group", "article_story_vault", "SKIPPED", "fetch 失败", [])
+        return results, [], [], lane_scoped_dual_decision("douban_group", lane, "SKIPPED", "fetch 失败", article_output, story_output, [str(fetch_output)])
     results.append(run_json_command("douban_group_collect", [sys.executable, str(SCRIPTS / "douban_group_collect.py"), "--input", str(fetch_output), "--article-output", str(article_output), "--story-output", str(story_output)], cwd=ROOT))
     article_rows = load_jsonl(article_output)
     story_rows = load_jsonl(story_output)
-    return results, article_rows, story_rows, SourceDecision("douban_group", "article_story_vault", "CONNECTED", "已用通过 validate 的豆瓣小组本地样本接入 article/story 双路", [str(article_output), str(story_output)])
+    return results, article_rows, story_rows, lane_scoped_dual_decision("douban_group", lane, "CONNECTED", "已用通过 validate 的豆瓣小组本地样本按 lane 拆分接入", article_output, story_output)
 
 
-def collect_douban_group_topic(output_root: Path, topic_url: str | None, input_html: Path | None, cookie: str | None, use_browser: bool = False) -> tuple[list[StepResult], list[dict[str, Any]], list[dict[str, Any]], SourceDecision]:
+def collect_douban_group_topic(output_root: Path, topic_url: str | None, input_html: Path | None, cookie: str | None, use_browser: bool = False, lane: str = "all") -> tuple[list[StepResult], list[dict[str, Any]], list[dict[str, Any]], SourceDecision]:
     raw_output = ROOT / "tmp/mediacrawler/douban-group/raw/douban_group_topic_raw_real_01.json"
     fetch_output = output_root / "sources" / "douban_group_fetch.json"
-    article_output = output_root / "article-leads" / "douban_group_article_leads.jsonl"
-    story_output = output_root / "story-leads" / "douban_group_story_leads.jsonl"
+    article_output, story_output = lane_scoped_dual_outputs(output_root, "douban_group", lane)
     results: list[StepResult] = []
     raw_source = raw_output
 
@@ -3979,14 +4069,14 @@ def collect_douban_group_topic(output_root: Path, topic_url: str | None, input_h
                 command.extend(["--cookie", cookie])
         results.append(run_json_command("douban_group_topic_fetch", command, cwd=ROOT))
         if results[-1].status != "OK":
-            return results, [], [], SourceDecision("douban_group", "article_story_vault", "SKIPPED", "真实单帖抓取失败（优先检查登录态/运行入口）", [str(raw_output)])
+            return results, [], [], lane_scoped_dual_decision("douban_group", lane, "SKIPPED", "真实单帖抓取失败（优先检查登录态/运行入口）", article_output, story_output, [str(raw_output)])
 
     fetch_output.parent.mkdir(parents=True, exist_ok=True)
     fetch_output.write_text(raw_source.read_text(encoding="utf-8"), encoding="utf-8")
     results.append(run_json_command("douban_group_collect", [sys.executable, str(SCRIPTS / "douban_group_collect.py"), "--input", str(fetch_output), "--article-output", str(article_output), "--story-output", str(story_output)], cwd=ROOT))
     article_rows = load_jsonl(article_output)
     story_rows = load_jsonl(story_output)
-    return results, article_rows, story_rows, SourceDecision("douban_group", "article_story_vault", "CONNECTED", "已用单帖真实 raw 接入 article/story 双路", [str(raw_source), str(article_output), str(story_output)])
+    return results, article_rows, story_rows, lane_scoped_dual_decision("douban_group", lane, "CONNECTED", "已用单帖真实 raw 按 lane 拆分接入", article_output, story_output, [str(raw_source)])
 
 
 def collect_douban_sample(output_root: Path, sample_path: Path) -> tuple[list[StepResult], list[dict[str, Any]], list[dict[str, Any]], SourceDecision]:
@@ -4002,17 +4092,20 @@ def collect_douban_sample(output_root: Path, sample_path: Path) -> tuple[list[St
     return results, article_rows, story_rows, SourceDecision("douban", "article_vault", "CONNECTED", "已用通过 validate 的豆瓣影评本地样本接入 article 主链", [str(article_output)])
 
 
-def collect_toutiao_sample(output_root: Path, sample_path: Path) -> tuple[list[StepResult], list[dict[str, Any]], list[dict[str, Any]], SourceDecision]:
+def default_toutiao_sample_html() -> Path:
+    return ROOT / "tests" / "fixtures" / "toutiao" / "story.html"
+
+
+def collect_toutiao_sample(output_root: Path, sample_path: Path, lane: str = "all") -> tuple[list[StepResult], list[dict[str, Any]], list[dict[str, Any]], SourceDecision]:
     fetch_output = output_root / "sources" / "toutiao_fetch.json"
-    article_output = output_root / "article-leads" / "toutiao_article_leads.jsonl"
-    story_output = output_root / "story-leads" / "toutiao_story_leads.jsonl"
+    article_output, story_output = lane_scoped_dual_outputs(output_root, "toutiao", lane)
     results = [run_json_command("toutiao_fetch", [sys.executable, str(SCRIPTS / "toutiao_fetch.py"), "--sample-html", str(sample_path), "--output", str(fetch_output)], cwd=ROOT)]
     if results[-1].status != "OK":
-        return results, [], [], SourceDecision("toutiao", "article_story_vault", "SKIPPED", "fetch 失败", [])
+        return results, [], [], lane_scoped_dual_decision("toutiao", lane, "SKIPPED", "fetch 失败", article_output, story_output, [str(fetch_output)])
     results.append(run_json_command("toutiao_collect", [sys.executable, str(SCRIPTS / "toutiao_collect.py"), "--input", str(fetch_output), "--article-output", str(article_output), "--story-output", str(story_output)], cwd=ROOT))
     article_rows = load_jsonl(article_output)
     story_rows = load_jsonl(story_output)
-    return results, article_rows, story_rows, SourceDecision("toutiao", "article_story_vault", "CONNECTED", "已用通过 validate 的今日头条本地样本接入 article/story 双路", [str(article_output)] + ([str(story_output)] if story_rows else []))
+    return results, article_rows, story_rows, lane_scoped_dual_decision("toutiao", lane, "CONNECTED", "已用通过 validate 的今日头条本地样本按 lane 拆分接入", article_output, story_output)
 
 
 def collect_reddit_sample(output_root: Path, sample_path: Path) -> tuple[list[StepResult], list[dict[str, Any]], SourceDecision]:
@@ -4026,17 +4119,94 @@ def collect_reddit_sample(output_root: Path, sample_path: Path) -> tuple[list[St
     return results, story_rows, SourceDecision("reddit", "story_vault", "CONNECTED", "已用通过 validate 的 Reddit 匿名故事样本接入 story 主链", [str(story_output)])
 
 
-def collect_wechat_sample(output_root: Path, sample_path: Path) -> tuple[list[StepResult], list[dict[str, Any]], list[dict[str, Any]], SourceDecision]:
+def collect_wechat_sample(output_root: Path, sample_path: Path, lane: str = "all") -> tuple[list[StepResult], list[dict[str, Any]], list[dict[str, Any]], SourceDecision]:
     fetch_output = output_root / "sources" / "wechat_fetch.json"
-    article_output = output_root / "article-leads" / "wechat_article_leads.jsonl"
-    story_output = output_root / "story-leads" / "wechat_story_leads.jsonl"
+    article_output, story_output = lane_scoped_dual_outputs(output_root, "wechat", lane)
     results = [run_json_command("wechat_fetch", [sys.executable, str(SCRIPTS / "wechat_fetch.py"), "--sample-html", str(sample_path), "--output", str(fetch_output)], cwd=ROOT)]
     if results[-1].status != "OK":
-        return results, [], [], SourceDecision("wechat", "article_story_vault", "SKIPPED", "fetch 失败", [])
+        return results, [], [], lane_scoped_dual_decision("wechat", lane, "SKIPPED", "fetch 失败", article_output, story_output, [str(fetch_output)])
     results.append(run_json_command("wechat_collect", [sys.executable, str(SCRIPTS / "wechat_collect.py"), "--input", str(fetch_output), "--article-output", str(article_output), "--story-output", str(story_output)], cwd=ROOT))
     article_rows = load_jsonl(article_output)
     story_rows = load_jsonl(story_output)
-    return results, article_rows, story_rows, SourceDecision("wechat", "article_story_vault", "CONNECTED", "已用通过 validate 的微信公众号本地样本接入 article/story 双路", [str(article_output), str(story_output)])
+    return results, article_rows, story_rows, lane_scoped_dual_decision("wechat", lane, "CONNECTED", "已用通过 validate 的微信公众号本地样本按 lane 拆分接入", article_output, story_output)
+
+
+def load_wechat_subscription_urls(path: Path) -> list[str]:
+    if not path.exists():
+        return []
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    urls: list[str] = []
+    for item in payload.get("subscriptions") or []:
+        if not isinstance(item, dict) or item.get("enabled") is False:
+            continue
+        for url in item.get("article_urls") or []:
+            if isinstance(url, str) and url.startswith("https://mp.weixin.qq.com/"):
+                urls.append(url)
+    return list(dict.fromkeys(urls))
+
+
+def load_wechat_album_urls(path: Path) -> list[str]:
+    if not path.exists():
+        return []
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    urls: list[str] = []
+    for item in payload.get("albums") or []:
+        if not isinstance(item, dict) or item.get("enabled") is False:
+            continue
+        url = item.get("album_url")
+        if isinstance(url, str) and url.startswith("https://mp.weixin.qq.com/mp/appmsgalbum"):
+            urls.append(url)
+    return list(dict.fromkeys(urls))
+
+
+def discover_wechat_album_urls(output_root: Path, album_urls: list[str], album_config: Path) -> tuple[list[StepResult], list[str], SourceDecision]:
+    output = output_root / "sources" / "wechat_album_discovered.jsonl"
+    cmd = [sys.executable, str(SCRIPTS / "wechat_album_discover.py"), "--output", str(output), "--max-pages", "10"]
+    if album_config.exists():
+        cmd.extend(["--config", str(album_config)])
+    for url in album_urls:
+        cmd.extend(["--album-url", url])
+    results = [run_json_command("wechat_album_discover", cmd, cwd=ROOT)]
+    rows = load_jsonl(output)
+    urls = [str(row.get("url") or "") for row in rows if isinstance(row, dict) and str(row.get("url") or "").startswith("https://mp.weixin.qq.com/")]
+    urls = list(dict.fromkeys(urls))
+    status = "CONNECTED" if results[-1].status == "OK" and urls else "SKIPPED"
+    reason = f"已从微信公众号公开 Album 发现 {len(urls)} 个文章 URL" if urls else "公众号公开 Album 未发现可用文章 URL"
+    return results, urls, SourceDecision("wechat_album", "article_vault", status, reason, [str(output)] if output.exists() else [])
+
+
+def collect_wechat_urls(output_root: Path, urls: list[str], lane: str = "all") -> tuple[list[StepResult], list[dict[str, Any]], list[dict[str, Any]], SourceDecision]:
+    article_output, story_output = lane_scoped_dual_outputs(output_root, "wechat", lane)
+    article_output.parent.mkdir(parents=True, exist_ok=True)
+    story_output.parent.mkdir(parents=True, exist_ok=True)
+    article_output.write_text("", encoding="utf-8")
+    story_output.write_text("", encoding="utf-8")
+    results: list[StepResult] = []
+    article_rows: list[dict[str, Any]] = []
+    story_rows: list[dict[str, Any]] = []
+    connected = 0
+    for index, url in enumerate(urls, start=1):
+        fetch_output = output_root / "sources" / f"wechat_fetch_{index:02d}.json"
+        tmp_article_output = output_root / "tmp" / "wechat" / f"wechat_article_{index:02d}.jsonl"
+        tmp_story_output = output_root / "tmp" / "wechat" / f"wechat_story_{index:02d}.jsonl"
+        results.append(run_json_command("wechat_fetch", [sys.executable, str(SCRIPTS / "wechat_fetch.py"), "--url", url, "--output", str(fetch_output)], cwd=ROOT))
+        if results[-1].status != "OK":
+            continue
+        results.append(run_json_command("wechat_collect", [sys.executable, str(SCRIPTS / "wechat_collect.py"), "--input", str(fetch_output), "--article-output", str(tmp_article_output), "--story-output", str(tmp_story_output)], cwd=ROOT))
+        if results[-1].status != "OK":
+            continue
+        new_articles = load_jsonl(tmp_article_output)
+        new_stories = load_jsonl(tmp_story_output)
+        article_rows.extend(new_articles)
+        story_rows.extend(new_stories)
+        connected += len(new_articles) + len(new_stories)
+    if article_rows:
+        write_jsonl(article_output, article_rows)
+    if story_rows:
+        write_jsonl(story_output, story_rows)
+    status = "CONNECTED" if connected else "SKIPPED"
+    reason = f"已从公众号订阅公开文章 URL 接入 {connected} 条 lead" if connected else "公众号订阅清单无可用公开文章 URL 产物"
+    return results, article_rows, story_rows, lane_scoped_dual_decision("wechat", lane, status, reason, article_output, story_output)
 
 
 def collect_hotboard_sample(output_root: Path, sample_path: Path) -> tuple[list[StepResult], list[dict[str, Any]], SourceDecision]:
@@ -4175,7 +4345,7 @@ def main() -> int:
     parser.add_argument("--run-douban-group", action="store_true", help="运行豆瓣小组本地样本链路")
     parser.add_argument("--run-toutiao", action="store_true", help="运行今日头条本地样本链路")
     parser.add_argument("--run-reddit", action="store_true", help="运行 Reddit 本地样本故事链路")
-    parser.add_argument("--run-wechat", action="store_true", help="运行微信公众号本地样本链路")
+    parser.add_argument("--run-wechat", action="store_true", help="运行微信公众号本地样本或订阅公开文章 URL 链路")
     parser.add_argument("--dailyhot-article", default="", help="DailyHot 原始 API URL；留空时自动运行 dailyhot_inject.py 并摄入其 JSONL 产物")
     parser.add_argument("--run-hotboard", action="store_true", help="运行 Hotboard 本地样本 dispatch 链路")
     parser.add_argument("--run-tophub", action="store_true", help="运行 TopHub 首页热点链路")
@@ -4207,6 +4377,10 @@ def main() -> int:
     parser.add_argument("--toutiao-sample-html", help="今日头条本地 HTML 样本")
     parser.add_argument("--reddit-sample-json", help="Reddit 本地 JSON 样本")
     parser.add_argument("--wechat-sample-html", help="微信公众号本地 HTML 样本")
+    parser.add_argument("--wechat-url", action="append", default=[], help="微信公众号公开文章 URL；可重复传入")
+    parser.add_argument("--wechat-subscriptions", default=str(WECHAT_SUBSCRIPTIONS), help="微信公众号订阅清单 JSON")
+    parser.add_argument("--wechat-album-url", action="append", default=[], help="微信公众号公开 Album URL；可重复传入")
+    parser.add_argument("--wechat-albums", default=str(WECHAT_ALBUM_SUBSCRIPTIONS), help="微信公众号公开 Album 订阅清单 JSON")
     parser.add_argument("--hotboard-sample-json", help="Hotboard 本地 JSON 样本")
     parser.add_argument("--media-bilibili-input", help="B站 MediaCrawler 父内容原始 JSONL")
     parser.add_argument("--media-douyin-input", help="抖音 MediaCrawler 父内容原始 JSONL")
@@ -4227,6 +4401,14 @@ def main() -> int:
     parser.add_argument("--output-root", help="输出根目录，默认 handover-hotspot/01-DAILY-RUNS/<date>/media-intel-aios")
     args = parser.parse_args()
 
+    shared_lane_flags = {
+        "run_xhs",
+        "run_zhihu",
+        "run_tieba",
+        "run_douban_group",
+        "run_toutiao",
+        "run_wechat",
+    }
     article_lane_flags = {
         "run_dumou",
         "run_news_fallback",
@@ -4236,33 +4418,31 @@ def main() -> int:
         "run_douban",
         "run_hotboard",
         "run_tophub",
-    }
+    } | shared_lane_flags
     video_lane_flags = {
         "run_tencent",
-        "run_xhs",
         "run_netease_renjian",
-        "run_zhihu",
-        "run_tieba",
-        "run_douban_group",
-        "run_toutiao",
         "run_reddit",
-        "run_wechat",
         "run_tophub_bilibili_live",
         "run_media_bilibili",
         "run_media_douyin",
         "run_media_weibo",
         "run_media_kuaishou",
-    }
+    } | shared_lane_flags
+    article_only_flags = article_lane_flags - shared_lane_flags
+    video_only_flags = video_lane_flags - shared_lane_flags
     if args.lane == "article":
-        for flag in video_lane_flags:
+        for flag in video_only_flags:
             setattr(args, flag, False)
     elif args.lane == "video":
-        for flag in article_lane_flags:
+        for flag in article_only_flags:
             setattr(args, flag, False)
         args.dailyhot_article = "__DISABLED_FOR_VIDEO_LANE__"
 
+    dailyhot_article_requested = bool(args.dailyhot_article and args.dailyhot_article != "__DISABLED_FOR_VIDEO_LANE__")
     any_source_requested = any(
         [
+            dailyhot_article_requested,
             args.run_dumou,
             args.run_news_fallback,
             args.run_guduo,
@@ -4295,10 +4475,10 @@ def main() -> int:
         elif args.lane == "article":
             args.run_douban = True
     elif args.lane == "article":
-        for flag in video_lane_flags:
+        for flag in video_only_flags:
             setattr(args, flag, False)
     elif args.lane == "video":
-        for flag in article_lane_flags:
+        for flag in article_only_flags:
             setattr(args, flag, False)
 
     date = args.date
@@ -4384,7 +4564,7 @@ def main() -> int:
             results.append(run_json_command("route_news_fallback_leads", route_cmd, cwd=ROOT))
             add_article_rows(load_jsonl(fallback_articles))
         else:
-            results.append(StepResult(name="route_news_fallback_leads", status="ERROR", error=f"missing {fallback_input.name}"))
+            decisions.append(SourceDecision("news_fallback", "article_vault", "SKIPPED", f"缺少输入：{fallback_input}", []))
 
     if args.run_guduo:
         guduo_collected = output_root / "guduo_collected.jsonl"
@@ -4465,15 +4645,18 @@ def main() -> int:
         xiniu_collected = output_root / "xiniu_collected.jsonl"
         xiniu_articles = output_root / "article-leads" / "xiniu_article_leads.jsonl"
         sample_path = Path(args.xiniu_sample_html) if args.xiniu_sample_html else ROOT / "samples" / "xiniu-yule" / "xiniu_article_sample_01.html"
-        collect_cmd = [
-            sys.executable,
-            str(SCRIPTS / "xiniu_collect.py"),
-            "--sample-html",
-            str(sample_path),
-            "--output",
-            str(xiniu_collected),
-        ]
-        results.append(run_json_command("xiniu_collect", collect_cmd, cwd=ROOT))
+        if sample_path.exists():
+            collect_cmd = [
+                sys.executable,
+                str(SCRIPTS / "xiniu_collect.py"),
+                "--sample-html",
+                str(sample_path),
+                "--output",
+                str(xiniu_collected),
+            ]
+            results.append(run_json_command("xiniu_collect", collect_cmd, cwd=ROOT))
+        else:
+            decisions.append(SourceDecision("xiniu", "article_vault", "SKIPPED", f"缺少样本：{sample_path}", []))
         if xiniu_collected.exists():
             route_cmd = [
                 sys.executable,
@@ -4485,19 +4668,18 @@ def main() -> int:
             ]
             results.append(run_json_command("route_xiniu_leads", route_cmd, cwd=ROOT))
             add_article_rows(load_jsonl(xiniu_articles))
-        else:
-            results.append(StepResult(name="route_xiniu_leads", status="ERROR", error="missing xiniu_collected.jsonl"))
 
     if args.run_xhs:
         sample_path = Path(args.xhs_raw_input) if args.xhs_raw_input else ARTICLE_SAMPLES / "xhs" / "xhs_note_raw_real_01.jsonl"
         if sample_path.exists():
-            step_results, new_articles, new_stories, decision = collect_xhs_sample(output_root, sample_path)
+            step_results, new_articles, new_stories, decision = collect_xhs_sample(output_root, sample_path, args.lane)
             results.extend(step_results)
             add_article_rows(new_articles)
             add_story_rows(new_stories)
             decisions.append(decision)
         else:
-            decisions.append(SourceDecision("xhs_note", "article_story_vault", "SKIPPED", f"缺少样本：{sample_path}", []))
+            article_output, story_output = lane_scoped_dual_outputs(output_root, "xhs", args.lane)
+            decisions.append(lane_scoped_dual_decision("xhs_note", args.lane, "SKIPPED", f"缺少样本：{sample_path}", article_output, story_output))
 
     if args.run_netease_renjian:
         sample_path = Path(args.netease_renjian_sample_html) if args.netease_renjian_sample_html else STORY_SAMPLES / "netease-renjian" / "renjian_story_sample_01.html"
@@ -4512,7 +4694,7 @@ def main() -> int:
     if args.run_zhihu:
         mediacrawler_input = Path(args.zhihu_mediacrawler_input) if args.zhihu_mediacrawler_input else None
         if mediacrawler_input and mediacrawler_input.exists():
-            step_results, new_articles, new_stories, decision = collect_zhihu_mediacrawler_sample(output_root, mediacrawler_input)
+            step_results, new_articles, new_stories, decision = collect_zhihu_mediacrawler_sample(output_root, mediacrawler_input, args.lane)
             results.extend(step_results)
             add_article_rows(new_articles)
             add_story_rows(new_stories)
@@ -4520,25 +4702,27 @@ def main() -> int:
         else:
             sample_path = Path(args.zhihu_sample_html) if args.zhihu_sample_html else ARTICLE_SAMPLES / "zhihu" / "zhihu_story_sample_02.html"
             if sample_path.exists():
-                step_results, new_articles, new_stories, decision = collect_zhihu_sample(output_root, sample_path)
+                step_results, new_articles, new_stories, decision = collect_zhihu_sample(output_root, sample_path, args.lane)
                 results.extend(step_results)
                 add_article_rows(new_articles)
                 add_story_rows(new_stories)
                 decisions.append(decision)
             else:
                 missing = str(mediacrawler_input) if mediacrawler_input else str(sample_path)
-                decisions.append(SourceDecision("zhihu", "article_story_vault", "SKIPPED", f"缺少样本：{missing}", []))
+                article_output, story_output = lane_scoped_dual_outputs(output_root, "zhihu", args.lane)
+                decisions.append(lane_scoped_dual_decision("zhihu", args.lane, "SKIPPED", f"缺少样本：{missing}", article_output, story_output))
 
     if args.run_tieba:
         sample_path = Path(args.tieba_mediacrawler_input) if args.tieba_mediacrawler_input else ROOT / "scripts" / "tieba_mediacrawler_content_sample.jsonl"
         if sample_path.exists():
-            step_results, new_articles, new_stories, decision = collect_tieba_mediacrawler_sample(output_root, sample_path)
+            step_results, new_articles, new_stories, decision = collect_tieba_mediacrawler_sample(output_root, sample_path, args.lane)
             results.extend(step_results)
             add_article_rows(new_articles)
             add_story_rows(new_stories)
             decisions.append(decision)
         else:
-            decisions.append(SourceDecision("tieba", "article_story_vault", "SKIPPED", f"缺少样本：{sample_path}", []))
+            article_output, story_output = lane_scoped_dual_outputs(output_root, "tieba", args.lane)
+            decisions.append(lane_scoped_dual_decision("tieba", args.lane, "SKIPPED", f"缺少样本：{sample_path}", article_output, story_output))
 
     if args.run_douban:
         sample_path = Path(args.douban_sample_html) if args.douban_sample_html else ARTICLE_SAMPLES / "douban" / "douban_review_sample_01.html"
@@ -4560,24 +4744,27 @@ def main() -> int:
                 sample_path if sample_path.exists() else None,
                 args.douban_group_cookie,
                 args.douban_group_browser,
+                args.lane,
             )
             results.extend(step_results)
             add_article_rows(new_articles)
             add_story_rows(new_stories)
             decisions.append(decision)
         else:
-            decisions.append(SourceDecision("douban_group", "article_story_vault", "SKIPPED", f"缺少样本：{sample_path}", []))
+            article_output, story_output = lane_scoped_dual_outputs(output_root, "douban_group", args.lane)
+            decisions.append(lane_scoped_dual_decision("douban_group", args.lane, "SKIPPED", f"缺少样本：{sample_path}", article_output, story_output))
 
     if args.run_toutiao:
-        sample_path = Path(args.toutiao_sample_html) if args.toutiao_sample_html else ARTICLE_SAMPLES / "toutiao" / "toutiao_story_sample_01.html"
+        sample_path = Path(args.toutiao_sample_html) if args.toutiao_sample_html else default_toutiao_sample_html()
         if sample_path.exists():
-            step_results, new_articles, new_stories, decision = collect_toutiao_sample(output_root, sample_path)
+            step_results, new_articles, new_stories, decision = collect_toutiao_sample(output_root, sample_path, args.lane)
             results.extend(step_results)
             add_article_rows(new_articles)
             add_story_rows(new_stories)
             decisions.append(decision)
         else:
-            decisions.append(SourceDecision("toutiao", "article_story_vault", "SKIPPED", f"缺少样本：{sample_path}", []))
+            article_output, story_output = lane_scoped_dual_outputs(output_root, "toutiao", args.lane)
+            decisions.append(lane_scoped_dual_decision("toutiao", args.lane, "SKIPPED", f"缺少样本：{sample_path}", article_output, story_output))
 
     if args.run_reddit:
         sample_path = Path(args.reddit_sample_json) if args.reddit_sample_json else STORY_SAMPLES / "reddit" / "reddit_story_sample_01.json"
@@ -4590,15 +4777,31 @@ def main() -> int:
             decisions.append(SourceDecision("reddit", "story_vault", "SKIPPED", f"缺少样本：{sample_path}", []))
 
     if args.run_wechat:
-        sample_path = Path(args.wechat_sample_html) if args.wechat_sample_html else ARTICLE_SAMPLES / "wechat" / "wechat_story_sample_01.html"
-        if sample_path.exists():
-            step_results, new_articles, new_stories, decision = collect_wechat_sample(output_root, sample_path)
+        subscription_urls = list(args.wechat_url or []) + load_wechat_subscription_urls(Path(args.wechat_subscriptions))
+        album_urls = list(args.wechat_album_url or []) + load_wechat_album_urls(Path(args.wechat_albums))
+        discovered_urls: list[str] = []
+        if album_urls or Path(args.wechat_albums).exists():
+            album_results, discovered_urls, album_decision = discover_wechat_album_urls(output_root, list(dict.fromkeys(album_urls)), Path(args.wechat_albums))
+            results.extend(album_results)
+            decisions.append(album_decision)
+        subscription_urls = list(dict.fromkeys(subscription_urls + discovered_urls))
+        if subscription_urls:
+            step_results, new_articles, new_stories, decision = collect_wechat_urls(output_root, subscription_urls, args.lane)
             results.extend(step_results)
             add_article_rows(new_articles)
             add_story_rows(new_stories)
             decisions.append(decision)
         else:
-            decisions.append(SourceDecision("wechat", "article_story_vault", "SKIPPED", f"缺少样本：{sample_path}", []))
+            sample_path = Path(args.wechat_sample_html) if args.wechat_sample_html else ARTICLE_SAMPLES / "wechat" / "wechat_story_sample_01.html"
+            if sample_path.exists():
+                step_results, new_articles, new_stories, decision = collect_wechat_sample(output_root, sample_path, args.lane)
+                results.extend(step_results)
+                add_article_rows(new_articles)
+                add_story_rows(new_stories)
+                decisions.append(decision)
+            else:
+                article_output, story_output = lane_scoped_dual_outputs(output_root, "wechat", args.lane)
+                decisions.append(lane_scoped_dual_decision("wechat", args.lane, "SKIPPED", f"缺少订阅 URL、公开 Album URL 或样本：{sample_path}", article_output, story_output))
 
     dailyhot_article_rows: list[dict[str, Any]] = []
     dailyhot_output = output_root / "tmp" / "dailyhot"
@@ -4841,12 +5044,16 @@ def main() -> int:
     )
 
     def refetch_article_rows(retry_request: dict[str, Any]) -> list[dict[str, Any]]:
+        if args.lane == "video":
+            return []
+        if dailyhot_article_requested and args.lane == "article":
+            return []
         flags = set(retry_request.get("runnable_flags") or [])
         refetched_article_rows: list[dict[str, Any]] = []
         if "xhs" in flags and not args.run_xhs:
             sample_path = Path(args.xhs_raw_input) if args.xhs_raw_input else ARTICLE_SAMPLES / "xhs" / "xhs_note_raw_real_01.jsonl"
             if sample_path.exists():
-                step_results, new_articles, new_stories, decision = collect_xhs_sample(output_root, sample_path)
+                step_results, new_articles, new_stories, decision = collect_xhs_sample(output_root, sample_path, "article")
                 results.extend(step_results)
                 add_story_rows(new_stories)
                 decisions.append(decision)
@@ -4854,7 +5061,7 @@ def main() -> int:
         if "zhihu" in flags and not args.run_zhihu:
             sample_path = Path(args.zhihu_sample_html) if args.zhihu_sample_html else ARTICLE_SAMPLES / "zhihu" / "zhihu_story_sample_02.html"
             if sample_path.exists():
-                step_results, new_articles, new_stories, decision = collect_zhihu_sample(output_root, sample_path)
+                step_results, new_articles, new_stories, decision = collect_zhihu_sample(output_root, sample_path, "article")
                 results.extend(step_results)
                 add_story_rows(new_stories)
                 decisions.append(decision)
@@ -4868,19 +5075,29 @@ def main() -> int:
                     sample_path if sample_path.exists() else None,
                     args.douban_group_cookie,
                     args.douban_group_browser,
+                    "article",
                 )
                 results.extend(step_results)
                 add_story_rows(new_stories)
                 decisions.append(decision)
                 refetched_article_rows.extend(new_articles)
         if "wechat" in flags and not args.run_wechat:
-            sample_path = Path(args.wechat_sample_html) if args.wechat_sample_html else ARTICLE_SAMPLES / "wechat" / "wechat_story_sample_01.html"
-            if sample_path.exists():
-                step_results, new_articles, new_stories, decision = collect_wechat_sample(output_root, sample_path)
+            subscription_urls = list(args.wechat_url or []) + load_wechat_subscription_urls(Path(args.wechat_subscriptions))
+            subscription_urls = list(dict.fromkeys(subscription_urls))
+            if subscription_urls:
+                step_results, new_articles, new_stories, decision = collect_wechat_urls(output_root, subscription_urls, "article")
                 results.extend(step_results)
                 add_story_rows(new_stories)
                 decisions.append(decision)
                 refetched_article_rows.extend(new_articles)
+            else:
+                sample_path = Path(args.wechat_sample_html) if args.wechat_sample_html else ARTICLE_SAMPLES / "wechat" / "wechat_story_sample_01.html"
+                if sample_path.exists():
+                    step_results, new_articles, new_stories, decision = collect_wechat_sample(output_root, sample_path, "article")
+                    results.extend(step_results)
+                    add_story_rows(new_stories)
+                    decisions.append(decision)
+                    refetched_article_rows.extend(new_articles)
         return refetched_article_rows
 
     retry_loop = run_article_retry_loop(article_rows, story_rows, media_rows, date, refetch_article_rows, lane=args.lane)
@@ -4899,6 +5116,7 @@ def main() -> int:
     needs_retry = bool(retry_request["retry_required"])
     retry_targets = list(retry_request["targets"])
     retry_reason = str(retry_request["reason"])
+    retry_next_actions = list(retry_request.get("next_actions") or [])
 
     director_review = output_root / "director-review.md"
     feedback = output_root / "latest-feedback.md"
@@ -4909,13 +5127,15 @@ def main() -> int:
     today_hook_dispatch_md, today_hook_export_rows = build_today_hook_dispatch(date, article_rows, story_rows + emotion_rows)
     write_markdown(today_hook_dispatch, today_hook_dispatch_md)
     write_jsonl(today_hook_dispatch_jsonl, today_hook_export_rows)
-    results.append(run_zhihu_question_backfill(output_root))
+    if not (dailyhot_article_requested and args.lane == "article"):
+        results.append(run_zhihu_question_backfill(output_root))
     today_hook_dispatch_md, today_hook_export_rows = build_today_hook_dispatch(date, article_rows, story_rows + emotion_rows)
     write_markdown(today_hook_dispatch, today_hook_dispatch_md)
     write_jsonl(today_hook_dispatch_jsonl, today_hook_export_rows)
     write_markdown(director_review, build_director_review(date, article_rows, video_rows, story_rows, media_rows, results, decisions))
-    write_markdown(feedback, build_feedback(date, article_rows, video_rows, story_rows, media_rows, decisions, needs_retry, retry_targets, retry_reason, dedupe_summary, cross_day_hits))
-    write_markdown(article_approved, build_article_approved(date, article_rows))
+    write_markdown(feedback, build_feedback(date, article_rows, video_rows, story_rows, media_rows, decisions, needs_retry, retry_targets, retry_reason, retry_next_actions, dedupe_summary, cross_day_hits))
+    if args.lane != "video":
+        write_markdown(article_approved, build_article_approved(date, article_rows))
     if args.lane != "article":
         write_markdown(video_approved, build_video_approved(date, video_rows, media_rows, story_rows))
 
