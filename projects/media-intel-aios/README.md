@@ -17,6 +17,28 @@
 - 豆瓣短评/讨论属于 `audience_reaction_signal`，会进入完整来源审计；HTML 中的 `social_results` 只收 `social_discussion_signal`。
 - 需要登录态或平台风控的 live 来源会安全失败并写入审计，不应被 README 或验收结论包装成稳定直连能力。
 
+## GitHub 更新状态
+
+当前 README 对应 GitHub 分支 `feat/ruoyu-article-group-validation`，PR 为 `#1 feat: add agent-ready platform collection workflow`。
+
+最近一次收口提交为：
+
+```text
+44db3be feat: add media intel retry handoff details
+```
+
+这次提交边界只包含 `media-intel-aios` 下的文章组日度 lane、测试、README 和最小依赖说明；workspace 中其他未提交/未跟踪文件不属于本轮 GitHub 更新。提交前已用项目 `.venv` 验证：
+
+```bash
+./.venv/bin/python -m pytest tests/test_scoring.py -q
+```
+
+结果为：
+
+```text
+27 passed
+```
+
 ## 环境准备
 
 需要 Python 3.11。仓库依赖在 `requirements.txt` 中，目前只有运行和测试所需的最小依赖：
