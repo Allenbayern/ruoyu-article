@@ -1,0 +1,34 @@
+{
+  "project": "若雨随影文章组",
+  "topic_domain": "影视娱乐",
+  "publishing_platforms": ["今日头条", "微信公众号"],
+  "sources": [
+    {
+      "name": "微博热搜公开页",
+      "platform": "weibo",
+      "mode": "optional_cookie",
+      "url": "https://s.weibo.com/top/summary",
+      "cookie_env": "WEIBO_COOKIE"
+    },
+    {
+      "name": "知乎热榜公开页",
+      "platform": "zhihu",
+      "mode": "optional_cookie",
+      "url": "https://www.zhihu.com/hot",
+      "cookie_env": "ZHIHU_COOKIE"
+    },
+    {
+      "name": "B站全站排行榜",
+      "platform": "bilibili",
+      "mode": "optional_cookie",
+      "url": "https://www.bilibili.com/v/popular/rank/all",
+      "cookie_env": "BILIBILI_COOKIE"
+    },
+    {
+      "name": "豆瓣电影榜单",
+      "platform": "douban",
+      "mode": "public_url",
+      "url": "https://movie.douban.com/chart"
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "hotboard_source": "hotlist_web",
+  "items": [
+    {
+      "rank": 1,
+      "title": "一个真实故事为什么突然刷屏",
+      "hot": 1289000,
+      "url": "https://mp.weixin.qq.com/s/sample_article_01",
+      "source": "微信公众号"
+    },
+    {
+      "rank": 2,
+      "title": "B站故事区爆款评论正在发酵",
+      "hot": 988000,
+      "url": "https://www.bilibili.com/video/BV1sample001",
+      "source": "哔哩哔哩"
+    },
+    {
+      "rank": 3,
+      "title": "知乎高赞回答讲述一场迟来的误会",
+      "hot": 760000,
+      "url": "https://www.zhihu.com/question/123456789/answer/987654321",
+      "source": "知乎"
+    }
+  ]
+}
