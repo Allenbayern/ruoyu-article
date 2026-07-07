@@ -269,7 +269,7 @@ def _llm_semantic_signal_scores(row: dict[str, Any]) -> dict[str, int]:
     if cache_path.exists():
         try:
             cached = json.loads(cache_path.read_text(encoding="utf-8"))
-            if isinstance(cached, dict):
+            if isinstance(cached, dict) and not cached.get("error"):
                 return {"backend": 1, "backend_name": 0, "backend_label": "llm", "backend_unavailable": 0, **{k: int(cached.get(k, 0) or 0) for k in ["anchor", "conflict", "analysis", "emotion", "reverse", "industry_reversal"]}}
         except Exception:
             pass
@@ -4429,6 +4429,11 @@ def main() -> int:
         "run_media_weibo",
         "run_media_kuaishou",
     } | shared_lane_flags
+    explicit_source_requested = any(
+        bool(getattr(args, flag, False))
+        for flag in article_lane_flags | video_lane_flags
+    ) or bool(args.dailyhot_article)
+
     article_only_flags = article_lane_flags - shared_lane_flags
     video_only_flags = video_lane_flags - shared_lane_flags
     if args.lane == "article":
@@ -4475,11 +4480,13 @@ def main() -> int:
         elif args.lane == "article":
             args.run_douban = True
     elif args.lane == "article":
-        for flag in video_only_flags:
-            setattr(args, flag, False)
+        if not explicit_source_requested:
+            for flag in video_only_flags:
+                setattr(args, flag, False)
     elif args.lane == "video":
-        for flag in article_only_flags:
-            setattr(args, flag, False)
+        if not explicit_source_requested:
+            for flag in article_only_flags:
+                setattr(args, flag, False)
 
     date = args.date
     default_output_name = "media-intel-aios" if args.lane == "all" else f"media-intel-aios-{args.lane}-lane"
@@ -4644,8 +4651,9 @@ def main() -> int:
     if args.run_xiniu:
         xiniu_collected = output_root / "xiniu_collected.jsonl"
         xiniu_articles = output_root / "article-leads" / "xiniu_article_leads.jsonl"
-        sample_path = Path(args.xiniu_sample_html) if args.xiniu_sample_html else ROOT / "samples" / "xiniu-yule" / "xiniu_article_sample_01.html"
-        if sample_path.exists():
+        sample_path = Path(args.xiniu_sample_html) if args.xiniu_sample_html else None
+        expected_sample_path = sample_path or ROOT / "samples" / "xiniu-yule" / "xiniu_article_sample_01.html"
+        if sample_path and sample_path.exists():
             collect_cmd = [
                 sys.executable,
                 str(SCRIPTS / "xiniu_collect.py"),
@@ -4656,7 +4664,7 @@ def main() -> int:
             ]
             results.append(run_json_command("xiniu_collect", collect_cmd, cwd=ROOT))
         else:
-            decisions.append(SourceDecision("xiniu", "article_vault", "SKIPPED", f"缺少样本：{sample_path}", []))
+            decisions.append(SourceDecision("xiniu", "article_vault", "SKIPPED", f"缺少样本：{expected_sample_path}", []))
         if xiniu_collected.exists():
             route_cmd = [
                 sys.executable,
@@ -4666,8 +4674,10 @@ def main() -> int:
                 "--article-output",
                 str(xiniu_articles),
             ]
-            results.append(run_json_command("route_xiniu_leads", route_cmd, cwd=ROOT))
+            route_result = run_json_command("route_xiniu_leads", route_cmd, cwd=ROOT)
+            results.append(route_result)
             add_article_rows(load_jsonl(xiniu_articles))
+            decisions.append(SourceDecision("xiniu", "article_vault", "CONNECTED", "犀牛娱乐样本已接入", [str(xiniu_articles)]))
 
     if args.run_xhs:
         sample_path = Path(args.xhs_raw_input) if args.xhs_raw_input else ARTICLE_SAMPLES / "xhs" / "xhs_note_raw_real_01.jsonl"
