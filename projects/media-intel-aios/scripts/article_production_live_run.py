@@ -27,8 +27,15 @@ ROOT = SCRIPT_DIR.parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-import film_tv_maoyan_observation as maoyan  # noqa: E402
-import guduo_fetch as guduo  # noqa: E402
+try:
+    import film_tv_maoyan_observation as maoyan  # noqa: E402
+except ModuleNotFoundError:
+    maoyan = None  # type: ignore[assignment]
+
+try:
+    import guduo_fetch as guduo  # noqa: E402
+except ModuleNotFoundError:
+    guduo = None  # type: ignore[assignment]
 
 RUNNER_VERSION = "0.3.4"
 DEFAULT_OUTPUT_BASE = ROOT / "outputs" / "article_production"
@@ -782,6 +789,21 @@ def fetch_douyin_movie_hot_signal() -> dict[str, Any]:
 def fetch_maoyan() -> dict[str, Any]:
     timer = time.perf_counter()
     started_at = now_utc()
+    if maoyan is None:
+        return {
+            **_source_meta("maoyan_realtime_boxoffice"),
+            "fetch_path": "direct_live",
+            "started_at": started_at,
+            "finished_at": now_utc(),
+            "duration_ms": elapsed_ms(timer),
+            "success": False,
+            "raw_url": None,
+            "status": "live_dependency_missing",
+            "fields_extracted": [],
+            "observation": {},
+            "candidate": {},
+            "error": "missing module: film_tv_maoyan_observation",
+        }
     observation = maoyan.fetch_and_build_maoyan_observation()
     candidate = maoyan.generate_film_tv_article_candidate(observation)
     success = bool(observation.get("extracted_items")) and str(observation.get("access_status", "")).startswith("PASS")
@@ -804,6 +826,20 @@ def fetch_maoyan() -> dict[str, Any]:
 def fetch_guduo(rank_date: str | None = None) -> dict[str, Any]:
     timer = time.perf_counter()
     started_at = now_utc()
+    if guduo is None:
+        return {
+            **_source_meta("guduo"),
+            "fetch_path": "direct_live",
+            "started_at": started_at,
+            "finished_at": now_utc(),
+            "duration_ms": elapsed_ms(timer),
+            "success": False,
+            "raw_url_pattern": "http://d2.guduomedia.com/m/v3/billboard/list?type=DAILY&category={CATEGORY}&date={DATE}&platformId=",
+            "status": "live_dependency_missing",
+            "fields_extracted": [],
+            "results": {},
+            "error": {"dependency": "missing module: guduo_fetch"},
+        }
     results: dict[str, Any] = {}
     category_errors: dict[str, str] = {}
     for category in ["NETWORK_DRAMA", "NETWORK_VARIETY", "NETWORK_MOVIE", "ALL_ANIME"]:

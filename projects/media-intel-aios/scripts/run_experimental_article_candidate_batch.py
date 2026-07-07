@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Run second-batch experimental article candidates.
 
-Goal: turn bootstrap failure samples into reviewable article candidate packages,
-not publish-ready output. Reads the real local mirror article approved file,
-extracts article candidates, ranks A/B/C, and collects failures for pipeline
-repair.
+Goal: turn scrubbed experimental samples into reviewable article candidate
+packages, not publish-ready output. Reads the repository-local sample article
+approved file, extracts article candidates, ranks A/B/C, and collects failures
+for pipeline repair.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from typing import Any
 TZ = timezone(timedelta(hours=8))
 WORKSPACE = Path(__file__).resolve().parents[3]
 ROOT = Path(__file__).resolve().parents[1]
-ARTICLE_SAMPLE = WORKSPACE / "handover-hotspot" / "04-QUALITY-FEEDBACK" / "article-approved-latest.md"
+ARTICLE_SAMPLE = ROOT / "article-vault" / "samples" / "experimental" / "article-approved-latest.md"
 OUTPUT_DIR = ROOT / "tmp" / "bootstrap_experimental"
 RUN_DATE = datetime.now(TZ).date().isoformat()
 OUTPUT_PATH = OUTPUT_DIR / f"daily_article_experimental_candidate_{RUN_DATE}.json"
