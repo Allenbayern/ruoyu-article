@@ -1,0 +1,63 @@
+{
+  "article_id": "art-A",
+  "slot": "A",
+  "state": "R8 review-ready",
+  "title": "豆瓣8.1分，为何留不住《争洛阳》的观众",
+  "claim_coverage": "complete",
+  "claim_mappings": [
+    {
+      "claim_id": "A1",
+      "source_id": "src-A01",
+      "locator": "7月25日晚",
+      "draft_locator": "line 5"
+    },
+    {
+      "claim_id": "A2",
+      "source_id": "src-A01",
+      "locator": "8.1",
+      "draft_locator": "line 11"
+    },
+    {
+      "claim_id": "A3",
+      "source_id": "src-A02",
+      "locator": "票房",
+      "draft_locator": "line 11"
+    },
+    {
+      "claim_id": "A4",
+      "source_id": "src-A02",
+      "locator": "退票",
+      "draft_locator": "line 19"
+    },
+    {
+      "claim_id": "A5",
+      "source_id": "src-A02",
+      "locator": "动画",
+      "draft_locator": "line 23"
+    },
+    {
+      "claim_id": "A6",
+      "source_id": "src-A01",
+      "locator": "撤档",
+      "draft_locator": "line 5"
+    },
+    {
+      "claim_id": "A7",
+      "source_id": "src-A02",
+      "locator": "票房",
+      "draft_locator": "line 33"
+    }
+  ],
+  "concrete_support_types": [
+    "box office data",
+    "review score",
+    "official announcement",
+    "industry analysis",
+    "audience feedback"
+  ],
+  "html_delivery_state": "not_requested",
+  "publication_authorization": "not_authorized",
+  "primary_atom": "一部豆瓣8.1分的动画，为什么留不住观众",
+  "reader_intent": "好奇",
+  "angle": "高分低票房：叫好不叫座的国产动画困境"
+}

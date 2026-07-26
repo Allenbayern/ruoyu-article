@@ -1,0 +1,50 @@
+{
+  "article_id": "art-C",
+  "slot": "C",
+  "state": "R8 review-ready",
+  "title": "一封家书，为什么能走到十九亿",
+  "claim_coverage": "complete",
+  "claim_mappings": [
+    {
+      "claim_id": "C1",
+      "source_id": "src-C04",
+      "locator": "377万",
+      "draft_locator": "line 5"
+    },
+    {
+      "claim_id": "C2",
+      "source_id": "src-C04",
+      "locator": "连续五周",
+      "draft_locator": "line 9"
+    },
+    {
+      "claim_id": "C3",
+      "source_id": "src-C04",
+      "locator": "19亿",
+      "draft_locator": "line 9"
+    },
+    {
+      "claim_id": "C4",
+      "source_id": "src-C01",
+      "locator": "中小成本",
+      "draft_locator": "line 5"
+    },
+    {
+      "claim_id": "C5",
+      "source_id": "src-C04",
+      "locator": "侨批",
+      "draft_locator": "line 13"
+    }
+  ],
+  "concrete_support_types": [
+    "box office data",
+    "filmography background",
+    "audience reception",
+    "production detail"
+  ],
+  "html_delivery_state": "not_requested",
+  "publication_authorization": "not_authorized",
+  "primary_atom": "没有明星没有IP，一部讲阿嬷的电影凭什么逆袭成年度黑马",
+  "reader_intent": "知识获取",
+  "angle": "口碑逆袭的底层逻辑：情感叙事打败流量公式"
+}

@@ -1,0 +1,85 @@
+{
+  "run_id": "2026-07-27/controlled-004",
+  "captured_at": "2026-07-27T02:41:18.630190",
+  "timezone": "+08:00",
+  "sources": [
+    {
+      "source_id": "src-A01",
+      "role": "confirmed-primary",
+      "independence_group": "sina",
+      "url": "https://example.com/original-url",
+      "title": "Source src-A01",
+      "candidate_id": "cand-004",
+      "relative_path": "sources/src-A01-sina-withdrawal.html",
+      "captured_at": "2026-07-27T02:41:18.630190",
+      "sha256": "53eed56af1806c23fcb5c0d0ec13b6f53ebda0461d771b0f92b4cc293f110d66",
+      "size_bytes": 98633,
+      "usable": true
+    },
+    {
+      "source_id": "src-A02",
+      "role": "confirmed-primary",
+      "independence_group": "sina",
+      "url": "https://example.com/original-url",
+      "title": "Source src-A02",
+      "candidate_id": "cand-004",
+      "relative_path": "sources/src-A02-sina-deny.html",
+      "captured_at": "2026-07-27T02:41:18.630190",
+      "sha256": "60f7afdb3605a948d0c6ab12ec3817d2ef899a0144505474706d3c008633c422",
+      "size_bytes": 99124,
+      "usable": true
+    },
+    {
+      "source_id": "src-C01",
+      "role": "confirmed-primary",
+      "independence_group": "sina",
+      "url": "https://example.com/original-url",
+      "title": "Source src-C01",
+      "candidate_id": "cand-003",
+      "relative_path": "sources/src-C01-sina-darkhorse.html",
+      "captured_at": "2026-07-27T02:41:18.630190",
+      "sha256": "d57154a73488b8e68244caca0ce21da5e578eda262f2c7a672747efdcd60a234",
+      "size_bytes": 84201,
+      "usable": true
+    },
+    {
+      "source_id": "src-C02",
+      "role": "confirmed-primary",
+      "independence_group": "toutiao",
+      "url": "https://example.com/original-url",
+      "title": "Source src-C02",
+      "candidate_id": "cand-003",
+      "relative_path": "sources/src-C02-toutiao-data.html",
+      "captured_at": "2026-07-27T02:41:18.630190",
+      "sha256": "9b56a6acdcb27eb620b5ee1ad870ad67964c70131b6fc31e8bd946b39c1e309e",
+      "size_bytes": 72914,
+      "usable": true
+    },
+    {
+      "source_id": "src-C04",
+      "role": "independent-review",
+      "independence_group": "wikipedia",
+      "url": "https://example.com/original-url",
+      "title": "Source src-C04",
+      "candidate_id": "cand-003",
+      "relative_path": "sources/src-C04-wiki.html",
+      "captured_at": "2026-07-27T02:41:18.630190",
+      "sha256": "d5246cd7a902a21588e7056b06020d3cffc8afbce19d286df373a65f5baf8c03",
+      "size_bytes": 536119,
+      "usable": true
+    },
+    {
+      "source_id": "src-B01",
+      "role": "confirmed-primary",
+      "independence_group": "sina",
+      "url": "https://k.sina.com.cn/article_7857201856_1d45362c001908gna6.html",
+      "title": "AI影响太大！横店演员失业卖凉皮：演太监都得1米8",
+      "candidate_id": "cand-010",
+      "relative_path": "sources/src-B01-sina-ai-impact.html",
+      "captured_at": "2026-07-27T03:04:00+08:00",
+      "sha256": "199cd04d7925b7f0907251a916f5a28a7a972f38acfcf3a32b72e343194d29aa",
+      "size_bytes": 84159,
+      "usable": true
+    }
+  ]
+}

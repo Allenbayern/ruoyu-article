@@ -1,0 +1,401 @@
+{
+  "run_id": "2026-07-27/controlled-004",
+  "observed_at": "2026-07-27T02:38:56.116559+08:00",
+  "timezone": "+08:00",
+  "candidates": [
+    {
+      "candidate_id": "cand-001",
+      "work": "功夫女足",
+      "core_person_or_event": "周星驰时隔7年新片：上映19天票房破8亿+，豆瓣6.6，'难看'热搜持续争议",
+      "primary_atom": "周星驰的喜剧魔法还在，但观众的笑点已经变了",
+      "reader_intent": "怀旧",
+      "angle": "票房与口碑的冰火两重天：为什么观众一边骂一边买票",
+      "title_skeleton": "周星驰也救不了口碑",
+      "ending_destination": "喜剧创作的代际错位",
+      "event_time": "2026-07-08T00:00:00+08:00",
+      "observed_at": "2026-07-27T02:38:56.116559+08:00",
+      "freshness_window": "fermenting-1-3d",
+      "current_trigger": "暑期档持续热映，讨论从'难看'转向'为什么还能大卖'，二次发酵",
+      "content_value_scores": {
+        "emotion": 3,
+        "narrative": 3,
+        "share": 3,
+        "human": 2,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary",
+        "independent-review"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2",
+        "e3",
+        "e4",
+        "e5"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2",
+        "a3",
+        "a4"
+      ],
+      "recommendation": "A",
+      "reject_or_wait_reason": ""
+    },
+    {
+      "candidate_id": "cand-002",
+      "work": "张小斐",
+      "core_person_or_event": "为周星驰新片封闭训练半年，体脂率从24%降至16%，零片酬，豆瓣评分不涨反跌",
+      "primary_atom": "一个女演员用了半年时间把自己变成运动员，换来的却是'难看'",
+      "reader_intent": "共鸣",
+      "angle": "流量时代，认真演戏的女演员的代价与尴尬",
+      "title_skeleton": "体脂率降到16%的女演员",
+      "ending_destination": "好演员的代价谁来买单",
+      "event_time": "2026-07-10T00:00:00+08:00",
+      "observed_at": "2026-07-27T02:38:56.116559+08:00",
+      "freshness_window": "fermenting-1-3d",
+      "current_trigger": "电影热映第19天，票房走高但口碑两极，人物故事仍有空间",
+      "content_value_scores": {
+        "emotion": 3,
+        "narrative": 3,
+        "share": 2,
+        "human": 3,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2",
+        "e3"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2",
+        "a3"
+      ],
+      "recommendation": "B",
+      "reject_or_wait_reason": ""
+    },
+    {
+      "candidate_id": "cand-003",
+      "work": "给阿嬷的情书",
+      "core_person_or_event": "2026年最大黑马：潮汕素人电影累计票房17亿+，挤进年度前四",
+      "primary_atom": "没有明星没有IP，一部讲阿嬷的电影凭什么逆袭成年度黑马",
+      "reader_intent": "知识获取",
+      "angle": "口碑逆袭的底层逻辑：情感叙事打败流量公式",
+      "title_skeleton": "没有明星的黑马",
+      "ending_destination": "电影市场的价值回归",
+      "event_time": "2026-04-30T00:00:00+08:00",
+      "observed_at": "2026-07-27T02:38:56.116559+08:00",
+      "freshness_window": "revival",
+      "current_trigger": "暑期档长尾持续，预测票房不断上调，已成为年度现象级作品",
+      "content_value_scores": {
+        "emotion": 2,
+        "narrative": 3,
+        "share": 2,
+        "human": 3,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary",
+        "independent-review"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2",
+        "e3",
+        "e4",
+        "e5"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2",
+        "a3",
+        "a4"
+      ],
+      "recommendation": "C",
+      "reject_or_wait_reason": ""
+    },
+    {
+      "candidate_id": "cand-004",
+      "work": "三国第一部：争洛阳",
+      "core_person_or_event": "上映16天豆瓣8.1分却只有8200万票房，7月26日晚宣布撤档",
+      "primary_atom": "一部豆瓣8.1分的动画，为什么留不住观众",
+      "reader_intent": "吃瓜",
+      "angle": "高分低票房：叫好不叫座的国产动画困境",
+      "title_skeleton": "豆瓣8.1分也救不了",
+      "ending_destination": "国产动画的市场错位",
+      "event_time": "2026-07-26T22:00:00+08:00",
+      "observed_at": "2026-07-27T02:38:56.116559+08:00",
+      "freshness_window": "same-day",
+      "current_trigger": "昨晚宣布撤档，冲上热搜",
+      "content_value_scores": {
+        "emotion": 3,
+        "narrative": 3,
+        "share": 3,
+        "human": 2,
+        "freshness": 3
+      },
+      "source_roles": [
+        "confirmed-primary",
+        "independent-review"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2",
+        "e3",
+        "e4",
+        "e5"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2",
+        "a3"
+      ],
+      "recommendation": "A",
+      "reject_or_wait_reason": ""
+    },
+    {
+      "candidate_id": "cand-005",
+      "work": "暑期档票房",
+      "core_person_or_event": "截至7月下旬暑期档票房突破40亿，功夫女足和给阿嬷的情书领跑",
+      "primary_atom": "票房回暖了，但回暖的是类型还是运气",
+      "reader_intent": "好奇",
+      "angle": "数据背后的结构性变化：小成本情感片vs大IP喜剧",
+      "title_skeleton": "40亿暑期档的秘密",
+      "ending_destination": "中国电影市场的结构性变化",
+      "event_time": "2026-07-27T00:00:00+08:00",
+      "observed_at": "2026-07-27T02:38:56.116559+08:00",
+      "freshness_window": "fermenting-1-3d",
+      "current_trigger": "暑期档过半，票房数据持续刷新",
+      "content_value_scores": {
+        "emotion": 1,
+        "narrative": 2,
+        "share": 1,
+        "human": 1,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2"
+      ],
+      "concrete_anchor_ids": [
+        "a1"
+      ],
+      "recommendation": "Archive",
+      "reject_or_wait_reason": "行业数据方向不符合若雨随影'借电影看人生'定位"
+    },
+    {
+      "candidate_id": "cand-006",
+      "work": "白鹿替身打码",
+      "core_person_or_event": "电影《莫离》正片替身脸部打码，引发演员替身使用行业讨论",
+      "primary_atom": "一个马赛克，撕开了流量演员的遮羞布",
+      "reader_intent": "吃瓜",
+      "angle": "替身打码背后的产业问题：观众到底在为什么买单",
+      "title_skeleton": "被马赛克的替身",
+      "ending_destination": "流量时代的表演真相",
+      "event_time": "2026-07-02T00:00:00+08:00",
+      "observed_at": "2026-07-27T02:38:56.116559+08:00",
+      "freshness_window": "fermenting-1-3d",
+      "current_trigger": "事件持续发酵，同剧男演员五替内幕也被挖出",
+      "content_value_scores": {
+        "emotion": 3,
+        "narrative": 2,
+        "share": 3,
+        "human": 2,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2"
+      ],
+      "recommendation": "Wait",
+      "reject_or_wait_reason": "电视剧而非电影，与若雨随影电影定位有偏差；但娱乐话题性强，可做备选"
+    },
+    {
+      "candidate_id": "cand-007",
+      "work": "四渡",
+      "core_person_or_event": "革命历史片暑期档口碑票房双收：IMAX实拍，青年观众占比意外走高",
+      "primary_atom": "主旋律电影找到了让年轻人买单的方法",
+      "reader_intent": "好奇",
+      "angle": "主旋律商业化的成功样本：青年观众为什么买账",
+      "title_skeleton": "主旋律也能卖座",
+      "ending_destination": "类型片的边界消融",
+      "event_time": "2026-07-01T00:00:00+08:00",
+      "observed_at": "2026-07-27T02:38:56.116559+08:00",
+      "freshness_window": "revival",
+      "current_trigger": "上映近一月仍保持话题度，青年观众口碑发酵",
+      "content_value_scores": {
+        "emotion": 2,
+        "narrative": 2,
+        "share": 2,
+        "human": 2,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2",
+        "e3"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2"
+      ],
+      "recommendation": "Archive",
+      "reject_or_wait_reason": "上映已近一月，新鲜度不足；但与若雨随影'借电影看人生'契合度提升，可做备选"
+    },
+    {
+      "candidate_id": "cand-008",
+      "work": "特立独行",
+      "core_person_or_event": "白敬亭魏翔暑期喜剧，现实主义职场题材，票房稳定",
+      "primary_atom": "国产喜剧从无厘头走向现实关怀",
+      "reader_intent": "好奇",
+      "angle": "喜剧类型的社会化转型",
+      "title_skeleton": "喜剧不再只是搞笑",
+      "ending_destination": "类型片的进化",
+      "event_time": "2026-07-03T00:00:00+08:00",
+      "observed_at": "2026-07-27T02:38:56.116559+08:00",
+      "freshness_window": "fermenting-1-3d",
+      "current_trigger": "暑期档热映中，口碑稳定",
+      "content_value_scores": {
+        "emotion": 2,
+        "narrative": 2,
+        "share": 2,
+        "human": 2,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2"
+      ],
+      "concrete_anchor_ids": [
+        "a1"
+      ],
+      "recommendation": "Archive",
+      "reject_or_wait_reason": "缺乏独特引爆点，竞争不过功夫女足的喜剧话题度"
+    },
+    {
+      "candidate_id": "cand-009",
+      "work": "八仙！",
+      "core_person_or_event": "全年龄合家欢动画，传统IP再演绎，上映第二周",
+      "primary_atom": "传统IP如何在暑期档找到新一代观众",
+      "reader_intent": "怀旧",
+      "angle": "经典IP的现代化改造：八仙故事的当代讲法",
+      "title_skeleton": "八仙过海的新讲法",
+      "ending_destination": "传统文化IP的商业化",
+      "event_time": "2026-07-18T00:00:00+08:00",
+      "observed_at": "2026-07-27T02:38:56.116559+08:00",
+      "freshness_window": "fermenting-1-3d",
+      "current_trigger": "上映第二周，家庭观众增加",
+      "content_value_scores": {
+        "emotion": 2,
+        "narrative": 2,
+        "share": 2,
+        "human": 2,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2"
+      ],
+      "recommendation": "Archive",
+      "reject_or_wait_reason": "与cand-004同为国产动画但撤档话题更有冲突性，本候选仅作备选"
+    },
+    {
+      "candidate_id": "cand-010",
+      "work": "横店群演生存",
+      "core_person_or_event": "横店群演生存困境：演太监都得1米8，失业后摆摊卖凉皮",
+      "primary_atom": "光鲜影视工业背后，群演的生存危机",
+      "reader_intent": "吃瓜",
+      "angle": "影视工业底层的真实生存：当群演比当网红还难",
+      "title_skeleton": "演太监都得1米8",
+      "ending_destination": "流量时代对普通从业者的挤压",
+      "event_time": "2026-07-25T00:00:00+08:00",
+      "observed_at": "2026-07-27T02:38:56.116559+08:00",
+      "freshness_window": "same-day",
+      "current_trigger": "新闻持续引发对群演生态的关注，多个平台跟进",
+      "content_value_scores": {
+        "emotion": 3,
+        "narrative": 3,
+        "share": 3,
+        "human": 3,
+        "freshness": 3
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2",
+        "e3"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2"
+      ],
+      "recommendation": "Wait",
+      "reject_or_wait_reason": "非电影话题，是影视产业新闻；但人物故事极强，评分最高，作为高优先级备选"
+    },
+    {
+      "candidate_id": "cand-011",
+      "work": "国产动画困局",
+      "core_person_or_event": "暑期档三部国产动画相继撤档/低票房，曾经'国漫崛起'的口号面临现实考验",
+      "primary_atom": "国漫崛起的口号喊了十年，观众还在等一部真正能打的",
+      "reader_intent": "吃瓜",
+      "angle": "国产动画市场错位：高口碑低票房的根源",
+      "title_skeleton": "国漫崛起的真相",
+      "ending_destination": "国产动画的产业困境",
+      "event_time": "2026-07-26T00:00:00+08:00",
+      "observed_at": "2026-07-27T02:38:56.116559+08:00",
+      "freshness_window": "same-day",
+      "current_trigger": "三国争洛阳撤档引发对国产动画命运的新一轮讨论",
+      "content_value_scores": {
+        "emotion": 3,
+        "narrative": 2,
+        "share": 3,
+        "human": 2,
+        "freshness": 3
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2",
+        "e3"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2"
+      ],
+      "recommendation": "Archive",
+      "reject_or_wait_reason": "过度依赖cand-004的同源事件，叙事角度不同但核心事件重复，降低优先级"
+    }
+  ]
+}

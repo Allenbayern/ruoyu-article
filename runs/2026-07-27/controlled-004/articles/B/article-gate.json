@@ -1,0 +1,56 @@
+{
+  "article_id": "art-B",
+  "slot": "B",
+  "state": "R8 review-ready",
+  "title": "镜头之外，横店群演在等一份活",
+  "claim_coverage": "complete",
+  "claim_mappings": [
+    {
+      "claim_id": "B1",
+      "source_id": "src-B01",
+      "locator": "AI短剧占了95%",
+      "draft_locator": "AI冲击背景"
+    },
+    {
+      "claim_id": "B2",
+      "source_id": "src-B01",
+      "locator": "徐梦强",
+      "draft_locator": "核心人物"
+    },
+    {
+      "claim_id": "B3",
+      "source_id": "src-B01",
+      "locator": "1米8",
+      "draft_locator": "群演门槛"
+    },
+    {
+      "claim_id": "B4",
+      "source_id": "src-B01",
+      "locator": "凉皮",
+      "draft_locator": "转行谋生"
+    },
+    {
+      "claim_id": "B5",
+      "source_id": "src-B01",
+      "locator": "群演",
+      "draft_locator": "群体处境"
+    },
+    {
+      "claim_id": "B6",
+      "source_id": "src-B01",
+      "locator": "中国网络视听协会",
+      "draft_locator": "行业权威数据"
+    }
+  ],
+  "concrete_support_types": [
+    "wage data",
+    "industry statistics",
+    "personal testimony",
+    "livelihood analysis"
+  ],
+  "html_delivery_state": "not_requested",
+  "publication_authorization": "not_authorized",
+  "primary_atom": "光鲜影视工业背后，群演的生存危机",
+  "reader_intent": "吃瓜",
+  "angle": "影视工业底层的真实生存：当群演比当网红还难"
+}
