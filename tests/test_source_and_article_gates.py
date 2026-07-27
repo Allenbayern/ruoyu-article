@@ -381,7 +381,12 @@ def test_article_must_prove_claim_ids_match_evidence(tmp_path: Path):
         "writing_brief_path": "slots/A/writing-brief.md",
         "title": "一个合格的标题",
         "claim_coverage": "complete",
-        "claim_mappings": [{"claim_id": "C1", "source_id": "S1", "locator": "text"}],
+        "material_claim_ids": ["C1"],
+        "claim_mappings": [{
+            "claim_id": "C1", "claim_text": "文", "draft_locator": "文",
+            "claim_type": "fact", "source_id": "S1", "locator": "text",
+            "support_status": "direct", "limitation": "",
+        }],
         "concrete_support_types": ["character", "scene"],
         "html_delivery_state": "withheld",
         "publication_authorization": "not_authorized",
@@ -390,6 +395,31 @@ def test_article_must_prove_claim_ids_match_evidence(tmp_path: Path):
     evidence_ids = {"C1"}
     errors = validate_article_stage(article, evidence_ids, tmp_path)
     assert not any("must_prove" in err.lower() for err in errors)
+
+
+def test_article_stage_rejects_non_string_claim_type_without_crashing(tmp_path: Path):
+    from article_group.prewrite import validate_article_stage
+
+    _want_text("文" * 1500, tmp_path / "slots" / "A" / "draft.md")
+    _want_text("evidence", tmp_path / "slots" / "A" / "evidence-pack.md")
+    _want_text("brief", tmp_path / "slots" / "A" / "writing-brief.md")
+    article = {
+        "article_id": "art-A", "slot": "A", "state": "R8 review-ready",
+        "markdown_path": "slots/A/draft.md", "evidence_pack_path": "slots/A/evidence-pack.md",
+        "writing_brief_path": "slots/A/writing-brief.md", "title": "标题",
+        "claim_coverage": "complete", "material_claim_ids": ["C1"],
+        "claim_mappings": [{
+            "claim_id": "C1", "claim_text": "文", "draft_locator": "文",
+            "claim_type": ["fact"], "source_id": "S1", "locator": "text",
+            "support_status": "direct", "limitation": "",
+        }],
+        "concrete_support_types": ["character", "scene"],
+        "html_delivery_state": "withheld", "publication_authorization": "not_authorized",
+    }
+
+    errors = validate_article_stage(article, {"C1"}, tmp_path)
+
+    assert any("claim_mapping_invalid_type:art-A:C1" in error for error in errors)
 
 
 def test_article_short_draft_is_rejected_by_article_stage(tmp_path: Path):
@@ -408,7 +438,12 @@ def test_article_short_draft_is_rejected_by_article_stage(tmp_path: Path):
         "writing_brief_path": "slots/A/writing-brief.md",
         "title": "标题",
         "claim_coverage": "complete",
-        "claim_mappings": [{"claim_id": "C1", "source_id": "S1", "locator": "text"}],
+        "material_claim_ids": ["C1"],
+        "claim_mappings": [{
+            "claim_id": "C1", "claim_text": "文", "draft_locator": "文",
+            "claim_type": "fact", "source_id": "S1", "locator": "text",
+            "support_status": "direct", "limitation": "",
+        }],
         "concrete_support_types": ["character", "scene"],
         "html_delivery_state": "withheld",
         "publication_authorization": "not_authorized",

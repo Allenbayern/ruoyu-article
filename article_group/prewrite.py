@@ -424,7 +424,12 @@ def validate_article_stage(
     if title_chars > 30:
         errors.append(f"article_{aid}_title_too_long_{title_chars}")
 
-    # Must-prove claim coverage
+    # Must-prove claim coverage and verifiable material-claim inventory.
+    from .workflow import validate_claim_inventory
+
+    markdown_text = md_path.read_text(encoding="utf-8")
+    inventory_errors = validate_claim_inventory(article, markdown_text)
+    errors.extend(f"article_{aid}_{error}" for error in inventory_errors)
     claim_ids = {
         cm.get("claim_id", "")
         for cm in (article.get("claim_mappings") or [])
