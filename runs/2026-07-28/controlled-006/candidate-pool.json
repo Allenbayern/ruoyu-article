@@ -1,0 +1,355 @@
+{
+  "run_id": "2026-07-28/controlled-006",
+  "observed_at": "2026-07-27T18:35:40.438067+08:00",
+  "timezone": "+08:00",
+  "candidates": [
+    {
+      "candidate_id": "cand-001",
+      "work": "群星闪耀时撤档",
+      "core_person_or_event": "黄渤吴磊主演科幻电影7月25日上映，不到2天宣布撤档，累计票房约6000万，豆瓣7.5分",
+      "primary_atom": "一部豆瓣7.5分的电影，为什么连两天都撑不过",
+      "reader_intent": "吃瓜",
+      "angle": "高口碑低票房：撤档潮背后的市场困局",
+      "title_skeleton": "豆瓣7.5分也救不了",
+      "ending_destination": "电影市场的马太效应",
+      "event_time": "2026-07-26T22:00:00+08:00",
+      "observed_at": "2026-07-27T18:35:40.438067+08:00",
+      "freshness_window": "same-day",
+      "current_trigger": "撤档消息7月26日晚间冲上热搜，引发对撤档潮的讨论",
+      "content_value_scores": {
+        "emotion": 3,
+        "narrative": 3,
+        "share": 3,
+        "human": 2,
+        "freshness": 3
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2",
+        "e3",
+        "e4"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2",
+        "a3"
+      ],
+      "recommendation": "A",
+      "reject_or_wait_reason": ""
+    },
+    {
+      "candidate_id": "cand-002",
+      "work": "暑期档撤档潮",
+      "core_person_or_event": "2026暑期档已有6部电影撤档，包括三国争洛阳、群星闪耀时、大圣崛起等",
+      "primary_atom": "六部电影接连跑路，这个暑期档怎么了",
+      "reader_intent": "吃瓜",
+      "angle": "撤档潮背后的行业困局：马太效应走到极致",
+      "title_skeleton": "六部电影跑路",
+      "ending_destination": "电影市场的系统性风险",
+      "event_time": "2026-07-27T00:00:00+08:00",
+      "observed_at": "2026-07-27T18:35:40.438067+08:00",
+      "freshness_window": "same-day",
+      "current_trigger": "撤档讨论持续发酵，多家媒体报道",
+      "content_value_scores": {
+        "emotion": 3,
+        "narrative": 3,
+        "share": 3,
+        "human": 2,
+        "freshness": 3
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2",
+        "e3",
+        "e4"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2"
+      ],
+      "recommendation": "B",
+      "reject_or_wait_reason": ""
+    },
+    {
+      "candidate_id": "cand-003",
+      "work": "功夫女足票房持续",
+      "core_person_or_event": "上映19天票房破20亿，豆瓣6.6，争议声中持续领跑",
+      "primary_atom": "20亿票房与6.6分，周星驰情怀还能卖多久",
+      "reader_intent": "吃瓜",
+      "angle": "票房与口碑的巨大反差背后的观众心理",
+      "title_skeleton": "20亿与6.6分",
+      "ending_destination": "情怀经济的边界",
+      "event_time": "2026-07-11T00:00:00+08:00",
+      "observed_at": "2026-07-27T18:35:40.438067+08:00",
+      "freshness_window": "fermenting-1-3d",
+      "current_trigger": "票房持续攀升，争议讨论未歇",
+      "content_value_scores": {
+        "emotion": 3,
+        "narrative": 3,
+        "share": 3,
+        "human": 2,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2",
+        "e3"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2"
+      ],
+      "recommendation": "Archive",
+      "reject_or_wait_reason": "controlled-005已写过口碑争议，避免重复"
+    },
+    {
+      "candidate_id": "cand-004",
+      "work": "八仙票房破7亿",
+      "core_person_or_event": "国风动画累计票房破7亿，豆瓣8.3，成为暑期档最大黑马",
+      "primary_atom": "一部国风动画，凭什么在周星驰和撤档潮里杀出重围",
+      "reader_intent": "好奇",
+      "angle": "口碑驱动的逆袭：传统IP的现代生命力",
+      "title_skeleton": "国风动画的逆袭",
+      "ending_destination": "国产动画的新可能",
+      "event_time": "2026-07-18T00:00:00+08:00",
+      "observed_at": "2026-07-27T18:35:40.438067+08:00",
+      "freshness_window": "fermenting-1-3d",
+      "current_trigger": "票房持续走高，市场讨论增多",
+      "content_value_scores": {
+        "emotion": 2,
+        "narrative": 3,
+        "share": 3,
+        "human": 2,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2",
+        "e3"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2"
+      ],
+      "recommendation": "Archive",
+      "reject_or_wait_reason": "controlled-005已写八仙，避免重复"
+    },
+    {
+      "candidate_id": "cand-005",
+      "work": "暑期档票房数据",
+      "core_person_or_event": "截至7月下旬暑期档票房破57.5亿，年度票房破214亿",
+      "primary_atom": "57.5亿票房背后，观众到底在为什么买单",
+      "reader_intent": "好奇",
+      "angle": "数据解读：谁赢了，谁输了，为什么",
+      "title_skeleton": "57.5亿的秘密",
+      "ending_destination": "市场偏好的信号",
+      "event_time": "2026-07-26T00:00:00+08:00",
+      "observed_at": "2026-07-27T18:35:40.438067+08:00",
+      "freshness_window": "fermenting-1-3d",
+      "current_trigger": "数据持续更新",
+      "content_value_scores": {
+        "emotion": 1,
+        "narrative": 2,
+        "share": 1,
+        "human": 1,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2"
+      ],
+      "concrete_anchor_ids": [
+        "a1"
+      ],
+      "recommendation": "Archive",
+      "reject_or_wait_reason": "行业数据方向不符合若雨随影定位"
+    },
+    {
+      "candidate_id": "cand-006",
+      "work": "特立独行口碑",
+      "core_person_or_event": "白敬亭魏翔喜剧，豆瓣约7分，上映近一月",
+      "primary_atom": "一部只有7分的喜剧，为什么还有人愿意为它辩护",
+      "reader_intent": "吃瓜",
+      "angle": "国产喜剧的尴尬位置",
+      "title_skeleton": "7分喜剧的尴尬",
+      "ending_destination": "喜剧类型的进退两难",
+      "event_time": "2026-07-03T00:00:00+08:00",
+      "observed_at": "2026-07-27T18:35:40.438067+08:00",
+      "freshness_window": "revival",
+      "current_trigger": "上映近一月，讨论度不高",
+      "content_value_scores": {
+        "emotion": 2,
+        "narrative": 2,
+        "share": 2,
+        "human": 2,
+        "freshness": 1
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2"
+      ],
+      "concrete_anchor_ids": [
+        "a1"
+      ],
+      "recommendation": "Archive",
+      "reject_or_wait_reason": "口碑平庸，缺乏引爆点"
+    },
+    {
+      "candidate_id": "cand-007",
+      "work": "四渡票房持续",
+      "core_person_or_event": "主旋律历史片连续保持单日票房冠军",
+      "primary_atom": "年轻人为什么愿意为历史片买单",
+      "reader_intent": "好奇",
+      "angle": "青年观众的市场信号",
+      "title_skeleton": "年轻人买账的主旋律",
+      "ending_destination": "类型边界的消融",
+      "event_time": "2026-07-01T00:00:00+08:00",
+      "observed_at": "2026-07-27T18:35:40.438067+08:00",
+      "freshness_window": "revival",
+      "current_trigger": "持续热映",
+      "content_value_scores": {
+        "emotion": 2,
+        "narrative": 2,
+        "share": 2,
+        "human": 2,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2",
+        "e3"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2"
+      ],
+      "recommendation": "Archive",
+      "reject_or_wait_reason": "controlled-005已写，避免重复"
+    },
+    {
+      "candidate_id": "cand-008",
+      "work": "黄渤群星闪耀时",
+      "core_person_or_event": "黄渤监制主演，吴磊高叶参演，科幻题材",
+      "primary_atom": "黄渤吴磊的科幻片，为什么口碑救不了票房",
+      "reader_intent": "吃瓜",
+      "angle": "明星阵容与题材的市场错位",
+      "title_skeleton": "明星阵容救不了",
+      "ending_destination": "科幻题材的市场困境",
+      "event_time": "2026-07-25T00:00:00+08:00",
+      "observed_at": "2026-07-27T18:35:40.438067+08:00",
+      "freshness_window": "same-day",
+      "current_trigger": "撤档引发对科幻片市场的讨论",
+      "content_value_scores": {
+        "emotion": 3,
+        "narrative": 2,
+        "share": 3,
+        "human": 3,
+        "freshness": 3
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2",
+        "e3"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2",
+        "a3"
+      ],
+      "recommendation": "B",
+      "reject_or_wait_reason": ""
+    },
+    {
+      "candidate_id": "cand-009",
+      "work": "电影撤档产业链",
+      "core_person_or_event": "撤档背后的宣发策略、排片博弈与市场困局",
+      "primary_atom": "撤档不是结束，是电影市场的集体出逃",
+      "reader_intent": "吃瓜",
+      "angle": "撤档潮背后的产业逻辑",
+      "title_skeleton": "电影的集体出逃",
+      "ending_destination": "电影市场的系统性风险",
+      "event_time": "2026-07-27T00:00:00+08:00",
+      "observed_at": "2026-07-27T18:35:40.438067+08:00",
+      "freshness_window": "same-day",
+      "current_trigger": "多家媒体深度分析撤档潮",
+      "content_value_scores": {
+        "emotion": 2,
+        "narrative": 3,
+        "share": 2,
+        "human": 2,
+        "freshness": 3
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2",
+        "e3"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2"
+      ],
+      "recommendation": "C",
+      "reject_or_wait_reason": ""
+    },
+    {
+      "candidate_id": "cand-010",
+      "work": "暑期档马太效应",
+      "core_person_or_event": "头部影片垄断票房，中小影片无生存空间",
+      "primary_atom": "当20亿和6000万在同一块银幕上",
+      "reader_intent": "好奇",
+      "angle": "票房两极分化的真相",
+      "title_skeleton": "20亿与6000万",
+      "ending_destination": "电影市场的未来走向",
+      "event_time": "2026-07-27T00:00:00+08:00",
+      "observed_at": "2026-07-27T18:35:40.438067+08:00",
+      "freshness_window": "same-day",
+      "current_trigger": "撤档潮引发对马太效应的讨论",
+      "content_value_scores": {
+        "emotion": 2,
+        "narrative": 2,
+        "share": 2,
+        "human": 1,
+        "freshness": 3
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2"
+      ],
+      "concrete_anchor_ids": [
+        "a1"
+      ],
+      "recommendation": "Archive",
+      "reject_or_wait_reason": "行业分析方向，不符合若雨随影定位"
+    }
+  ]
+}

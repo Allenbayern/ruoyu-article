@@ -1,0 +1,95 @@
+{
+  "original_request_ref": "user:controlled-006 A/B draft + validate + Sol + plain + git; then 002/003 git backfill",
+  "risk_tier": "L2",
+  "l2_trigger_ids": [
+    "material_factual_publish_ready_content",
+    "explicit_adversarial_review_request"
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC1",
+      "text": "三篇汉字数 1500-2200",
+      "evidence_ref": "article-draft.md char count"
+    },
+    {
+      "id": "AC2",
+      "text": "claim locators 可在 sources 中命中",
+      "evidence_ref": "validate_claim_locators"
+    },
+    {
+      "id": "AC3",
+      "text": "无 AI/synthetic confirmed-primary",
+      "evidence_ref": "source-manifest + quarantined _unused-AI"
+    },
+    {
+      "id": "AC4",
+      "text": "A/B/C work/intent/angle/atom 去重",
+      "evidence_ref": "gates"
+    },
+    {
+      "id": "AC5",
+      "text": "标题<=30 汉字",
+      "evidence_ref": "gates title"
+    },
+    {
+      "id": "AC6",
+      "text": "不授权发布/不做 HTML",
+      "evidence_ref": "publication_authorization=not_authorized"
+    }
+  ],
+  "non_goals": [
+    "HTML delivery",
+    "publication",
+    "platform integration"
+  ],
+  "artifact_refs": [
+    "runs/2026-07-28/controlled-006/controlled-run-manifest.json",
+    "runs/2026-07-28/controlled-006/articles/*/article-draft.md",
+    "runs/2026-07-28/controlled-006/articles/*/article-gate.json",
+    "runs/2026-07-28/controlled-006/source-manifest.json"
+  ],
+  "evidence_refs": [
+    {
+      "path": "source-manifest.json",
+      "note": "sha256 captured sources"
+    },
+    {
+      "path": "sources/src-A02-qq-chao-qunxing.html",
+      "note": "QQ/潮新闻 primary for A/B"
+    },
+    {
+      "path": "sources/src-A01-sina-qunxing-withdrawal.html",
+      "note": "official withdrawal text"
+    },
+    {
+      "path": "sources/src-C01-sina-withdrawal-wave.html",
+      "note": "withdrawal wave"
+    },
+    {
+      "path": "sources/_unused-AI-src-B01-sina-withdrawal-reasons.html",
+      "note": "quarantined AI source not used"
+    }
+  ],
+  "attack_surface_menu": [
+    "claim verification",
+    "synthetic source",
+    "source boundary",
+    "coverage honesty",
+    "dedupe",
+    "dates/numbers",
+    "style"
+  ],
+  "negative_path_evidence": [
+    {
+      "criterion": "AC3",
+      "evidence": "AI B01 quarantined and removed from manifest"
+    },
+    {
+      "criterion": "AC2",
+      "evidence": "validate_claim_locators returned [] for A/B/C"
+    }
+  ],
+  "coverage_gaps": "none mechanical; interpretive paragraphs unmapped by design",
+  "sol_dispatch": "deleg_8a9dd050 local-artifacts-only",
+  "created_at": "2026-07-27T23:44:19.970715+08:00"
+}

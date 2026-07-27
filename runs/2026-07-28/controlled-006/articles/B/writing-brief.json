@@ -1,0 +1,21 @@
+{
+  "article_id": "art-B",
+  "slot": "B",
+  "candidate_id": "cand-002",
+  "created_at": "2026-07-28T00:01:27.112075+08:00",
+  "work": "暑期档双撤与提档",
+  "primary_atom": "有人撤档，有人提档，这个暑期档在抢什么",
+  "reader_intent": "好奇",
+  "angle": "撤档与提档接连上演：档期变成生死窗口",
+  "title_skeleton": "有人撤档，有人提档：这个",
+  "ending_destination": "见正文",
+  "anticipated_character_count": "1800-2200",
+  "sources": {
+    "confirmed_primary": [
+      "src-B01"
+    ],
+    "corroborating": []
+  },
+  "claim_coverage_goal": "complete",
+  "material_sufficiency": "ready-for-brief"
+}

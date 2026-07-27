@@ -1,0 +1,43 @@
+{
+  "run_id": "2026-07-28/controlled-006",
+  "status": "controller_accepted_r8_review_ready",
+  "sol_round1": "needs_changes",
+  "sol_round1_ref": "sol-adversarial-review.md",
+  "sol_rereview1": "needs_changes",
+  "sol_rereview1_ref": "sol-adversarial-rereview.md",
+  "sol_rereview2": "approve",
+  "sol_rereview2_ref": "sol-adversarial-rereview-2.md",
+  "accepted_finding_ids_all_fixed": [
+    "A-B01",
+    "A-M01",
+    "A-M02",
+    "B-B01",
+    "B-M01",
+    "B-M02",
+    "C-B01",
+    "C-B02",
+    "C-M01"
+  ],
+  "articles": {
+    "A": "R8 after Sol repairs",
+    "B": "R8 after Sol repairs",
+    "C": "R8 after Sol repairs"
+  },
+  "delivery": {
+    "markdown": [
+      "articles/A/article-draft.md",
+      "articles/B/article-draft.md",
+      "articles/C/article-draft.md"
+    ],
+    "plain": [
+      "articles/A/article-plain.txt",
+      "articles/B/article-plain.txt",
+      "articles/C/article-plain.txt",
+      "article-plain.txt"
+    ]
+  },
+  "publication_authorization": "not_authorized",
+  "html": "not_requested",
+  "controller_judgment": "Sol micro re-review approve on remaining B-M02/C-B01/C-M01; mechanical gates green; accept as R8 review-ready only, no publish.",
+  "updated_at": "2026-07-28T00:16:35.811633+08:00"
+}

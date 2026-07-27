@@ -1,0 +1,161 @@
+{
+  "article_id": "art-B",
+  "slot": "B",
+  "state": "R8 review-ready",
+  "title": "有人撤档，有人提档：这个暑期档在抢什么",
+  "work": "暑期档双撤与提档",
+  "primary_atom": "有人撤档，有人提档，这个暑期档在抢什么",
+  "reader_intent": "好奇",
+  "angle": "撤档与提档接连上演：档期变成生死窗口",
+  "claim_coverage": "complete",
+  "claim_mappings": [
+    {
+      "claim_id": "B1",
+      "claim_text": "《三国》上映16天撤档",
+      "source_id": "src-B01",
+      "locator": "16天",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "B2",
+      "claim_text": "豆瓣8.1分",
+      "source_id": "src-B01",
+      "locator": "8.1",
+      "support_type": "numeric-data"
+    },
+    {
+      "claim_id": "B3",
+      "claim_text": "票房突破8000万",
+      "source_id": "src-B01",
+      "locator": "8000万",
+      "support_type": "numeric-data"
+    },
+    {
+      "claim_id": "B4",
+      "claim_text": "长安三万里原班人马",
+      "source_id": "src-B01",
+      "locator": "长安三万里",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "B5",
+      "claim_text": "耗时三年近千人",
+      "source_id": "src-B01",
+      "locator": "近千人",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "B6",
+      "claim_text": "追光最低票房纪录",
+      "source_id": "src-B01",
+      "locator": "最低票房",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "B7",
+      "claim_text": "《群星》上映仅1天撤档",
+      "source_id": "src-B01",
+      "locator": "上映仅1天",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "B8",
+      "claim_text": "豆瓣7.5票房5875.9万",
+      "source_id": "src-B01",
+      "locator": "5875.9",
+      "support_type": "numeric-data"
+    },
+    {
+      "claim_id": "B9",
+      "claim_text": "黄建新监制",
+      "source_id": "src-B01",
+      "locator": "黄建新",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "B10",
+      "claim_text": "黄渤吴磊主演",
+      "source_id": "src-B01",
+      "locator": "黄渤",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "B11",
+      "claim_text": "更合适的时机",
+      "source_id": "src-B01",
+      "locator": "更合适的时机",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "B12",
+      "claim_text": "路演取消",
+      "source_id": "src-B01",
+      "locator": "路演",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "B13",
+      "claim_text": "年会不能停2提档",
+      "source_id": "src-B01",
+      "locator": "年会不能停2",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "B14",
+      "claim_text": "原定8月7日",
+      "source_id": "src-B01",
+      "locator": "8月7日",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "B15",
+      "claim_text": "提档至8月1日",
+      "source_id": "src-B01",
+      "locator": "8月1日",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "B16",
+      "claim_text": "限时点映",
+      "source_id": "src-B01",
+      "locator": "限时点映",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "B17",
+      "claim_text": "董润年执导",
+      "source_id": "src-B01",
+      "locator": "董润年",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "B18",
+      "claim_text": "张若昀白客高叶",
+      "source_id": "src-B01",
+      "locator": "张若昀",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "B19",
+      "claim_text": "功夫女足八仙压力",
+      "source_id": "src-B01",
+      "locator": "功夫女足",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "B20",
+      "claim_text": "7月26日深夜群星撤档",
+      "source_id": "src-B01",
+      "locator": "7月26日深夜",
+      "support_type": "direct-quote"
+    }
+  ],
+  "concrete_support_types": [
+    "direct-quote",
+    "numeric-data",
+    "schedule-change",
+    "cast-credit"
+  ],
+  "html_delivery_state": "not_requested",
+  "publication_authorization": "not_authorized"
+}

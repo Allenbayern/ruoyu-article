@@ -1,0 +1,98 @@
+{
+  "run_id": "2026-07-28/controlled-006",
+  "captured_at": "2026-07-28T00:01:27.112075+08:00",
+  "timezone": "+08:00",
+  "sources": [
+    {
+      "source_id": "src-A01",
+      "role": "confirmed-primary",
+      "independence_group": "sina",
+      "url": "https://finance.sina.com.cn/wm/2026-07-27/doc-inikfhfi3182765.shtml",
+      "title": "《群星闪耀时》主演黄渤吴磊对撤档有回应吗？",
+      "candidate_id": "cand-001",
+      "relative_path": "sources/src-A01-sina-qunxing-withdrawal.html",
+      "captured_at": "2026-07-28T00:01:27.112075+08:00",
+      "sha256": "2bb127d231b7a56de1cae745b1aa23e640213691ab073932c67c11fd5bc35ed3",
+      "size_bytes": 100554,
+      "usable": true
+    },
+    {
+      "source_id": "src-A02",
+      "role": "confirmed-primary",
+      "independence_group": "qq-chao",
+      "url": "https://news.qq.com/rain/a/20260727A03XM700",
+      "title": "《群星》闪电撤档《年会2》提档补位，2026暑期档大战愈演愈烈",
+      "candidate_id": "cand-001",
+      "relative_path": "sources/src-A02-qq-chao-qunxing.html",
+      "captured_at": "2026-07-28T00:01:27.112075+08:00",
+      "sha256": "5de46ccd12e78501e0e120550425a2264a0d603fbf16ba71b3a5ff6e0b3088d9",
+      "size_bytes": 73026,
+      "usable": true
+    },
+    {
+      "source_id": "src-A03",
+      "role": "corroborating",
+      "independence_group": "ifeng",
+      "url": "https://news.ifeng.com/c/8v60CiWS2pu",
+      "title": "黄渤、吴磊主演，电影《群星闪耀时》突然撤档",
+      "candidate_id": "cand-001",
+      "relative_path": "sources/src-A03-ifeng-qunxing.html",
+      "captured_at": "2026-07-28T00:01:27.112075+08:00",
+      "sha256": "3f2d63c1c38fa3592705c6b50bea402363c207b9f92c3d352b36e5a6bad3ad6e",
+      "size_bytes": 59788,
+      "usable": true
+    },
+    {
+      "source_id": "src-B01",
+      "role": "confirmed-primary",
+      "independence_group": "qq-chao",
+      "url": "https://news.qq.com/rain/a/20260727A03XM700",
+      "title": "《群星》闪电撤档《年会2》提档补位，2026暑期档大战愈演愈烈",
+      "candidate_id": "cand-002",
+      "relative_path": "sources/src-B01-qq-chao-withdrawal-wave.html",
+      "captured_at": "2026-07-28T00:01:27.112075+08:00",
+      "sha256": "5de46ccd12e78501e0e120550425a2264a0d603fbf16ba71b3a5ff6e0b3088d9",
+      "size_bytes": 73026,
+      "usable": true
+    },
+    {
+      "source_id": "src-C01",
+      "role": "attributed-secondary",
+      "independence_group": "sina-ent",
+      "url": "https://ent.sina.cn/2026-07-27/detail-inikfnpm0687684.d.html",
+      "title": "2026暑期档撤档潮：口碑佳作为何被迫离场？",
+      "candidate_id": "cand-009",
+      "relative_path": "sources/src-C01-sina-withdrawal-wave.html",
+      "captured_at": "2026-07-28T00:01:27.112075+08:00",
+      "sha256": "6ec07442282919aeeab07eb4708986746603712687071c9e69dfdb0d65f75838",
+      "size_bytes": 35911,
+      "usable": true
+    },
+    {
+      "source_id": "src-C02",
+      "role": "confirmed-primary",
+      "independence_group": "qq-chao",
+      "url": "https://news.qq.com/rain/a/20260727A03XM700",
+      "title": "《群星》闪电撤档《年会2》提档补位（C交叉核验）",
+      "candidate_id": "cand-009",
+      "relative_path": "sources/src-C02-qq-chao-crosscheck.html",
+      "captured_at": "2026-07-28T00:01:27.112075+08:00",
+      "sha256": "5de46ccd12e78501e0e120550425a2264a0d603fbf16ba71b3a5ff6e0b3088d9",
+      "size_bytes": 73026,
+      "usable": true
+    },
+    {
+      "source_id": "src-C03",
+      "role": "confirmed-primary",
+      "independence_group": "sina",
+      "url": "https://finance.sina.com.cn/wm/2026-07-27/doc-inikfhfi3182765.shtml",
+      "title": "《群星闪耀时》撤档声明（C交叉核验）",
+      "candidate_id": "cand-009",
+      "relative_path": "sources/src-C03-sina-qunxing-crosscheck.html",
+      "captured_at": "2026-07-28T00:01:27.112075+08:00",
+      "sha256": "2bb127d231b7a56de1cae745b1aa23e640213691ab073932c67c11fd5bc35ed3",
+      "size_bytes": 100554,
+      "usable": true
+    }
+  ]
+}

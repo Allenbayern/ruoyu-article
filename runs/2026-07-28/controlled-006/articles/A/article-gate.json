@@ -1,0 +1,183 @@
+{
+  "article_id": "art-A",
+  "slot": "A",
+  "state": "R8 review-ready",
+  "title": "豆瓣7.5也撑不过一天：黄渤这部航天片怎么就走了",
+  "work": "群星闪耀时撤档",
+  "primary_atom": "一部豆瓣7.5分的航天片，为什么连一天都撑不过",
+  "reader_intent": "心疼",
+  "angle": "24小时离场：高口碑也挡不住档期绞杀",
+  "claim_coverage": "complete",
+  "claim_mappings": [
+    {
+      "claim_id": "A1",
+      "claim_text": "上映仅1天撤档",
+      "source_id": "src-A02",
+      "locator": "上映仅1天",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "A2",
+      "claim_text": "票房约5875.9万",
+      "source_id": "src-A02",
+      "locator": "5875.9",
+      "support_type": "numeric-data"
+    },
+    {
+      "claim_id": "A3",
+      "claim_text": "豆瓣7.5分",
+      "source_id": "src-A02",
+      "locator": "7.5",
+      "support_type": "numeric-data"
+    },
+    {
+      "claim_id": "A4",
+      "claim_text": "更合适的时机与观众相逢",
+      "source_id": "src-A01",
+      "locator": "更合适的时机",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "A5",
+      "claim_text": "黄渤吴磊高叶孙阳领衔",
+      "source_id": "src-A01",
+      "locator": "黄渤",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "A6",
+      "claim_text": "章笛沙执导",
+      "source_id": "src-A01",
+      "locator": "章笛沙",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "A7",
+      "claim_text": "黄建新监制",
+      "source_id": "src-A01",
+      "locator": "黄建新",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "A8",
+      "claim_text": "7月25日上映",
+      "source_id": "src-A01",
+      "locator": "7月25日",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "A9",
+      "claim_text": "路演线下活动取消",
+      "source_id": "src-A01",
+      "locator": "路演",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "A10",
+      "claim_text": "退票妥善处理",
+      "source_id": "src-A01",
+      "locator": "退票",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "A11",
+      "claim_text": "2035年航天员失联设定",
+      "source_id": "src-A02",
+      "locator": "2035",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "A12",
+      "claim_text": "跨越65年时空对话",
+      "source_id": "src-A02",
+      "locator": "65年",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "A13",
+      "claim_text": "1970年神秘信号",
+      "source_id": "src-A02",
+      "locator": "1970",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "A14",
+      "claim_text": "《三国》上映16天撤档",
+      "source_id": "src-A02",
+      "locator": "16天",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "A15",
+      "claim_text": "《三国》豆瓣8.1",
+      "source_id": "src-A02",
+      "locator": "8.1",
+      "support_type": "numeric-data"
+    },
+    {
+      "claim_id": "A16",
+      "claim_text": "票房突破8000万",
+      "source_id": "src-A02",
+      "locator": "8000万",
+      "support_type": "numeric-data"
+    },
+    {
+      "claim_id": "A17",
+      "claim_text": "近千人团队耗时三年",
+      "source_id": "src-A02",
+      "locator": "近千人",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "A18",
+      "claim_text": "追光近年最低票房纪录",
+      "source_id": "src-A02",
+      "locator": "最低票房",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "A19",
+      "claim_text": "《年会不能停2》提档8月1日",
+      "source_id": "src-A02",
+      "locator": "8月1日",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "A20",
+      "claim_text": "原定8月7日",
+      "source_id": "src-A02",
+      "locator": "8月7日",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "A21",
+      "claim_text": "功夫女足八仙火爆",
+      "source_id": "src-A02",
+      "locator": "功夫女足",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "A22",
+      "claim_text": "7月26日深夜撤档",
+      "source_id": "src-A02",
+      "locator": "7月26日深夜",
+      "support_type": "direct-quote"
+    },
+    {
+      "claim_id": "A23",
+      "claim_text": "择日再相见",
+      "source_id": "src-A01",
+      "locator": "择日再相见",
+      "support_type": "direct-quote"
+    }
+  ],
+  "concrete_support_types": [
+    "direct-quote",
+    "numeric-data",
+    "cast-credit",
+    "plot-premise",
+    "schedule-change"
+  ],
+  "html_delivery_state": "not_requested",
+  "publication_authorization": "not_authorized"
+}
