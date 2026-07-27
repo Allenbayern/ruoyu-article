@@ -1,0 +1,88 @@
+{
+  "article_id": "article-003",
+  "slot": "C",
+  "markdown_path": "articles/C/article-draft.md",
+  "evidence_pack_path": "articles/C/evidence-pack.json",
+  "writing_brief_path": "articles/C/writing-brief.json",
+  "title": "流浪地球之后，这群人用六千把算盘拍了一部科幻片",
+  "claim_mappings": [
+    {
+      "claim_id": "c-f1",
+      "text": "章笛沙执导，科幻导演首作",
+      "source_id": "src-C03",
+      "locator": "章笛沙终于迎来自己执导的首部科幻片"
+    },
+    {
+      "claim_id": "c-f2",
+      "text": "黄建新监制，黄渤吴磊高叶孙阳主演",
+      "source_id": "src-C01",
+      "locator": "黄建新监制，黄渤、吴磊、高叶、孙阳"
+    },
+    {
+      "claim_id": "c-f3",
+      "text": "1970/2035双时空叙事",
+      "source_id": "src-C03",
+      "locator": "1970年与2035年两条时空线"
+    },
+    {
+      "claim_id": "c-f4",
+      "text": "六千余人同场拨算盘场景",
+      "source_id": "src-C03",
+      "locator": "六千余人同场拨打算盘"
+    },
+    {
+      "claim_id": "c-f5",
+      "text": "点映票房截至7月25日破4000万",
+      "source_id": "src-C05",
+      "locator": "票房突破4000万元"
+    },
+    {
+      "claim_id": "c-f6",
+      "text": "8月1日正式公映",
+      "source_id": "src-C05",
+      "locator": "截至7月25日…影片《群星闪耀时》票房突破4000万元（点映阶段）"
+    },
+    {
+      "claim_id": "c-v1",
+      "text": "章笛沙：流浪地球给了从0到1的勇气",
+      "source_id": "src-C03",
+      "locator": "电影《流浪地球》给了自己非常有力的信念感"
+    },
+    {
+      "claim_id": "c-v2",
+      "text": "章笛沙：科幻内核在于对如何走到今天的追问",
+      "source_id": "src-C03",
+      "locator": "科幻精神的内核，不在于对未来的想象有多炫目，而在于对'如何走到今天'的追问有多诚恳"
+    },
+    {
+      "claim_id": "c-v3",
+      "text": "新浪娱乐：改编自雨果奖获奖短篇小说",
+      "source_id": "src-C01",
+      "locator": "改编自雨果奖获奖短篇小说"
+    }
+  ],
+  "concrete_support_types": [
+    "director-interview",
+    "box-office-data",
+    "film-analysis"
+  ],
+  "html_delivery_state": "withheld",
+  "publication_authorization": "not_authorized",
+  "state": "R6 drafting",
+  "work": "群星闪耀时",
+  "primary_atom": "流浪地球团队的新科幻冒险",
+  "reader_intent": "好奇",
+  "angle": "国产科幻从宏大转向微观",
+  "claim_coverage": "partial",
+  "author_inferences": [
+    "\"黄建新传承纽带\" — 作者推演，黄建新与流浪地球的制作关系未验证",
+    "剧情细节（三名航天员失联/地面求助手稿等）— 来自新浪分析文章",
+    "\"回望式探索\"哲学阐释 — 基于导演引述的延伸"
+  ],
+  "coverage_gaps": [
+    "雨果奖改编仅单一来源新浪娱乐，豆瓣/百度/QQ新闻未提及",
+    "candidate event_time 7月20日 vs 实际8月1日",
+    "黄建新与流浪地球的制作传承关系未独立验证"
+  ],
+  "sol_review_findings_addressed": true
+}

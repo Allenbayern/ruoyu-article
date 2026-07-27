@@ -1,0 +1,20 @@
+{
+  "article_id": "article-001",
+  "candidate_id": "cand-001",
+  "state": "R5 brief-ready",
+  "slot": "A",
+  "narrative_core": {
+    "primary_atom": "一部豆瓣8.1分的动画，为什么留不住观众？",
+    "reader_intent": "吃瓜",
+    "angle": "高分低票房：叫好不叫座的国产动画困境"
+  },
+  "must_prove_claim_ids": [
+    "a1",
+    "a2",
+    "a3",
+    "a4",
+    "a5"
+  ],
+  "title_promise": "豆瓣8.1分，上映16天，这部电影退场了",
+  "evidence_decision": "ready-for-brief"
+}

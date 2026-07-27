@@ -1,0 +1,275 @@
+{
+  "run_id": "2026-07-27/controlled-002",
+  "created_at": "2026-07-26T16:45:55.607165+00:00",
+  "mode": "controlled_first_run",
+  "state": "R8 review-ready",
+  "publication_authorization": "not_authorized",
+  "delivery_state": "withheld_pending_independent_review_and_controller_acceptance",
+  "network_actions": "none",
+  "article_count": 3,
+  "articles": [
+    {
+      "article_id": "article-001",
+      "slot": "A",
+      "markdown_path": "articles/A/article-draft.md",
+      "evidence_pack_path": "articles/A/evidence-pack.json",
+      "writing_brief_path": "articles/A/writing-brief.json",
+      "title": "等了11年的大圣，上映前10天又跑了",
+      "claim_mappings": [
+        {
+          "claim_id": "a-f1",
+          "text": "6月30日大圣崛起宣布撤档",
+          "source_id": "src-A03",
+          "locator": "动画电影《大圣崛起》宣布撤档退出暑期档"
+        },
+        {
+          "claim_id": "a-f2",
+          "text": "原定7月10日公映，距撤档仅10天",
+          "source_id": "src-A03",
+          "locator": "7月10日全国公映"
+        },
+        {
+          "claim_id": "a-f3",
+          "text": "不是大圣归来正统续集",
+          "source_id": "src-A03",
+          "locator": "并不是《大圣归来》的正统续集"
+        },
+        {
+          "claim_id": "a-f4",
+          "text": "2016年以混世四猴立项",
+          "source_id": "src-A02",
+          "locator": "最早在2016年就发了海报，片名叫《西游记之混世四猴》"
+        },
+        {
+          "claim_id": "a-f5",
+          "text": "出品人路伟为大圣归来操盘手之一",
+          "source_id": "src-A02",
+          "locator": "大圣归来主控出品方十年之作"
+        },
+        {
+          "claim_id": "a-v1",
+          "text": "漫港湾警告：宣传有刻意混淆嫌疑",
+          "source_id": "src-A02",
+          "locator": "宣传中有刻意混淆的嫌疑"
+        },
+        {
+          "claim_id": "a-v2",
+          "text": "王玮晨：2028年大圣闹天宫才是正统续作",
+          "source_id": "src-A02",
+          "locator": "2015大圣归来的正统续作，是2028年要上映的大圣闹天宫"
+        },
+        {
+          "claim_id": "a-v3",
+          "text": "新浪电影评论区：大圣崛起看预告片也很普通",
+          "source_id": "src-A02",
+          "locator": "电影纠缠：今年暑假档已经撤档了六部电影"
+        }
+      ],
+      "concrete_support_types": [
+        "official-announcement",
+        "weibo-audience-reaction",
+        "film-history-timeline"
+      ],
+      "html_delivery_state": "withheld",
+      "publication_authorization": "not_authorized",
+      "state": "R8 review-ready",
+      "work": "大圣崛起",
+      "primary_atom": "国产动画11年难产的信任危机",
+      "reader_intent": "吃瓜",
+      "angle": "撤档背后的行业真相",
+      "claim_coverage": "complete",
+      "author_inferences": [
+        "片名变迁折射商业逻辑 — 作者观察",
+        "撤档循环已成行业惯性 — 作者概括",
+        "\"蹭IP/收割期待\"结论 — 作者判断",
+        "9.56亿票房/转发数等数字 — 常识性背景"
+      ],
+      "coverage_gaps": [
+        "微博转发/评论数字未独立验证",
+        "央视网推荐未独立验证",
+        "大鱼海棠到深海的撤档循环未逐片验证"
+      ],
+      "sol_review_findings_addressed": true
+    },
+    {
+      "article_id": "article-002",
+      "slot": "B",
+      "markdown_path": "articles/B/article-draft.md",
+      "evidence_pack_path": "articles/B/evidence-pack.json",
+      "writing_brief_path": "articles/B/writing-brief.json",
+      "title": "上映前一天，这部讲性骚扰的中国电影悄悄消失了",
+      "claim_mappings": [
+        {
+          "claim_id": "b-f1",
+          "text": "7月3日原定公映，无排片无购票",
+          "source_id": "src-B01",
+          "locator": "原定今日公映，但已经没有排片和购票选项"
+        },
+        {
+          "claim_id": "b-f2",
+          "text": "官方未发撤档公告",
+          "source_id": "src-B01",
+          "locator": "官方也没有发任何公告"
+        },
+        {
+          "claim_id": "b-f3",
+          "text": "尹丽川执导，张天爱春夏潘斌龙孙艺洲主演",
+          "source_id": "src-B04",
+          "locator": "尹丽川导演，张天爱、春夏领衔主演，潘斌龙领衔主演，孙艺洲特别主演"
+        },
+        {
+          "claim_id": "b-f4",
+          "text": "改编自真人真事：环卫工人季红诉罗勇正",
+          "source_id": "src-B04",
+          "locator": "电影改编自真人真事"
+        },
+        {
+          "claim_id": "b-f5",
+          "text": "6月5日定档，发布预告和海报",
+          "source_id": "src-B04",
+          "locator": "官宣定档7月3日全国公映"
+        },
+        {
+          "claim_id": "b-v1",
+          "text": "大皖新闻：国内首部聚焦性骚扰话题",
+          "source_id": "src-B04",
+          "locator": "作为国内首部聚焦性骚扰话题的影片"
+        },
+        {
+          "claim_id": "b-v2",
+          "text": "乌鸦·火堂：7月3日8:18发博确认撤档",
+          "source_id": "src-B01",
+          "locator": "应该是撤档了，原定今日公映"
+        }
+      ],
+      "concrete_support_types": [
+        "news-report",
+        "director-profile",
+        "cast-list"
+      ],
+      "html_delivery_state": "withheld",
+      "publication_authorization": "not_authorized",
+      "state": "R8 review-ready",
+      "work": "开个玩笑",
+      "primary_atom": "一部敢于碰触职场的电影被按下暂停",
+      "reader_intent": "愤怒",
+      "angle": "片方沉默背后的压力",
+      "claim_coverage": "complete",
+      "author_inferences": [
+        "\"国内首部\"标签来自片方宣传口径 — 已注明出处",
+        "撤档原因不明 — 已明确声明无证据",
+        "出走的决心豆瓣评分 — 常识性背景"
+      ],
+      "coverage_gaps": [
+        "撤档原因无独立来源",
+        "出走的决心豆瓣评分未抓取时间戳",
+        "片方未回应 — 事实性陈述，无反证"
+      ],
+      "sol_review_findings_addressed": true
+    },
+    {
+      "article_id": "article-003",
+      "slot": "C",
+      "markdown_path": "articles/C/article-draft.md",
+      "evidence_pack_path": "articles/C/evidence-pack.json",
+      "writing_brief_path": "articles/C/writing-brief.json",
+      "title": "流浪地球之后，这群人用六千把算盘拍了一部科幻片",
+      "claim_mappings": [
+        {
+          "claim_id": "c-f1",
+          "text": "章笛沙执导，科幻导演首作",
+          "source_id": "src-C03",
+          "locator": "章笛沙终于迎来自己执导的首部科幻片"
+        },
+        {
+          "claim_id": "c-f2",
+          "text": "黄建新监制，黄渤吴磊高叶孙阳主演",
+          "source_id": "src-C01",
+          "locator": "黄建新监制，黄渤、吴磊、高叶、孙阳"
+        },
+        {
+          "claim_id": "c-f3",
+          "text": "1970/2035双时空叙事",
+          "source_id": "src-C03",
+          "locator": "1970年与2035年两条时空线"
+        },
+        {
+          "claim_id": "c-f4",
+          "text": "六千余人同场拨算盘场景",
+          "source_id": "src-C03",
+          "locator": "六千余人同场拨打算盘"
+        },
+        {
+          "claim_id": "c-f5",
+          "text": "点映票房截至7月25日破4000万",
+          "source_id": "src-C05",
+          "locator": "票房突破4000万元"
+        },
+        {
+          "claim_id": "c-f6",
+          "text": "8月1日正式公映",
+          "source_id": "src-C05",
+          "locator": "截至7月25日…影片《群星闪耀时》票房突破4000万元（点映阶段）"
+        },
+        {
+          "claim_id": "c-v1",
+          "text": "章笛沙：流浪地球给了从0到1的勇气",
+          "source_id": "src-C03",
+          "locator": "电影《流浪地球》给了自己非常有力的信念感"
+        },
+        {
+          "claim_id": "c-v2",
+          "text": "章笛沙：科幻内核在于对如何走到今天的追问",
+          "source_id": "src-C03",
+          "locator": "科幻精神的内核，不在于对未来的想象有多炫目，而在于对'如何走到今天'的追问有多诚恳"
+        },
+        {
+          "claim_id": "c-v3",
+          "text": "新浪娱乐：改编自雨果奖获奖短篇小说",
+          "source_id": "src-C01",
+          "locator": "改编自雨果奖获奖短篇小说"
+        }
+      ],
+      "concrete_support_types": [
+        "director-interview",
+        "box-office-data",
+        "film-analysis"
+      ],
+      "html_delivery_state": "withheld",
+      "publication_authorization": "not_authorized",
+      "state": "R8 review-ready",
+      "work": "群星闪耀时",
+      "primary_atom": "流浪地球团队的新科幻冒险",
+      "reader_intent": "好奇",
+      "angle": "国产科幻从宏大转向微观",
+      "claim_coverage": "complete",
+      "author_inferences": [
+        "\"黄建新传承纽带\" — 作者推演，黄建新与流浪地球的制作关系未验证",
+        "剧情细节（三名航天员失联/地面求助手稿等）— 来自新浪分析文章",
+        "\"回望式探索\"哲学阐释 — 基于导演引述的延伸"
+      ],
+      "coverage_gaps": [
+        "雨果奖改编仅单一来源新浪娱乐，豆瓣/百度/QQ新闻未提及",
+        "candidate event_time 7月20日 vs 实际8月1日",
+        "黄建新与流浪地球的制作传承关系未独立验证"
+      ],
+      "sol_review_findings_addressed": true
+    }
+  ],
+  "sol_review": {
+    "decision": "needs_changes (8 findings)",
+    "controller_final": "accepted with known gaps after repair",
+    "repairs": [
+      "F-03 B rewritten",
+      "F-06 C candidate pool fixed",
+      "F-08 claim inventories rebuilt",
+      "F-01/F-04/F-07 softened"
+    ],
+    "documented_gaps": [
+      "claim_coverage partial per Sol F-08",
+      "A social media numbers unverified",
+      "B withdraw reason unknown",
+      "C Hugo Award single-source"
+    ]
+  }
+}

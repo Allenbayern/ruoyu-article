@@ -1,0 +1,20 @@
+{
+  "article_id": "article-002",
+  "candidate_id": "cand-002",
+  "state": "R5 brief-ready",
+  "slot": "B",
+  "narrative_core": {
+    "primary_atom": "一部敢于碰触职场的电影被按下暂停",
+    "reader_intent": "愤怒",
+    "angle": "片方沉默背后的压力"
+  },
+  "must_prove_claim_ids": [
+    "e1-silent-withdrawal",
+    "e2-sexual-harassment-topic",
+    "e3-true-story-adaptation",
+    "e4-yinlichuan-director",
+    "e5-star-cast"
+  ],
+  "title_promise": "上映前一天，这部讲性骚扰的中国电影悄悄消失了",
+  "evidence_decision": "ready-for-brief"
+}

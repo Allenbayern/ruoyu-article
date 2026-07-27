@@ -1,0 +1,19 @@
+{
+  "article_id": "article-003",
+  "candidate_id": "cand-003",
+  "captured_at": "2026-07-27T01:16:27.742216+08:00",
+  "state": "R4 evidence-ready",
+  "coverage_gaps": "none",
+  "evidence_atoms": [
+    "预测17亿+年度前四",
+    "2026最大黑马",
+    "票房一路逆势上涨",
+    "蓝鸿春第三部电影",
+    "素人主角/潮汕故事"
+  ],
+  "source_ids": [
+    "src-C01",
+    "src-C02"
+  ],
+  "material_sufficiency": "ready-for-brief"
+}

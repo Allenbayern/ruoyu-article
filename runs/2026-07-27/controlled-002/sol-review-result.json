@@ -1,0 +1,62 @@
+{
+  "review_id": "sol-review-001",
+  "run_id": "2026-07-27/controlled-002",
+  "reviewed_at": "2026-07-27T00:41:20.526878+08:00",
+  "reviewer": "controller (Sol delegated blocked by SearXNG timeout; controller performed independent review)",
+  "decision": "needs_changes",
+  "scope_reviewed": [
+    "original_request: docs/plans/2026-07-27-controlled-002-prewrite-gates.md",
+    "acceptance_criteria: all 8 from review-readiness-packet.json",
+    "artifact_paths: all 3 article drafts, source manifest, candidate pool",
+    "evidence_paths: source-manifest.json, review-readiness-packet.json"
+  ],
+  "findings": [
+    {
+      "severity": "blocker",
+      "target": "Slot C article, claim: 改编自雨果奖获奖短篇小说",
+      "evidence": "Independent web search (Douban subject/35875462, Baidu Baike/60821440, QQ News/20260704A063GF00) shows NO mention of Hugo Award adaptation. Only one Sina overview article (ent.sina.cn 2026-07-04) makes this claim — the same article that also had an incorrect release date (7月20日 vs actual 8月1日). Film credits show original screenplay by 胡晓曦 and 章笛沙.",
+      "counterexample_or_failure_mode": "The Hugo Award claim may be factually incorrect. If published, it exposes the article to factual challenge.",
+      "required_fix": "Either (a) remove the Hugo Award claim from the article, replacing it with a verified fact, or (b) cite the specific Hugo-winning story title and author with corroborating source, or (c) mark it as '据部分媒体报道' with attribution to the Sina overview.",
+      "recheck": "Verify the Hugo claim with a second independent authoritative source, or remove it."
+    },
+    {
+      "severity": "major",
+      "target": "Slot C candidate data: event_time 2026-07-20 vs actual release 2026-08-01",
+      "evidence": "QQ News 2026-07-09 article confirms preview screenings July 10-16, full release August 1. Eastmoney confirms box office 4000万 from preview only.",
+      "counterexample_or_failure_mode": "The article correctly states 8月1日 release, so the candidate pool data is stale but the article is accurate. This is a data quality issue, not an article defect.",
+      "required_fix": "Update candidate-pool.json event_time and freshness_window for cand-003, or document as known gap.",
+      "recheck": "Confirm the article itself correctly states 8月1日."
+    },
+    {
+      "severity": "minor",
+      "target": "Slot A article: '有影评人直言' quote lacks attribution",
+      "evidence": "The article says '有影评人直言' without naming the critic. Source src-A02 (Weibo aggregation) does contain similar quotes but attribution is to Weibo usernames.",
+      "counterexample_or_failure_mode": "Vague attribution weakens the claim's credibility.",
+      "required_fix": "Attribute to specific source: either name the Weibo user or cite '新浪电影评论区'.",
+      "recheck": "Verify attribution matches source."
+    },
+    {
+      "severity": "minor",
+      "target": "Slot B article: alignment with candidate angle",
+      "evidence": "Candidate angle is '片方沉默背后的压力'. The article focuses on the withdrawal event and the film's significance, but does not strongly explore '压力' (pressure) — i.e. who applied pressure, why, what the censorship/regulatory dynamic was.",
+      "counterexample_or_failure_mode": "Slight angle drift; the article is more about 'what was lost' than 'who/what caused it to be lost'.",
+      "required_fix": "Either adjust angle in candidate or add a paragraph exploring the regulatory/censorship dimension.",
+      "recheck": "Verify angle alignment."
+    }
+  ],
+  "non_findings": [
+    "Slot A 9.56亿票房 claim: independently confirmed via Baidu Tieba and Douyin references ✅",
+    "Slot B 出走的决心 豆瓣8.8: independently confirmed via Bilibili and Tencent News ✅",
+    "Slot C 4000万 box office: confirmed via Eastmoney ✅",
+    "Slot C 8月1日 release: confirmed via multiple authoritative sources ✅",
+    "All character counts in range: confirmed by mechanical check ✅",
+    "Title lengths ≤30 chars: confirmed ✅",
+    "HTML withheld, publication not_authorized: confirmed ✅"
+  ],
+  "coverage_gaps": [
+    "Slot C Hugo Award adaptation claim cannot be corroborated — only one error-prone source",
+    "Slot C candidate event_time (2026-07-20) incorrect — actual release 2026-08-01",
+    "3 source URLs blocked during fetch (QQ News WAF, 163 403, smzdm redirect)",
+    "Slot B single-source for independence group beyond sina-cn and ahwang-cn"
+  ]
+}

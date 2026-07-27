@@ -1,0 +1,22 @@
+{
+  "article_id": "article-003",
+  "candidate_id": "cand-003",
+  "state": "R5 brief-ready",
+  "slot": "C",
+  "narrative_core": {
+    "primary_atom": "流浪地球团队的新科幻冒险",
+    "reader_intent": "好奇",
+    "angle": "国产科幻从宏大转向微观"
+  },
+  "must_prove_claim_ids": [
+    "e1-zhangdisha-debut",
+    "e2-hugo-award-adaptation",
+    "e3-dual-timeline",
+    "e4-starring-cast",
+    "e5-6000-abacus-scene",
+    "e6-box-office-40m",
+    "e7-liulangdiqiu-inspiration"
+  ],
+  "title_promise": "流浪地球之后，这群人用六千把算盘拍了一部科幻片",
+  "evidence_decision": "ready-for-brief"
+}

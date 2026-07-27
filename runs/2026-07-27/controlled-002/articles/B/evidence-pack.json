@@ -1,0 +1,19 @@
+{
+  "article_id": "article-002",
+  "candidate_id": "cand-002",
+  "captured_at": "2026-07-27T00:36:43.939564+08:00",
+  "state": "R4 evidence-ready",
+  "coverage_gaps": "none",
+  "evidence_atoms": [
+    "7月3日原定公映，无排片无购票，官方无公告",
+    "国内首部聚焦职场性骚扰的院线片",
+    "改编自真人真事：环卫工人季红诉环卫站站长罗勇正",
+    "尹丽川导演，前作《出走的决心》豆瓣8.8",
+    "张天爱、春夏、潘斌龙、孙艺洲主演"
+  ],
+  "source_ids": [
+    "src-B01",
+    "src-B04"
+  ],
+  "material_sufficiency": "ready-for-brief"
+}

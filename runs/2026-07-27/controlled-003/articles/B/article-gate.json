@@ -1,0 +1,59 @@
+{
+  "article_id": "article-002",
+  "slot": "B",
+  "markdown_path": "articles/B/article-draft.md",
+  "evidence_pack_path": "articles/B/evidence-pack.json",
+  "writing_brief_path": "articles/B/writing-brief.json",
+  "title": "票房破5亿，豆瓣6.6，周星驰这次为什么吵成这样",
+  "work": "功夫女足",
+  "primary_atom": "周星驰的喜剧魔法还在，但观众的笑点变了",
+  "reader_intent": "怀旧",
+  "angle": "票房与口碑的冰火两重天",
+  "claim_coverage": "complete",
+  "claim_mappings": [
+    {
+      "claim_id": "b1",
+      "source_id": "src-B01",
+      "locator": "豆瓣开分6.6分"
+    },
+    {
+      "claim_id": "b2",
+      "source_id": "src-B01",
+      "locator": "至今有超过11万人参与评价"
+    },
+    {
+      "claim_id": "b3",
+      "source_id": "src-B01",
+      "locator": "截至7月12日22时44分，影片票房已突破5亿"
+    },
+    {
+      "claim_id": "b4",
+      "source_id": "src-B01",
+      "locator": "口碑两极分化，票房强势逆袭，呈现出“冰火两重天”的奇特景象"
+    },
+    {
+      "claim_id": "b5",
+      "source_id": "src-B02",
+      "locator": "推掉全年所有商业活动，零片酬接戏，历经半年封闭式特训"
+    },
+    {
+      "claim_id": "b6",
+      "source_id": "src-B02",
+      "locator": "体脂率从24%降至16%"
+    },
+    {
+      "claim_id": "b7",
+      "source_id": "src-B02",
+      "locator": "《你好，李焕英》中温柔坚韧的母亲形象深入人心"
+    }
+  ],
+  "concrete_support_types": [
+    "rating-data",
+    "box-office-data",
+    "training-profile",
+    "public-discussion"
+  ],
+  "html_delivery_state": "withheld",
+  "publication_authorization": "not_authorized",
+  "state": "R6 drafting"
+}

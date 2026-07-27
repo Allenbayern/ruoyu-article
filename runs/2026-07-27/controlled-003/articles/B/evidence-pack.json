@@ -1,0 +1,19 @@
+{
+  "article_id": "article-002",
+  "candidate_id": "cand-002",
+  "captured_at": "2026-07-27T01:16:27.742216+08:00",
+  "state": "R4 evidence-ready",
+  "coverage_gaps": "none",
+  "evidence_atoms": [
+    "两天破5亿三天近5.5亿",
+    "豆瓣6.6口碑撕裂",
+    "难看冲上热搜",
+    "张小斐封闭训练半年",
+    "体脂率24%降16/零片酬"
+  ],
+  "source_ids": [
+    "src-B01",
+    "src-B02"
+  ],
+  "material_sufficiency": "ready-for-brief"
+}

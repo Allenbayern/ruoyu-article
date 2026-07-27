@@ -1,0 +1,20 @@
+{
+  "article_id": "article-003",
+  "candidate_id": "cand-003",
+  "state": "R5 brief-ready",
+  "slot": "C",
+  "narrative_core": {
+    "primary_atom": "一部地方气质鲜明的电影，为什么能逆袭进入年度前四",
+    "reader_intent": "知识获取",
+    "angle": "口碑逆袭的底层逻辑：情感叙事打败流量公式"
+  },
+  "must_prove_claim_ids": [
+    "c1",
+    "c2",
+    "c3",
+    "c4",
+    "c5"
+  ],
+  "title_promise": "票房预测17亿+，这部地方电影为什么能冲进年度前四",
+  "evidence_decision": "ready-for-brief"
+}

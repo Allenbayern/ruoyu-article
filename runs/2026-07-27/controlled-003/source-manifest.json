@@ -1,0 +1,98 @@
+{
+  "run_id": "2026-07-27/controlled-003",
+  "captured_at": "2026-07-27T00:58:37.785783+08:00",
+  "timezone": "+08:00",
+  "sources": [
+    {
+      "source_id": "src-A01",
+      "role": "confirmed-primary",
+      "independence_group": "sina-finance",
+      "url": "https://finance.sina.com.cn/wm/2026-07-26/doc-inikcuef0910379.shtml",
+      "title": "三国第一部：争洛阳宣布撤档",
+      "candidate_id": "cand-001",
+      "relative_path": "sources/src-A01-sina-withdrawal.html",
+      "captured_at": "2026-07-27T00:58:37.785783+08:00",
+      "sha256": "53eed56af1806c23fcb5c0d0ec13b6f53ebda0461d771b0f92b4cc293f110d66",
+      "size_bytes": 98633,
+      "usable": true
+    },
+    {
+      "source_id": "src-A02",
+      "role": "confirmed-primary",
+      "independence_group": "sina-finance",
+      "url": "https://finance.sina.com.cn/jjxw/2026-07-25/doc-iniizvnx4175297.shtml",
+      "title": "不好看可退票，豆瓣8.1分也带不动",
+      "candidate_id": "cand-001",
+      "relative_path": "sources/src-A02-sina-deny.html",
+      "captured_at": "2026-07-27T00:58:37.785783+08:00",
+      "sha256": "60f7afdb3605a948d0c6ab12ec3817d2ef899a0144505474706d3c008633c422",
+      "size_bytes": 99124,
+      "usable": true
+    },
+    {
+      "source_id": "src-B01",
+      "role": "confirmed-primary",
+      "independence_group": "china-com",
+      "url": "https://news.china.com/socialgd/10000169/20260713/49607183.html",
+      "title": "功夫女足口碑票房两极分化",
+      "candidate_id": "cand-002",
+      "relative_path": "sources/src-B01-sina-polarized.html",
+      "captured_at": "2026-07-27T00:58:37.785783+08:00",
+      "sha256": "0d3673390c68111302eac59ae751a07def8cc0002ff1a1dd5603dfe438d60062",
+      "size_bytes": 54570,
+      "usable": true
+    },
+    {
+      "source_id": "src-B02",
+      "role": "confirmed-primary",
+      "independence_group": "sina-ent",
+      "url": "https://ent.sina.cn/2026-07-10/detail-inihftwt8520412.d.html",
+      "title": "张小斐为功夫女足封闭训练半年",
+      "candidate_id": "cand-002",
+      "relative_path": "sources/src-B02-sina-xiaofei.html",
+      "captured_at": "2026-07-27T00:58:37.785783+08:00",
+      "sha256": "97f34923433eabc8636b973a13946e3c4879cfbff0535fffed006ce56a1923ba",
+      "size_bytes": 43779,
+      "usable": true
+    },
+    {
+      "source_id": "src-C01",
+      "role": "confirmed-primary",
+      "independence_group": "sina-k",
+      "url": "http://k.sina.com.cn/article_7931690445_1d8c3fdcd001021arc.html",
+      "title": "给阿嬷的情书口碑逆袭跻身年度前四",
+      "candidate_id": "cand-003",
+      "relative_path": "sources/src-C01-sina-darkhorse.html",
+      "captured_at": "2026-07-27T00:58:37.785783+08:00",
+      "sha256": "d57154a73488b8e68244caca0ce21da5e578eda262f2c7a672747efdcd60a234",
+      "size_bytes": 84201,
+      "usable": true
+    },
+    {
+      "source_id": "src-C02",
+      "role": "confirmed-primary",
+      "independence_group": "toutiao",
+      "url": "https://www.toutiao.com/article/7657557666163868203/",
+      "title": "给阿嬷的情书最新票房数据与口碑评价",
+      "candidate_id": "cand-003",
+      "relative_path": "sources/src-C02-toutiao-data.html",
+      "captured_at": "2026-07-27T00:58:37.785783+08:00",
+      "sha256": "9b56a6acdcb27eb620b5ee1ad870ad67964c70131b6fc31e8bd946b39c1e309e",
+      "size_bytes": 72914,
+      "usable": true
+    },
+    {
+      "source_id": "src-C04",
+      "role": "independent-review",
+      "independence_group": "wikipedia",
+      "url": "https://zh.wikipedia.org/wiki/%E7%BB%99%E9%98%BF%E5%AC%B7%E7%9A%84%E6%83%85%E4%B9%A6",
+      "title": "给阿嬷的情书-维基百科",
+      "candidate_id": "cand-003",
+      "relative_path": "sources/src-C04-wiki.html",
+      "captured_at": "2026-07-27T01:46:30.366063+08:00",
+      "sha256": "d5246cd7a902a21588e7056b06020d3cffc8afbce19d286df373a65f5baf8c03",
+      "size_bytes": 536119,
+      "usable": true
+    }
+  ]
+}

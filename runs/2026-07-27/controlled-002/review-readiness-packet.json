@@ -1,0 +1,79 @@
+{
+  "run_id": "2026-07-27/controlled-002",
+  "original_request_ref": "docs/plans/2026-07-27-controlled-002-prewrite-gates.md — Task 8: Run controlled-002 in four bounded worker slices",
+  "risk_tier": "L2",
+  "l2_trigger_ids": [
+    "material_publish_claim",
+    "release_promotion"
+  ],
+  "acceptance_criteria": [
+    "All 3 articles have 1500-2200 Chinese characters",
+    "All 3 article titles <= 30 Chinese characters",
+    "Source manifest validates (digests match, safe paths)",
+    "Per-article validators pass (char count, title, claims, support types)",
+    "Batch validator passes (slots distinct, dedupe valid)",
+    "All claims mapped to verified sources with locators",
+    "HTML withheld, publication not_authorized",
+    "Coverage gaps documented (Slot C freshness discrepancy)"
+  ],
+  "criterion_evidence_refs": {
+    "char_count": "terminal: python3 char count validated A=1617, B=1508, C=1505",
+    "source_manifest": "terminal: validate_source_manifest() PASS — 7 sources, 5 independence groups",
+    "per_article": "article-gate.json files for A/B/C all validated PASS",
+    "batch": "validate_batch() PASS, controlled-run-manifest.json at R8",
+    "claim_coverage": "claim_mappings in each article-gate.json map to source-manifest.json"
+  },
+  "criterion_negative_path_refs": {
+    "char_count": "controlled-001 drafts were 1024/928/946 chars — now fixed with explicit gate",
+    "freshness": "controlled-001 had false fermenting labels — now classify_freshness() enforces rules",
+    "slot_C_freshness_gap": "candidate claims 7月20日 release but actual is 8月1日 with preview screenings only"
+  },
+  "non_goals": [
+    "No HTML, images, delivery, cron, publisher integration, or publication",
+    "No claim that capacity score proves article quality",
+    "No semantic fact checker replacing source/content review",
+    "No repair/promotion of controlled-001 drafts"
+  ],
+  "artifact_refs": {
+    "source-manifest.json": {
+      "sha256": "c002635d33807e81b7fd54c4d21cfcc37e26f36d78e4706ae74bf5b493f63663",
+      "size_bytes": 3864
+    },
+    "candidate-pool.json": {
+      "sha256": "cddca4b08984b15c425b489da75fae78162f3fe4b0f6281a9f0086ddd3f4dee9",
+      "size_bytes": 10741
+    },
+    "slot-decisions.json": {
+      "sha256": "3b6e62446d0f29355d60e19d7e74052c22b33a51fcd58e9b267c127f66efdc3e",
+      "size_bytes": 402
+    },
+    "controlled-run-manifest.json": {
+      "sha256": "e1c31f9a2c9cb5fad393030b5a17ccd3837b95fe83f3dbbf0668984c510d693c",
+      "size_bytes": 7088
+    },
+    "articles/A/article-draft.md": {
+      "sha256": "b8d33db1934b78df563b77e5f9640f065b4454f667b82affdecd024cc5d323ac",
+      "size_bytes": 5704
+    },
+    "articles/B/article-draft.md": {
+      "sha256": "038a3cd5cffebc6e76639193543ce66a75b235c35ca1579d73f8b036b749bf62",
+      "size_bytes": 5204
+    },
+    "articles/C/article-draft.md": {
+      "sha256": "b4d11dfee7492f7f7af9c1e6711e5450148c36f8dfe941f9ee108899d28ba01b",
+      "size_bytes": 5119
+    }
+  },
+  "evidence_refs": {
+    "source_fetch": "curl fetched 7/13 URLs (3 blocked by WAF/403), all stored in sources/",
+    "validator_run": "python3 -m pytest -q: 49 passed in 0.06s",
+    "char_counts": "A=1617, B=1508, C=1505 — all within 1500-2200",
+    "source_digests": "validate_source_manifest() returned [] (no errors)"
+  },
+  "attack_surface_menu": "content / editorial",
+  "coverage_gaps": [
+    "Slot C event_time (2026-07-20) does not match actual release date (2026-08-01); preview box office used as freshness trigger",
+    "3 source URLs blocked (QQ News WAF, 163 403, smzdm redirect) — could not capture those sources",
+    "No independent review source for Slot B beyond the two primary news outlets (sina-cn, ahwang-cn)"
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "run_id": "2026-07-27/controlled-003",
+  "reviewed_at": "2026-07-27T01:25:30+08:00",
+  "review_source": "controller synthesized from timed-out Sol transcript deleg_514cd106",
+  "mechanical_gate_status": "pass",
+  "sol_status": "timeout",
+  "controller_decision": "R8 review-ready only; not controller-accepted for publish-ready factual quality",
+  "known_findings": [
+    {
+      "id": "timeout-f1",
+      "severity": "major",
+      "target": "claim_coverage completeness across A/B/C",
+      "evidence": "Timed-out Sol transcript explicitly notes each article maps only about five source atoms while expanding many more factual, market, and commentary claims.",
+      "required_fix": "Either reduce unsupported factual/detail claims or expand claim inventory + locator mapping substantially."
+    },
+    {
+      "id": "timeout-f2",
+      "severity": "major",
+      "target": "external independent verification",
+      "evidence": "SearXNG timed out repeatedly during Sol review; no full independent web cross-check completed.",
+      "required_fix": "Re-run independent review when search backend is healthy, or manually replace weak claims with directly evidenced ones."
+    }
+  ],
+  "non_findings": [
+    "candidate pool validated",
+    "slot decisions validated",
+    "source manifest validated",
+    "A/B/C article-stage validators passed",
+    "batch validator passed",
+    "char counts in range: A 1526, B 1597, C 1768"
+  ],
+  "recommended_next_step": "Do evidence-intake / claim-inventory tightening before treating this batch as fully adversarially reviewed."
+}

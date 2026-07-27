@@ -1,0 +1,22 @@
+{
+  "article_id": "article-003",
+  "candidate_id": "cand-003",
+  "captured_at": "2026-07-27T00:36:43.939564+08:00",
+  "state": "R4 evidence-ready",
+  "coverage_gaps": "candidate_event_time_2026-07-20_actual_release_2026-08-01_preview_screenings_only",
+  "evidence_atoms": [
+    "章笛沙科幻导演首作",
+    "改编自雨果奖获奖短篇小说",
+    "1970/2035双时空叙事，算盘vs星际引力",
+    "黄建新监制，黄渤、吴磊、高叶、孙阳主演",
+    "六千余人同场拨算盘的视觉高潮戏",
+    "点映票房截至7月25日破4000万",
+    "受《流浪地球》启发但走向完全不同方向"
+  ],
+  "source_ids": [
+    "src-C01",
+    "src-C03",
+    "src-C05"
+  ],
+  "material_sufficiency": "ready-for-brief"
+}

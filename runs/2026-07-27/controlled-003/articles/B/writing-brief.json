@@ -1,0 +1,20 @@
+{
+  "article_id": "article-002",
+  "candidate_id": "cand-002",
+  "state": "R5 brief-ready",
+  "slot": "B",
+  "narrative_core": {
+    "primary_atom": "周星驰的喜剧魔法还在，但观众的笑点变了",
+    "reader_intent": "怀旧",
+    "angle": "票房与口碑的冰火两重天"
+  },
+  "must_prove_claim_ids": [
+    "b1",
+    "b2",
+    "b3",
+    "b4",
+    "b5"
+  ],
+  "title_promise": "票房破5亿，豆瓣6.6，周星驰这次为什么吵成这样",
+  "evidence_decision": "ready-for-brief"
+}

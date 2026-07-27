@@ -1,0 +1,349 @@
+{
+  "run_id": "2026-07-27/controlled-002",
+  "observed_at": "2026-07-27T00:25:40.716872+08:00",
+  "timezone": "+08:00",
+  "candidates": [
+    {
+      "candidate_id": "cand-001",
+      "work": "大圣崛起",
+      "core_person_or_event": "动画电影临上映前10天撤档",
+      "primary_atom": "国产动画11年难产的信任危机",
+      "reader_intent": "吃瓜",
+      "angle": "撤档背后的行业真相",
+      "title_skeleton": "等了11年的动画撤档",
+      "ending_destination": "国产动画的困境",
+      "event_time": "2026-07-10T00:00:00+08:00",
+      "observed_at": "2026-07-27T00:25:40.716872+08:00",
+      "freshness_window": "fermenting-1-3d",
+      "current_trigger": "撤档后持续讨论",
+      "content_value_scores": {
+        "emotion": 3,
+        "narrative": 3,
+        "share": 3,
+        "human": 2,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary",
+        "independent-review"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2",
+        "e3"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2"
+      ],
+      "recommendation": "A",
+      "reject_or_wait_reason": ""
+    },
+    {
+      "candidate_id": "cand-002",
+      "work": "开个玩笑",
+      "core_person_or_event": "上映前一天撤档的职场性骚扰院线片",
+      "primary_atom": "一部敢于碰触职场的电影被按下暂停",
+      "reader_intent": "愤怒",
+      "angle": "片方沉默背后的压力",
+      "title_skeleton": "上映前一天被撤",
+      "ending_destination": "院线的自我审查",
+      "event_time": "2026-07-03T00:00:00+08:00",
+      "observed_at": "2026-07-27T00:25:40.716872+08:00",
+      "freshness_window": "fermenting-1-3d",
+      "current_trigger": "撤档事件持续引发讨论",
+      "content_value_scores": {
+        "emotion": 3,
+        "narrative": 3,
+        "share": 3,
+        "human": 3,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2",
+        "a3"
+      ],
+      "recommendation": "B",
+      "reject_or_wait_reason": ""
+    },
+    {
+      "candidate_id": "cand-003",
+      "work": "群星闪耀时",
+      "core_person_or_event": "8月1日正式上映，7月点映票房破4000万的雨果奖相关科幻片",
+      "primary_atom": "流浪地球团队的新科幻冒险",
+      "reader_intent": "好奇",
+      "angle": "国产科幻从宏大转向微观",
+      "title_skeleton": "流浪地球团队新作",
+      "ending_destination": "科幻片的人性转向",
+      "event_time": "2026-08-01T00:00:00+08:00",
+      "observed_at": "2026-07-27T00:25:40.716872+08:00",
+      "freshness_window": "revival",
+      "current_trigger": "7月点映票房破4000万，正式公映在即",
+      "content_value_scores": {
+        "emotion": 2,
+        "narrative": 2,
+        "share": 2,
+        "human": 2,
+        "freshness": 3
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2",
+        "e3"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2"
+      ],
+      "recommendation": "C",
+      "reject_or_wait_reason": ""
+    },
+    {
+      "candidate_id": "cand-004",
+      "work": "八仙！",
+      "core_person_or_event": "7月18日全年龄合家欢动画",
+      "primary_atom": "传统IP如何在暑期档找到观众",
+      "reader_intent": "怀旧",
+      "angle": "合家欢动画的市场回归",
+      "title_skeleton": "八仙过海的新讲法",
+      "ending_destination": "传统IP的现代转译",
+      "event_time": "2026-07-18T00:00:00+08:00",
+      "observed_at": "2026-07-27T00:25:40.716872+08:00",
+      "freshness_window": "same-day",
+      "current_trigger": "上映中",
+      "content_value_scores": {
+        "emotion": 2,
+        "narrative": 2,
+        "share": 2,
+        "human": 2,
+        "freshness": 3
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2"
+      ],
+      "recommendation": "Archive",
+      "reject_or_wait_reason": "与cand-003同为动画/合家欢方向，当日已有更独特的科幻题"
+    },
+    {
+      "candidate_id": "cand-005",
+      "work": "玩具总动员5",
+      "core_person_or_event": "7月24日Pixar续集",
+      "primary_atom": "一部拍了30年的系列还在讲什么",
+      "reader_intent": "怀旧",
+      "angle": "系列长寿的秘密",
+      "title_skeleton": "玩具总动员第五部",
+      "ending_destination": "成长与告别的永恒主题",
+      "event_time": "2026-07-24T00:00:00+08:00",
+      "observed_at": "2026-07-27T00:25:40.716872+08:00",
+      "freshness_window": "same-day",
+      "current_trigger": "即将上映",
+      "content_value_scores": {
+        "emotion": 3,
+        "narrative": 2,
+        "share": 2,
+        "human": 3,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2",
+        "a3"
+      ],
+      "recommendation": "Archive",
+      "reject_or_wait_reason": "外语片，若雨随影以华语内容为主；可在后续专题中使用"
+    },
+    {
+      "candidate_id": "cand-006",
+      "work": "魔方小姐",
+      "core_person_or_event": "7月3日上映的国产片",
+      "primary_atom": "暑期档开局的女性题材",
+      "reader_intent": "好奇",
+      "angle": "女性叙事在商业片中的位置",
+      "title_skeleton": "暑期档的女性声音",
+      "ending_destination": "类型片中的性别表达",
+      "event_time": "2026-07-03T00:00:00+08:00",
+      "observed_at": "2026-07-27T00:25:40.716872+08:00",
+      "freshness_window": "fermenting-1-3d",
+      "current_trigger": "上映后口碑讨论",
+      "content_value_scores": {
+        "emotion": 2,
+        "narrative": 2,
+        "share": 2,
+        "human": 2,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1"
+      ],
+      "concrete_anchor_ids": [
+        "a1"
+      ],
+      "recommendation": "Wait",
+      "reject_or_wait_reason": "需更多口碑和具体讨论素材后再判断"
+    },
+    {
+      "candidate_id": "cand-007",
+      "work": "暑期档撤档潮",
+      "core_person_or_event": "2026暑期档多部影片临时撤档",
+      "primary_atom": "撤档成了行业惯性",
+      "reader_intent": "吃瓜",
+      "angle": "撤档背后的行业生态",
+      "title_skeleton": "暑期档为什么一直撤",
+      "ending_destination": "电影行业的信任危机",
+      "event_time": "2026-07-10T00:00:00+08:00",
+      "observed_at": "2026-07-27T00:25:40.716872+08:00",
+      "freshness_window": "fermenting-1-3d",
+      "current_trigger": "新浪电影热点报道",
+      "content_value_scores": {
+        "emotion": 3,
+        "narrative": 3,
+        "share": 3,
+        "human": 2,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary",
+        "independent-review"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2"
+      ],
+      "recommendation": "Archive",
+      "reject_or_wait_reason": "与cand-001和cand-002重复事件，已通过具体电影cover"
+    },
+    {
+      "candidate_id": "cand-008",
+      "work": "The Decisive Moment",
+      "core_person_or_event": "太空题材新片北京点映",
+      "primary_atom": "中国太空片的新叙事方向",
+      "reader_intent": "好奇",
+      "angle": "从宏大叙事到个人抉择",
+      "title_skeleton": "太空片的新讲法",
+      "ending_destination": "类型片的进化",
+      "event_time": "2026-07-24T00:00:00+08:00",
+      "observed_at": "2026-07-27T00:25:40.716872+08:00",
+      "freshness_window": "same-day",
+      "current_trigger": "人民网英文报道北京点映",
+      "content_value_scores": {
+        "emotion": 2,
+        "narrative": 2,
+        "share": 2,
+        "human": 2,
+        "freshness": 3
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2"
+      ],
+      "concrete_anchor_ids": [
+        "a1"
+      ],
+      "recommendation": "Wait",
+      "reject_or_wait_reason": "外语名称为主，需确认中文名和更多本土报道"
+    },
+    {
+      "candidate_id": "cand-009",
+      "work": "三国第一部：争洛阳",
+      "core_person_or_event": "追光动画三国系列开局",
+      "primary_atom": "古典IP的动画再造",
+      "reader_intent": "好奇",
+      "angle": "三国故事如何吸引新一代",
+      "title_skeleton": "三国动画的新开局",
+      "ending_destination": "传统文化IP的商业化",
+      "event_time": "2026-07-10T00:00:00+08:00",
+      "observed_at": "2026-07-27T00:25:40.716872+08:00",
+      "freshness_window": "fermenting-1-3d",
+      "current_trigger": "与《大圣崛起》同档竞争话题",
+      "content_value_scores": {
+        "emotion": 2,
+        "narrative": 3,
+        "share": 2,
+        "human": 2,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2",
+        "e3"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2"
+      ],
+      "recommendation": "Archive",
+      "reject_or_wait_reason": "追光动画系列可做专题，单篇不如cand-001撤档事件有力"
+    },
+    {
+      "candidate_id": "cand-010",
+      "work": "暑期档国产片",
+      "core_person_or_event": "暑期档国产片多样化趋势",
+      "primary_atom": "国产片从模仿到建立自己的类型",
+      "reader_intent": "知识获取",
+      "angle": "国产类型片的成熟",
+      "title_skeleton": "暑期档的国产力量",
+      "ending_destination": "中国电影的工业化",
+      "event_time": "2026-07-24T00:00:00+08:00",
+      "observed_at": "2026-07-27T00:25:40.716872+08:00",
+      "freshness_window": "same-day",
+      "current_trigger": "人民网文章分析暑期档",
+      "content_value_scores": {
+        "emotion": 1,
+        "narrative": 2,
+        "share": 1,
+        "human": 1,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1"
+      ],
+      "concrete_anchor_ids": [
+        "a1"
+      ],
+      "recommendation": "Archive",
+      "reject_or_wait_reason": "行业分析方向，不符合若雨随影借电影看人生的定位"
+    }
+  ]
+}

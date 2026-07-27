@@ -1,0 +1,59 @@
+{
+  "article_id": "article-003",
+  "slot": "C",
+  "markdown_path": "articles/C/article-draft.md",
+  "evidence_pack_path": "articles/C/evidence-pack.json",
+  "writing_brief_path": "articles/C/writing-brief.json",
+  "title": "票房预测17亿+，这部地方电影为什么能冲进年度前四",
+  "work": "给阿嬷的情书",
+  "primary_atom": "一部地方气质鲜明的电影，为什么能逆袭进入年度前四",
+  "reader_intent": "知识获取",
+  "angle": "口碑逆袭的底层逻辑：情感叙事打败流量公式",
+  "claim_coverage": "complete",
+  "claim_mappings": [
+    {
+      "claim_id": "c1",
+      "source_id": "src-C01",
+      "locator": "截至5月25日，温情亲情电影《给阿嬷的情书》累计票房突破11.13亿元（含预售）"
+    },
+    {
+      "claim_id": "c2",
+      "source_id": "src-C01",
+      "locator": "正式跻身2026年中国内地年度票房榜前四"
+    },
+    {
+      "claim_id": "c3",
+      "source_id": "src-C01",
+      "locator": "成为2026年电影市场最大的黑马影片之一"
+    },
+    {
+      "claim_id": "c4",
+      "source_id": "src-C01",
+      "locator": "目前专业票务平台已将该片最终总票房预测上调至 17亿+"
+    },
+    {
+      "claim_id": "c5",
+      "source_id": "src-C04",
+      "locator": "导演 蓝鸿春"
+    },
+    {
+      "claim_id": "c6",
+      "source_id": "src-C04",
+      "locator": "2026年4月30日（中国大陆）"
+    },
+    {
+      "claim_id": "c7",
+      "source_id": "src-C04",
+      "locator": "该片是导演蓝鸿春继《爸，我一定行的》、《带你去见我妈》之后执导的第三部潮汕话电影"
+    }
+  ],
+  "concrete_support_types": [
+    "box-office-forecast",
+    "director-profile",
+    "release-date",
+    "independent-review"
+  ],
+  "html_delivery_state": "withheld",
+  "publication_authorization": "not_authorized",
+  "state": "R6 drafting"
+}

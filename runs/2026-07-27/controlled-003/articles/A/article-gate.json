@@ -1,0 +1,59 @@
+{
+  "article_id": "article-001",
+  "slot": "A",
+  "markdown_path": "articles/A/article-draft.md",
+  "evidence_pack_path": "articles/A/evidence-pack.json",
+  "writing_brief_path": "articles/A/writing-brief.json",
+  "title": "豆瓣8.1分，上映16天，这部电影退场了",
+  "work": "三国第一部：争洛阳",
+  "primary_atom": "一部豆瓣8.1分的动画，为什么留不住观众？",
+  "reader_intent": "吃瓜",
+  "angle": "高分低票房：叫好不叫座的国产动画困境",
+  "claim_coverage": "complete",
+  "claim_mappings": [
+    {
+      "claim_id": "a1",
+      "source_id": "src-A01",
+      "locator": "7月25日晚，电影《三国第一部：争洛阳》官方微博发表声明，宣布撤档。"
+    },
+    {
+      "claim_id": "a2",
+      "source_id": "src-A02",
+      "locator": "影片豆瓣开分8.0，后升至8.1"
+    },
+    {
+      "claim_id": "a3",
+      "source_id": "src-A02",
+      "locator": "上映16天的累计票房仅8148万元"
+    },
+    {
+      "claim_id": "a4",
+      "source_id": "src-A02",
+      "locator": "追光动画曾带来爆款动画电影《长安三万里》"
+    },
+    {
+      "claim_id": "a5",
+      "source_id": "src-A02",
+      "locator": "片方曾于7月17日罕见推出“不好看可退票”政策"
+    },
+    {
+      "claim_id": "a6",
+      "source_id": "src-A02",
+      "locator": "“请君品鉴，不好包退”"
+    },
+    {
+      "claim_id": "a7",
+      "source_id": "src-A01",
+      "locator": "看到了‘自来水们’自发包场观影、奔走安利的热忱"
+    }
+  ],
+  "concrete_support_types": [
+    "box-office-data",
+    "withdrawal-statement",
+    "ticket-refund-policy",
+    "attributed-commentary"
+  ],
+  "html_delivery_state": "withheld",
+  "publication_authorization": "not_authorized",
+  "state": "R6 drafting"
+}

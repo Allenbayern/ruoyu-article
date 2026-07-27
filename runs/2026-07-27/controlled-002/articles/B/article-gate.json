@@ -1,0 +1,76 @@
+{
+  "article_id": "article-002",
+  "slot": "B",
+  "markdown_path": "articles/B/article-draft.md",
+  "evidence_pack_path": "articles/B/evidence-pack.json",
+  "writing_brief_path": "articles/B/writing-brief.json",
+  "title": "上映前一天，这部讲性骚扰的中国电影悄悄消失了",
+  "claim_mappings": [
+    {
+      "claim_id": "b-f1",
+      "text": "7月3日原定公映，无排片无购票",
+      "source_id": "src-B01",
+      "locator": "原定今日公映，但已经没有排片和购票选项"
+    },
+    {
+      "claim_id": "b-f2",
+      "text": "官方未发撤档公告",
+      "source_id": "src-B01",
+      "locator": "官方也没有发任何公告"
+    },
+    {
+      "claim_id": "b-f3",
+      "text": "尹丽川执导，张天爱春夏潘斌龙孙艺洲主演",
+      "source_id": "src-B04",
+      "locator": "尹丽川导演，张天爱、春夏领衔主演，潘斌龙领衔主演，孙艺洲特别主演"
+    },
+    {
+      "claim_id": "b-f4",
+      "text": "改编自真人真事：环卫工人季红诉罗勇正",
+      "source_id": "src-B04",
+      "locator": "电影改编自真人真事"
+    },
+    {
+      "claim_id": "b-f5",
+      "text": "6月5日定档，发布预告和海报",
+      "source_id": "src-B04",
+      "locator": "官宣定档7月3日全国公映"
+    },
+    {
+      "claim_id": "b-v1",
+      "text": "大皖新闻：国内首部聚焦性骚扰话题",
+      "source_id": "src-B04",
+      "locator": "作为国内首部聚焦性骚扰话题的影片"
+    },
+    {
+      "claim_id": "b-v2",
+      "text": "乌鸦·火堂：7月3日8:18发博确认撤档",
+      "source_id": "src-B01",
+      "locator": "应该是撤档了，原定今日公映"
+    }
+  ],
+  "concrete_support_types": [
+    "news-report",
+    "director-profile",
+    "cast-list"
+  ],
+  "html_delivery_state": "withheld",
+  "publication_authorization": "not_authorized",
+  "state": "R6 drafting",
+  "work": "开个玩笑",
+  "primary_atom": "一部敢于碰触职场的电影被按下暂停",
+  "reader_intent": "愤怒",
+  "angle": "片方沉默背后的压力",
+  "claim_coverage": "partial",
+  "author_inferences": [
+    "\"国内首部\"标签来自片方宣传口径 — 已注明出处",
+    "撤档原因不明 — 已明确声明无证据",
+    "出走的决心豆瓣评分 — 常识性背景"
+  ],
+  "coverage_gaps": [
+    "撤档原因无独立来源",
+    "出走的决心豆瓣评分未抓取时间戳",
+    "片方未回应 — 事实性陈述，无反证"
+  ],
+  "sol_review_findings_addressed": true
+}

@@ -1,0 +1,20 @@
+{
+  "article_id": "article-001",
+  "candidate_id": "cand-001",
+  "state": "R5 brief-ready",
+  "slot": "A",
+  "narrative_core": {
+    "primary_atom": "国产动画11年难产的信任危机",
+    "reader_intent": "吃瓜",
+    "angle": "撤档背后的行业真相"
+  },
+  "must_prove_claim_ids": [
+    "e1-official-withdrawal",
+    "e2-not-official-sequel",
+    "e3-original-title-change",
+    "e4-eleven-years-wait",
+    "e5-public-confusion"
+  ],
+  "title_promise": "等了11年的大圣，上映前10天又跑了",
+  "evidence_decision": "ready-for-brief"
+}

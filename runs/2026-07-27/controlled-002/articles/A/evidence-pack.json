@@ -1,0 +1,19 @@
+{
+  "article_id": "article-001",
+  "candidate_id": "cand-001",
+  "captured_at": "2026-07-27T00:36:43.939564+08:00",
+  "state": "R4 evidence-ready",
+  "coverage_gaps": "none",
+  "evidence_atoms": [
+    "6月30日官方宣布撤档，距7月10日公映仅10天",
+    "并非《大圣归来》续集，导演非田晓鹏",
+    "2016年以《混世四猴》立项，后改名《大圣崛起》",
+    "出品人路伟为《大圣归来》操盘手，但团队不同",
+    "网友质疑宣传刻意混淆"
+  ],
+  "source_ids": [
+    "src-A02",
+    "src-A03"
+  ],
+  "material_sufficiency": "ready-for-brief"
+}

@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="https://ai.so.com/favicon.ico" />
+    <link rel="stylesheet" href="https://s2.ssl.qhres2.com/static/365caa2cde46b94d.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>搜索Agent，你的全能搜索助手</title>
+    <script type="module" crossorigin src="https://s4.ssl.qhres2.com/!7d0fad89/index-B0iaSMyl.js"></script>
+    <link rel="modulepreload" crossorigin href="https://s5.ssl.qhres2.com/!7d0fad89/base-C7jyuIOc.js">
+    <link rel="modulepreload" crossorigin href="https://s3.ssl.qhres2.com/!7d0fad89/common-Bhe0WAFE.js">
+    <link rel="stylesheet" crossorigin href="https://s4.ssl.qhres2.com/!7d0fad89/index-BlcnezYE.css">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      /**
+       * AISO_PERF_FIRST_SCREEN: 首屏性能打点统一标识，便于全局搜索定位。
+       *
+       * AISO 首屏性能早期采集器。
+       *
+       * 为什么放在 index.html，而不是只放在 main.tsx？
+       * - main.tsx 需要等主 JS 下载、解析、ESM import 依赖处理后才会执行。
+       * - FCP/LCP/LongTask 可能发生得很早，放在 HTML 里可以尽早注册 observer。
+       *
+       * 这里不发请求，只把数据暂存在 window.__AISO_PERF__。
+       * 真正上报发生在 /search 欢迎页渲染完成后，由 firstScreen.ts 汇总发送。
+       */
+      (function () {
+        var marks = {};
+        var longTasks = [];
+        var latestLcp = null;
+
+        window.__AISO_PERF__ = {
+          marks: marks,
+          longTasks: longTasks,
+          getLcp: function () {
+            return latestLcp;
+          },
+          mark: function (name) {
+            marks[name] = performance.now();
+          },
+        };
+
+        try {
+          new PerformanceObserver(function (list) {
+            list.getEntries().forEach(function (entry) {
+              latestLcp = entry.startTime;
+            });
+          }).observe({ type: 'largest-contentful-paint', buffered: true });
+        } catch (e) {}
+
+        try {
+          var readyMessageSent = false;
+
+          new PerformanceObserver(function (list, observer) {
+            list.getEntries().forEach(function (entry) {
+              if (entry.name !== 'first-contentful-paint' || readyMessageSent) return;
+
+              // FCP 表示浏览器已经实际绘制出文字、图片或 SVG 等内容。
+              // 此时再通知 iframe 宿主移除 loading，避免用户看到 AISO 白屏。
+              if (window.parent !== window) {
+                readyMessageSent = true;
+                window.parent.postMessage(
+                  {
+                    type: 'ask_ai:ready',
+                  },
+                  '*',
+                );
+                observer.disconnect();
+              }
+            });
+          }).observe({ type: 'paint', buffered: true });
+        } catch (e) {}
+
+        try {
+          new PerformanceObserver(function (list) {
+            list.getEntries().forEach(function (entry) {
+              longTasks.push({
+                start: entry.startTime,
+                duration: entry.duration,
+              });
+            });
+          }).observe({ type: 'longtask', buffered: true });
+        } catch (e) {}
+      })();
+    </script>
+    <script>
+      (function () {
+        var ABTEST_VERSION = '';
+
+        So = typeof So === 'undefined' ? {} : So;
+        So.comm = So.comm ? So.comm : {};
+        So.comm.abv = '';
+        So.comm.abtest = [];
+        So.comm.oabv = ABTEST_VERSION;
+
+        if (ABTEST_VERSION && ABTEST_VERSION !== '{[(ABTEST_VERSION_REPLACE)]}') {
+          var testArr = ABTEST_VERSION.split('&');
+          for (var i = 0; i < testArr.length; i++) {
+            var testStr = testArr[i];
+            var everyTestArr = testStr.split(/:|=/);
+            if (everyTestArr.length === 3 && everyTestArr[0] && everyTestArr[1] && everyTestArr[2]) {
+              var abvStr = everyTestArr[0] + '-' + everyTestArr[2];
+              So.comm.abv += So.comm.abv ? ',' + abvStr : abvStr;
+              So.comm.abtest.push({
+                n: everyTestArr[0],
+                k: everyTestArr[1],
+                v: everyTestArr[2],
+              });
+            }
+          }
+        }
+
+        So.lib = So.lib ? So.lib : {};
+        So.lib.checkAbv = function (e, t) {
+          return new RegExp(e + '-' + t).test(So.comm.abv);
+        };
+      })();
+    </script>
+
+    <script src="https://ss.360tres.com/lib/jquery/183.js"></script>
+    <script src="https://s.ssl.qhimg.com/quc/quc7.js"></script>
+  </body>
+</html>

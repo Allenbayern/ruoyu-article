@@ -1,0 +1,19 @@
+{
+  "article_id": "article-001",
+  "candidate_id": "cand-001",
+  "captured_at": "2026-07-27T01:16:27.742216+08:00",
+  "state": "R4 evidence-ready",
+  "coverage_gaps": "none",
+  "evidence_atoms": [
+    "7月26日晚宣布撤档",
+    "豆瓣8.1分",
+    "票房不到8200万",
+    "曾打出不好看可退票",
+    "7月16日否认撤档传闻"
+  ],
+  "source_ids": [
+    "src-A01",
+    "src-A02"
+  ],
+  "material_sufficiency": "ready-for-brief"
+}

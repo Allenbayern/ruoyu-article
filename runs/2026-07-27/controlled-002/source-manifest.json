@@ -1,0 +1,91 @@
+{
+  "run_id": "2026-07-27/controlled-002",
+  "captured_at": "2026-07-27T00:29:21.755427+08:00",
+  "timezone": "+08:00",
+  "sources": [
+    {
+      "source_id": "src-A02",
+      "candidate_id": "cand-001",
+      "role": "audience-reaction",
+      "independence_group": "sina-cn-weibo",
+      "url": "https://www.sina.cn/news/detail/5317353899297666.html",
+      "relative_path": "sources/src-A02-sina-overview.html",
+      "title": "4部大片连夜撤档 — 网友评论与反应聚合",
+      "captured_at": "2026-07-27T00:29:21.755427+08:00",
+      "sha256": "3aa055077c5be5320a7e6654cf468e6e517865bf0a59732163b844ada80b0191",
+      "size_bytes": 63625
+    },
+    {
+      "source_id": "src-A03",
+      "candidate_id": "cand-001",
+      "role": "confirmed-primary",
+      "independence_group": "sina-k",
+      "url": "http://k.sina.com.cn/article_1804034764_6b8762cc04001hoy0.html",
+      "relative_path": "sources/src-A03-sina-nosequel.html",
+      "title": "动画电影《大圣崛起》宣布撤档退出暑期档",
+      "captured_at": "2026-07-27T00:29:21.755427+08:00",
+      "sha256": "36b1b6c8baf525f16735a6fe9466a622e0f4045b9191a4b640dc70571057a5dc",
+      "size_bytes": 79812
+    },
+    {
+      "source_id": "src-B01",
+      "candidate_id": "cand-002",
+      "role": "confirmed-primary",
+      "independence_group": "sina-cn",
+      "url": "https://www.sina.cn/news/detail/5316508779545583.html",
+      "relative_path": "sources/src-B01-sina-withdrawal.html",
+      "title": "《开个玩笑》撤档 — 上映前一天无公告撤档",
+      "captured_at": "2026-07-27T00:29:21.755427+08:00",
+      "sha256": "15e7ddaf4aa00cf4241a545f2070433b3fdf4605997dc6e66cb2382c7fa1ac3f",
+      "size_bytes": 26839
+    },
+    {
+      "source_id": "src-B04",
+      "candidate_id": "cand-002",
+      "role": "confirmed-primary",
+      "independence_group": "ahwang-cn",
+      "url": "https://www.ahwang.cn/newsflash/2026/0605/3012833.html",
+      "relative_path": "sources/src-B04-ahwang-announce.html",
+      "title": "聚焦性骚扰话题，尹丽川新片《开个玩笑》定档",
+      "captured_at": "2026-07-27T00:29:21.755427+08:00",
+      "sha256": "803b1ab377455bcd547acf479bab068c774b8a36c81e3fb27440884018983078",
+      "size_bytes": 48682
+    },
+    {
+      "source_id": "src-C01",
+      "candidate_id": "cand-003",
+      "role": "confirmed-primary",
+      "independence_group": "sina-ent",
+      "url": "https://ent.sina.cn/2026-07-04/detail-inifqwee2315632.d.html",
+      "relative_path": "sources/src-C01-sina-overview.html",
+      "title": "2026年7月上映的电影 — 5部重点大片全整理",
+      "captured_at": "2026-07-27T00:29:21.755427+08:00",
+      "sha256": "f01a26007f8c96423c1dba883f4e15d5d67bc839c279c169a80f8fb0f5a8f7d7",
+      "size_bytes": 46945
+    },
+    {
+      "source_id": "src-C03",
+      "candidate_id": "cand-003",
+      "role": "confirmed-primary",
+      "independence_group": "sina-k",
+      "url": "http://k.sina.com.cn/article_7857201856_1d45362c001908f842.html",
+      "relative_path": "sources/src-C03-sina-analysis.html",
+      "title": "电影《群星闪耀时》：中式科幻的一次'回望式'探索",
+      "captured_at": "2026-07-27T00:29:21.755427+08:00",
+      "sha256": "627dcae9d94374dee405affd733c690d5320daec35c69bdeb0d7184d9a82f632",
+      "size_bytes": 87356
+    },
+    {
+      "source_id": "src-C05",
+      "candidate_id": "cand-003",
+      "role": "structured-data",
+      "independence_group": "eastmoney",
+      "url": "https://finance.eastmoney.com/a/202607253821159162.html",
+      "relative_path": "sources/src-C05-eastmoney-boxoffice.html",
+      "title": "电影《群星闪耀时》票房破4000万元",
+      "captured_at": "2026-07-27T00:29:21.755427+08:00",
+      "sha256": "8846f29fc3e16da868da4c42efef8cd85d6619a26dfbd4972cabde177b5672ec",
+      "size_bytes": 52368
+    }
+  ]
+}

@@ -1,0 +1,75 @@
+{
+  "run_id": "2026-07-27/controlled-003",
+  "original_request_ref": "controlled-003 claim inventory tightening + second Sol review",
+  "risk_tier": "L2",
+  "l2_trigger_ids": [
+    "material_publish_claim",
+    "release_promotion"
+  ],
+  "acceptance_criteria": [
+    "source manifest validates",
+    "A/B/C 1500-2200 chars",
+    "every concrete factual claim in article-gate is locator-backed",
+    "article validators pass",
+    "batch validator passes",
+    "HTML withheld and not_authorized"
+  ],
+  "criterion_evidence_refs": {
+    "sources": "source-manifest.json with 7 sources / 6 usable including wikipedia independent source for C",
+    "chars": "A/B/C current drafts measured mechanically in local terminal",
+    "claim_mapping": "article-gate.json updated: A=7 mappings, B=7 mappings, C=7 mappings",
+    "validators": "article-stage and batch-stage rerun after tightening"
+  },
+  "criterion_negative_path_refs": {
+    "review_1": "first Sol run timed out after flagging claim-coverage overreach",
+    "dedupe": "duplicate reader_intent failed once and was repaired"
+  },
+  "non_goals": [
+    "No HTML",
+    "No publication",
+    "No delivery message"
+  ],
+  "artifact_refs": {
+    "candidate-pool.json": {
+      "sha256": "98823adbefd8ace390f322b20fd91208a83d049d5eb2d6a5d81283d4749efbd3"
+    },
+    "slot-decisions.json": {
+      "sha256": "4b6d2865f9def387b65ccf853e9c40dc9e7e8529baaceb9d624f5f337a88e017"
+    },
+    "source-manifest.json": {
+      "sha256": "76558a2fd452874594e3ff9d4a8d53ef88321744f1c50acf4d2e874ff55f5de2"
+    },
+    "articles/A/article-draft.md": {
+      "sha256": "bdfbb0aba7559f7128283d80df957bed442f4ec79f8806039b9b1167949de71f"
+    },
+    "articles/B/article-draft.md": {
+      "sha256": "0d61eeda7864b88cc4f68c677649d3129939c154aee6be72ee7f58a34484d0e2"
+    },
+    "articles/C/article-draft.md": {
+      "sha256": "bf53e95c9aa27c98376a8bf8fab97a303049208539c13f1f7fa9228ae8cddf2b"
+    },
+    "articles/A/article-gate.json": {
+      "sha256": "c9a048164643de8499633b3c7fdadc41225bd8e30ec63837ba4f3492969f9929"
+    },
+    "articles/B/article-gate.json": {
+      "sha256": "7aaa336ea7866a590c7f1a65ea92987874255f0193e7149b49882a2638a7fa40"
+    },
+    "articles/C/article-gate.json": {
+      "sha256": "a7783a88aac0631d0b115a5ea9df650311c67803fd0c815edb2e3f48e433d714"
+    },
+    "controlled-run-manifest.json": {
+      "sha256": "5076a25ee743894580f83a12b1c266fc420a99b9700dcf9517105c8c12043838"
+    }
+  },
+  "evidence_refs": {
+    "tests": "python3 -m pytest -q",
+    "source_snapshot_search": "local search_files against saved HTML snapshots, not web summaries"
+  },
+  "attack_surface_menu": "content / editorial",
+  "coverage_gaps": [
+    "A still contains author commentary about market tolerance and排片机制 as commentary not source-fact",
+    "B generational-audience split is author analysis built on sourced box office/rating facts",
+    "C emotional/cultural interpretation is commentary beyond source facts but no longer disguised as hard data"
+  ],
+  "reviewed_after_repairs_at": "2026-07-27T02:22:27.982577+08:00"
+}

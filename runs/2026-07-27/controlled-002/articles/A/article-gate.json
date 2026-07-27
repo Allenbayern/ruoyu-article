@@ -1,0 +1,83 @@
+{
+  "article_id": "article-001",
+  "slot": "A",
+  "markdown_path": "articles/A/article-draft.md",
+  "evidence_pack_path": "articles/A/evidence-pack.json",
+  "writing_brief_path": "articles/A/writing-brief.json",
+  "title": "等了11年的大圣，上映前10天又跑了",
+  "claim_mappings": [
+    {
+      "claim_id": "a-f1",
+      "text": "6月30日大圣崛起宣布撤档",
+      "source_id": "src-A03",
+      "locator": "动画电影《大圣崛起》宣布撤档退出暑期档"
+    },
+    {
+      "claim_id": "a-f2",
+      "text": "原定7月10日公映，距撤档仅10天",
+      "source_id": "src-A03",
+      "locator": "7月10日全国公映"
+    },
+    {
+      "claim_id": "a-f3",
+      "text": "不是大圣归来正统续集",
+      "source_id": "src-A03",
+      "locator": "并不是《大圣归来》的正统续集"
+    },
+    {
+      "claim_id": "a-f4",
+      "text": "2016年以混世四猴立项",
+      "source_id": "src-A02",
+      "locator": "最早在2016年就发了海报，片名叫《西游记之混世四猴》"
+    },
+    {
+      "claim_id": "a-f5",
+      "text": "出品人路伟为大圣归来操盘手之一",
+      "source_id": "src-A02",
+      "locator": "大圣归来主控出品方十年之作"
+    },
+    {
+      "claim_id": "a-v1",
+      "text": "漫港湾警告：宣传有刻意混淆嫌疑",
+      "source_id": "src-A02",
+      "locator": "宣传中有刻意混淆的嫌疑"
+    },
+    {
+      "claim_id": "a-v2",
+      "text": "王玮晨：2028年大圣闹天宫才是正统续作",
+      "source_id": "src-A02",
+      "locator": "2015大圣归来的正统续作，是2028年要上映的大圣闹天宫"
+    },
+    {
+      "claim_id": "a-v3",
+      "text": "新浪电影评论区：大圣崛起看预告片也很普通",
+      "source_id": "src-A02",
+      "locator": "电影纠缠：今年暑假档已经撤档了六部电影"
+    }
+  ],
+  "concrete_support_types": [
+    "official-announcement",
+    "weibo-audience-reaction",
+    "film-history-timeline"
+  ],
+  "html_delivery_state": "withheld",
+  "publication_authorization": "not_authorized",
+  "state": "R6 drafting",
+  "work": "大圣崛起",
+  "primary_atom": "国产动画11年难产的信任危机",
+  "reader_intent": "吃瓜",
+  "angle": "撤档背后的行业真相",
+  "claim_coverage": "partial",
+  "author_inferences": [
+    "片名变迁折射商业逻辑 — 作者观察",
+    "撤档循环已成行业惯性 — 作者概括",
+    "\"蹭IP/收割期待\"结论 — 作者判断",
+    "9.56亿票房/转发数等数字 — 常识性背景"
+  ],
+  "coverage_gaps": [
+    "微博转发/评论数字未独立验证",
+    "央视网推荐未独立验证",
+    "大鱼海棠到深海的撤档循环未逐片验证"
+  ],
+  "sol_review_findings_addressed": true
+}
