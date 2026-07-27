@@ -1,0 +1,46 @@
+{
+  "run_id": "2026-07-28/controlled-005",
+  "captured_at": "2026-07-27T03:28:46.272712+08:00",
+  "timezone": "+08:00",
+  "sources": [
+    {
+      "source_id": "src-A01",
+      "role": "confirmed-primary",
+      "independence_group": "sina",
+      "url": "https://finance.sina.com.cn/wm/2026-07-26/doc-inikciqi0479629.shtml",
+      "title": "《八仙！》自7月18日提档上映以来，凭借强劲口碑与持续走高的票房曲线，成为2026年暑期档最大黑马。猫眼评分9.7，淘票票9.6，豆瓣开分8.5",
+      "candidate_id": "cand-001",
+      "relative_path": "sources/src-A01-sina-baxian.html",
+      "captured_at": "2026-07-27T03:28:46.272712+08:00",
+      "sha256": "5ae7ff2462ab469b66957adea65855fed2c7fa4368c2d59890ba101ec99e51c1",
+      "size_bytes": 96063,
+      "usable": true
+    },
+    {
+      "source_id": "src-B01",
+      "role": "confirmed-primary",
+      "independence_group": "sina",
+      "url": "https://k.sina.com.cn/article_7879776328_1d5abd848068020q9g.html",
+      "title": "《功夫女足》是否真的遭遇了黑公关攻击？",
+      "candidate_id": "cand-002",
+      "relative_path": "sources/src-B01-sina-gongfu-heigong.html",
+      "captured_at": "2026-07-27T03:28:46.272712+08:00",
+      "sha256": "464b936d85d66cf4c80d5d52416f0aa6cbf796613fd35e8e555dc1c15a651a86",
+      "size_bytes": 85291,
+      "usable": true
+    },
+    {
+      "source_id": "src-C01",
+      "role": "confirmed-primary",
+      "independence_group": "thepaper",
+      "url": "https://www.thepaper.cn/newsdetail_forward_33476555",
+      "title": "央视:2026暑期档电影票房超15亿元,电影《四渡》连续保持单日票房冠军",
+      "candidate_id": "cand-003",
+      "relative_path": "sources/src-C01-thepaper-sidu.html",
+      "captured_at": "2026-07-27T03:28:46.272712+08:00",
+      "sha256": "fb8fba2e238178cf0788daf768883055e2097e445d3c23b19e767f999317d6c1",
+      "size_bytes": 21086,
+      "usable": true
+    }
+  ]
+}

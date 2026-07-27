@@ -1,0 +1,62 @@
+{
+  "article_id": "art-A",
+  "slot": "A",
+  "state": "R8 review-ready",
+  "title": "《八仙！》逆袭周星驰：传统神话为什么又赢了",
+  "claim_coverage": "complete",
+  "claim_mappings": [
+    {
+      "claim_id": "A1",
+      "source_id": "src-A01",
+      "locator": "7月18日提档",
+      "draft_locator": "提档上映"
+    },
+    {
+      "claim_id": "A2",
+      "source_id": "src-A01",
+      "locator": "6046万",
+      "draft_locator": "单日票房"
+    },
+    {
+      "claim_id": "A3",
+      "source_id": "src-A01",
+      "locator": "12474万",
+      "draft_locator": "单日票房"
+    },
+    {
+      "claim_id": "A4",
+      "source_id": "src-A01",
+      "locator": "连续两日成为暑期档单日票房冠军",
+      "draft_locator": "反超功夫女足"
+    },
+    {
+      "claim_id": "A5",
+      "source_id": "src-A01",
+      "locator": "猫眼评分9.7",
+      "draft_locator": "口碑评分"
+    },
+    {
+      "claim_id": "A6",
+      "source_id": "src-A01",
+      "locator": "豆瓣评分8.3",
+      "draft_locator": "口碑评分"
+    },
+    {
+      "claim_id": "A7",
+      "source_id": "src-A01",
+      "locator": "预测总票房冲击20亿元",
+      "draft_locator": "市场预期"
+    }
+  ],
+  "concrete_support_types": [
+    "box office data",
+    "review scores",
+    "release schedule",
+    "plot premise"
+  ],
+  "html_delivery_state": "not_requested",
+  "publication_authorization": "not_authorized",
+  "primary_atom": "一部提档上映的国风动画，凭什么能在暑期档逆袭周星驰",
+  "reader_intent": "好奇",
+  "angle": "口碑驱动的票房逆袭：传统IP的现代生命力"
+}

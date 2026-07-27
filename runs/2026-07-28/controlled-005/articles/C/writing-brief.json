@@ -1,0 +1,20 @@
+{
+  "article_id": "art-C",
+  "slot": "C",
+  "candidate_id": "cand-003",
+  "created_at": "2026-07-27T03:29:11.304682+08:00",
+  "work": "四渡",
+  "primary_atom": "主旋律电影找到了让年轻人主动买票的方法",
+  "reader_intent": "好奇",
+  "angle": "青年观众为什么愿意为历史片买单",
+  "title_skeleton": "年轻人买账的主旋律",
+  "ending_destination": "类型边界的消融",
+  "anticipated_character_count": "1800-2200",
+  "sources": {
+    "confirmed_primary": [
+      "src-C01"
+    ]
+  },
+  "claim_coverage_goal": "complete",
+  "material_sufficiency": "ready-for-brief"
+}

@@ -1,0 +1,50 @@
+{
+  "run_id": "2026-07-28/controlled-005",
+  "review_type": "scoped_sol_rereview",
+  "scope": "three repaired issues only — not a full re-audit",
+  "decision": "approve",
+  "reviewed_at": "2026-07-28",
+  "findings": [
+    {
+      "repair_id": "A-1",
+      "original_issue": "Article A claimed 豆瓣8.5 and 累计6亿 without source",
+      "repair_verified": true,
+      "evidence": {
+        "8.5_absent": true,
+        "8.3_present": true,
+        "8.3_in_source": "Source src-A01 <p> text: '豆瓣评分8.3'",
+        "6亿_absent": true,
+        "sourced_day_figures": "6046万 and 1.2474亿 match source src-A01 <p> text verbatim",
+        "no_unsourced_cumulative": "Article uses '总票房仍有乐观预期' without any specific number; source's '预测总票房冲击20亿元' is not quoted"
+      }
+    },
+    {
+      "repair_id": "B-1",
+      "original_issue": "Article B claimed 20亿 without source",
+      "repair_verified": true,
+      "evidence": {
+        "20亿_absent": true,
+        "三天破5亿_present": true,
+        "5亿_in_source": "Source src-B01 <p> text: '上映三天票房破5亿'",
+        "6.6_present": true,
+        "6.6_in_source": "Source src-B01 <p> text: '豆瓣开分6.6分'",
+        "all_5亿_instances_sourced": "Three occurrences of '5亿' all reference '上映三天票房破5亿' or '破5亿的早期票房', matching source"
+      }
+    },
+    {
+      "repair_id": "C-1",
+      "original_issue": "Article C presented IMAX as verified fact and universalized young-audience demographics beyond source",
+      "repair_verified": true,
+      "evidence": {
+        "IMAX_absent": true,
+        "no_format_tech_claims": "No IMAX, 3D, 巨幕, 杜比, CINITY, or 激光 found in article",
+        "大银幕_usage": "Used generically ('大银幕真正有力量的时候', '大银幕若真能发挥作用') as rhetorical device, not as a specific format claim about the film",
+        "no_universalized_youth_demographics": "No patterns like '年轻人都', '所有年轻', '年轻观众普遍' found",
+        "youth_framing_bounded": "'很多年轻人' (line 3), '年轻观众究竟买了什么单' (line 5, as question), '讨好年轻人' (line 27) — all bounded or interrogative, not universal declarations",
+        "source_lacks_youth_data": "Source src-C01 only states '连续保持单日票房冠军' and '近80部中外新片'; no youth demographic breakdown provided"
+      }
+    }
+  ],
+  "remaining_findings": [],
+  "summary": "All three scoped repairs verified against source evidence. No residual issues within the scoped repair IDs."
+}

@@ -1,0 +1,20 @@
+{
+  "run_id": "2026-07-28/controlled-005",
+  "slots": [
+    {
+      "slot": "A",
+      "primary_candidate_id": "cand-001",
+      "backup_candidate_id": "cand-007"
+    },
+    {
+      "slot": "B",
+      "primary_candidate_id": "cand-002",
+      "backup_candidate_id": "cand-009"
+    },
+    {
+      "slot": "C",
+      "primary_candidate_id": "cand-003",
+      "backup_candidate_id": "cand-004"
+    }
+  ]
+}

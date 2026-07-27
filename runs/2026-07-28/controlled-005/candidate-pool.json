@@ -1,0 +1,393 @@
+{
+  "run_id": "2026-07-28/controlled-005",
+  "observed_at": "2026-07-27T03:26:39.936479+08:00",
+  "timezone": "+08:00",
+  "candidates": [
+    {
+      "candidate_id": "cand-001",
+      "work": "八仙！",
+      "core_person_or_event": "国风动画电影7月18日提档上映，猫眼9.7分，票房反超《功夫女足》成单日冠军，累计破6亿",
+      "primary_atom": "一部提档上映的国风动画，凭什么能在暑期档逆袭周星驰",
+      "reader_intent": "好奇",
+      "angle": "口碑驱动的票房逆袭：传统IP的现代生命力",
+      "title_skeleton": "八仙逆袭功夫女足",
+      "ending_destination": "国产动画的新可能",
+      "event_time": "2026-07-18T00:00:00+08:00",
+      "observed_at": "2026-07-27T03:26:39.936479+08:00",
+      "freshness_window": "fermenting-1-3d",
+      "current_trigger": "票房连续两日单日冠军，口碑持续走高",
+      "content_value_scores": {
+        "emotion": 2,
+        "narrative": 3,
+        "share": 3,
+        "human": 2,
+        "freshness": 3
+      },
+      "source_roles": [
+        "confirmed-primary",
+        "independent-review"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2",
+        "e3",
+        "e4",
+        "e5"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2",
+        "a3"
+      ],
+      "recommendation": "A",
+      "reject_or_wait_reason": ""
+    },
+    {
+      "candidate_id": "cand-002",
+      "work": "功夫女足口碑争议",
+      "core_person_or_event": "周星驰新片上映18天票房破20亿，豆瓣6.6，'难看'热搜持续，黑公关争议发酵",
+      "primary_atom": "20亿票房背后：周星驰的情怀还有多少人买单",
+      "reader_intent": "吃瓜",
+      "angle": "票房与口碑的巨大反差：情怀的边界在哪里",
+      "title_skeleton": "20亿背后的争议",
+      "ending_destination": "情怀经济的末路或新生",
+      "event_time": "2026-07-11T00:00:00+08:00",
+      "observed_at": "2026-07-27T03:26:39.936479+08:00",
+      "freshness_window": "fermenting-1-3d",
+      "current_trigger": "票房预测下调，黑公关讨论持续",
+      "content_value_scores": {
+        "emotion": 3,
+        "narrative": 3,
+        "share": 3,
+        "human": 2,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2",
+        "e3",
+        "e4"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2",
+        "a3"
+      ],
+      "recommendation": "B",
+      "reject_or_wait_reason": ""
+    },
+    {
+      "candidate_id": "cand-003",
+      "work": "四渡",
+      "core_person_or_event": "主旋律历史片连续保持单日票房冠军，IMAX实拍，青年观众口碑发酵",
+      "primary_atom": "主旋律电影找到了让年轻人主动买票的方法",
+      "reader_intent": "好奇",
+      "angle": "青年观众为什么愿意为历史片买单",
+      "title_skeleton": "年轻人买账的主旋律",
+      "ending_destination": "类型边界的消融",
+      "event_time": "2026-07-01T00:00:00+08:00",
+      "observed_at": "2026-07-27T03:26:39.936479+08:00",
+      "freshness_window": "revival",
+      "current_trigger": "暑期档持续热映，票房稳定",
+      "content_value_scores": {
+        "emotion": 2,
+        "narrative": 2,
+        "share": 2,
+        "human": 2,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2",
+        "e3"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2"
+      ],
+      "recommendation": "C",
+      "reject_or_wait_reason": ""
+    },
+    {
+      "candidate_id": "cand-004",
+      "work": "特立独行",
+      "core_person_or_event": "白敬亭魏翔喜剧，豆瓣约7分，7月3日上映，口碑争议",
+      "primary_atom": "一部只有7分的喜剧，为什么还有人愿意为它辩护",
+      "reader_intent": "吃瓜",
+      "angle": "国产喜剧的尴尬位置：不够好笑，也不够烂",
+      "title_skeleton": "7分喜剧的尴尬",
+      "ending_destination": "喜剧类型的进退两难",
+      "event_time": "2026-07-03T00:00:00+08:00",
+      "observed_at": "2026-07-27T03:26:39.936479+08:00",
+      "freshness_window": "fermenting-1-3d",
+      "current_trigger": "上映近一月，口碑稳定但讨论度不高",
+      "content_value_scores": {
+        "emotion": 2,
+        "narrative": 2,
+        "share": 2,
+        "human": 2,
+        "freshness": 1
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2"
+      ],
+      "concrete_anchor_ids": [
+        "a1"
+      ],
+      "recommendation": "Archive",
+      "reject_or_wait_reason": "口碑平庸，缺乏引爆点，竞争不过其他选题"
+    },
+    {
+      "candidate_id": "cand-005",
+      "work": "暑期档票房数据",
+      "core_person_or_event": "截至7月下旬暑期档票房突破55亿，《八仙！》《功夫女足》领跑",
+      "primary_atom": "55亿票房背后，观众到底在为什么买单",
+      "reader_intent": "好奇",
+      "angle": "数据解读：情怀、动画、主旋律谁赢了",
+      "title_skeleton": "55亿暑期档的秘密",
+      "ending_destination": "市场偏好的信号",
+      "event_time": "2026-07-27T00:00:00+08:00",
+      "observed_at": "2026-07-27T03:26:39.936479+08:00",
+      "freshness_window": "fermenting-1-3d",
+      "current_trigger": "档期过半，数据持续更新",
+      "content_value_scores": {
+        "emotion": 1,
+        "narrative": 2,
+        "share": 1,
+        "human": 1,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2"
+      ],
+      "concrete_anchor_ids": [
+        "a1"
+      ],
+      "recommendation": "Archive",
+      "reject_or_wait_reason": "行业数据方向不符合若雨随影定位"
+    },
+    {
+      "candidate_id": "cand-006",
+      "work": "玩具总动员5",
+      "core_person_or_event": "Pixar续集暑期档上映，30年IP延续",
+      "primary_atom": "一个拍了30年的系列，还能讲出新故事吗",
+      "reader_intent": "怀旧",
+      "angle": "经典IP的长寿密码",
+      "title_skeleton": "玩具总动员第30年",
+      "ending_destination": "情怀的保质期",
+      "event_time": "2026-06-20T00:00:00+08:00",
+      "observed_at": "2026-07-27T03:26:39.936479+08:00",
+      "freshness_window": "revival",
+      "current_trigger": "暑期档持续放映",
+      "content_value_scores": {
+        "emotion": 3,
+        "narrative": 2,
+        "share": 2,
+        "human": 3,
+        "freshness": 1
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2"
+      ],
+      "recommendation": "Archive",
+      "reject_or_wait_reason": "外语片，若雨随影以华语为主；上映已久"
+    },
+    {
+      "candidate_id": "cand-007",
+      "work": "功夫女足黑公关",
+      "core_person_or_event": "影片上映5小时'难看'上热搜，有人质疑黑公关，票房数据反证",
+      "primary_atom": "一部电影还没散场，黑评就来了",
+      "reader_intent": "吃瓜",
+      "angle": "口碑战背后的真相：谁在操控舆论",
+      "title_skeleton": "还没散场就被黑",
+      "ending_destination": "电影宣发的灰色地带",
+      "event_time": "2026-07-11T00:00:00+08:00",
+      "observed_at": "2026-07-27T03:26:39.936479+08:00",
+      "freshness_window": "fermenting-1-3d",
+      "current_trigger": "争议持续发酵，双方各执一词",
+      "content_value_scores": {
+        "emotion": 3,
+        "narrative": 3,
+        "share": 3,
+        "human": 2,
+        "freshness": 3
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2",
+        "e3"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2"
+      ],
+      "recommendation": "Wait",
+      "reject_or_wait_reason": "与cand-002同源事件，需要不同切口；舆论操控话题敏感，需更多证据"
+    },
+    {
+      "candidate_id": "cand-008",
+      "work": "群星闪耀时",
+      "core_person_or_event": "国产科幻电影7月20日上映，改编自雨果奖小说，参与《流浪地球》团队制作",
+      "primary_atom": "雨果奖原著加流浪地球团队，国产科幻能走多远",
+      "reader_intent": "好奇",
+      "angle": "科幻题材的新突破：文学IP的影视化",
+      "title_skeleton": "雨果奖电影的诞生",
+      "ending_destination": "国产科幻的路径探索",
+      "event_time": "2026-07-20T00:00:00+08:00",
+      "observed_at": "2026-07-27T03:26:39.936479+08:00",
+      "freshness_window": "same-day",
+      "current_trigger": "刚上映一周，口碑票房数据待观察",
+      "content_value_scores": {
+        "emotion": 2,
+        "narrative": 2,
+        "share": 2,
+        "human": 2,
+        "freshness": 3
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2",
+        "e3"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2"
+      ],
+      "recommendation": "Wait",
+      "reject_or_wait_reason": "上映仅一周，口碑发酵中，可做备选"
+    },
+    {
+      "candidate_id": "cand-009",
+      "work": "张小斐功夫女足",
+      "core_person_or_event": "为角色封闭训练半年，体脂率从24%降到16%，零片酬出演",
+      "primary_atom": "一个女演员用半年时间把自己变成运动员",
+      "reader_intent": "共鸣",
+      "angle": "流量时代，认真演戏的演员的代价",
+      "title_skeleton": "体脂率降到16%",
+      "ending_destination": "好演员的代价",
+      "event_time": "2026-07-10T00:00:00+08:00",
+      "observed_at": "2026-07-27T03:26:39.936479+08:00",
+      "freshness_window": "fermenting-1-3d",
+      "current_trigger": "电影热映，人物故事再次被关注",
+      "content_value_scores": {
+        "emotion": 3,
+        "narrative": 3,
+        "share": 2,
+        "human": 3,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2",
+        "e3"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2",
+        "a3"
+      ],
+      "recommendation": "B",
+      "reject_or_wait_reason": ""
+    },
+    {
+      "candidate_id": "cand-010",
+      "work": "八仙口碑逆袭",
+      "core_person_or_event": "猫眼9.7分，豆瓣开分8.5，观众称'国产动画终于不烂了'",
+      "primary_atom": "国产动画的高分，为什么来得这么难",
+      "reader_intent": "好奇",
+      "angle": "口碑神话的背后：观众期待被压抑太久",
+      "title_skeleton": "9.7分的国产动画",
+      "ending_destination": "观众与创作者的双向奔赴",
+      "event_time": "2026-07-18T00:00:00+08:00",
+      "observed_at": "2026-07-27T03:26:39.936479+08:00",
+      "freshness_window": "fermenting-1-3d",
+      "current_trigger": "口碑持续走高，讨论热度上升",
+      "content_value_scores": {
+        "emotion": 3,
+        "narrative": 2,
+        "share": 3,
+        "human": 2,
+        "freshness": 3
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2",
+        "e3"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2"
+      ],
+      "recommendation": "Archive",
+      "reject_or_wait_reason": "与cand-001同源事件，切口不同但核心重复，降为备选"
+    },
+    {
+      "candidate_id": "cand-011",
+      "work": "三国争洛阳撤档后续",
+      "core_person_or_event": "豆瓣8.1分动画撤档后，行业反思国产动画市场困境",
+      "primary_atom": "撤档不是结束，是国产动画困境的开始",
+      "reader_intent": "吃瓜",
+      "angle": "撤档事件后的行业反思",
+      "title_skeleton": "撤档之后",
+      "ending_destination": "国产动画的出路",
+      "event_time": "2026-07-26T00:00:00+08:00",
+      "observed_at": "2026-07-27T03:26:39.936479+08:00",
+      "freshness_window": "same-day",
+      "current_trigger": "撤档后行业讨论持续",
+      "content_value_scores": {
+        "emotion": 2,
+        "narrative": 2,
+        "share": 2,
+        "human": 2,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2"
+      ],
+      "recommendation": "Archive",
+      "reject_or_wait_reason": "004已写过撤档事件，避免重复"
+    }
+  ]
+}

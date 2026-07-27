@@ -1,0 +1,12 @@
+{
+  "run_id": "2026-07-28/controlled-005",
+  "status": "controller_accepted_with_sol_partial_intake",
+  "note": "Sol full L2 interrupted mid-run after identifying source mismatches; controller applied scoped repairs (A: 豆瓣8.3 not 8.5, remove unsourced 6亿; B: remove unsourced 20亿, use 三天破5亿; C: remove IMAX as fact, bound youth claims). Locators and batch gate re-green.",
+  "articles": {
+    "A": "R8 after repair",
+    "B": "R8 after repair",
+    "C": "R8 after repair"
+  },
+  "publication_authorization": "not_authorized",
+  "html": "not_requested"
+}

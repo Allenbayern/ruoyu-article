@@ -1,0 +1,56 @@
+{
+  "article_id": "art-B",
+  "slot": "B",
+  "state": "R8 review-ready",
+  "title": "5亿票房与6.6分，周星驰情怀还剩多少",
+  "claim_coverage": "complete",
+  "claim_mappings": [
+    {
+      "claim_id": "B1",
+      "source_id": "src-B01",
+      "locator": "上映三天票房破5亿",
+      "draft_locator": "早期票房"
+    },
+    {
+      "claim_id": "B2",
+      "source_id": "src-B01",
+      "locator": "豆瓣开分6.6分",
+      "draft_locator": "口碑评分"
+    },
+    {
+      "claim_id": "B3",
+      "source_id": "src-B01",
+      "locator": "不足5小时",
+      "draft_locator": "难看话题"
+    },
+    {
+      "claim_id": "B4",
+      "source_id": "src-B01",
+      "locator": "开场仅12分钟",
+      "draft_locator": "黑公关疑点"
+    },
+    {
+      "claim_id": "B5",
+      "source_id": "src-B01",
+      "locator": "十几条黑评",
+      "draft_locator": "相似差评"
+    },
+    {
+      "claim_id": "B6",
+      "source_id": "src-B01",
+      "locator": "CG质感粗糙",
+      "draft_locator": "真实质量争议"
+    }
+  ],
+  "concrete_support_types": [
+    "上映后争议时间线与社交话题",
+    "疑似未观影和雷同话术的评价现象",
+    "具体观众批评点与支持者反馈",
+    "票房表现与豆瓣评分"
+  ],
+  "html_delivery_state": "not_requested",
+  "publication_authorization": "not_authorized",
+  "primary_atom": "20亿票房背后：周星驰的情怀还有多少人买单",
+  "reader_intent": "吃瓜",
+  "angle": "票房与口碑的巨大反差：情怀的边界在哪里"
+}

@@ -1,0 +1,25 @@
+{
+  "article_id": "art-C",
+  "slot": "C",
+  "created_at": "2026-07-27T03:29:11.304682+08:00",
+  "evidence_atom_ids": [
+    "e1",
+    "e2",
+    "e3",
+    "e4",
+    "e5"
+  ],
+  "concrete_anchor_ids": [
+    "a1",
+    "a2",
+    "a3",
+    "a4"
+  ],
+  "sources": [
+    {
+      "source_id": "src-C01",
+      "role": "confirmed-primary"
+    }
+  ],
+  "status": "ready"
+}

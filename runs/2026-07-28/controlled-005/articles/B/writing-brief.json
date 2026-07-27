@@ -1,0 +1,20 @@
+{
+  "article_id": "art-B",
+  "slot": "B",
+  "candidate_id": "cand-002",
+  "created_at": "2026-07-27T03:29:11.304682+08:00",
+  "work": "功夫女足口碑争议",
+  "primary_atom": "20亿票房背后：周星驰的情怀还有多少人买单",
+  "reader_intent": "吃瓜",
+  "angle": "票房与口碑的巨大反差：情怀的边界在哪里",
+  "title_skeleton": "20亿背后的争议",
+  "ending_destination": "情怀经济的末路或新生",
+  "anticipated_character_count": "1800-2200",
+  "sources": {
+    "confirmed_primary": [
+      "src-B01"
+    ]
+  },
+  "claim_coverage_goal": "complete",
+  "material_sufficiency": "ready-for-brief"
+}

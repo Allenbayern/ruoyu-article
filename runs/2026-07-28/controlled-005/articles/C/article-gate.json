@@ -1,0 +1,38 @@
+{
+  "article_id": "art-C",
+  "slot": "C",
+  "state": "R8 review-ready",
+  "title": "《四渡》为什么让年轻人愿意走进影院",
+  "claim_coverage": "complete",
+  "claim_mappings": [
+    {
+      "claim_id": "C1",
+      "source_id": "src-C01",
+      "locator": "暑期档电影票房超15亿元",
+      "draft_locator": "档期背景"
+    },
+    {
+      "claim_id": "C2",
+      "source_id": "src-C01",
+      "locator": "四渡",
+      "draft_locator": "作品名"
+    },
+    {
+      "claim_id": "C3",
+      "source_id": "src-C01",
+      "locator": "连续保持单日票房冠军",
+      "draft_locator": "票房表现"
+    }
+  ],
+  "concrete_support_types": [
+    "box office performance",
+    "historical setting",
+    "summer release context",
+    "production detail"
+  ],
+  "html_delivery_state": "not_requested",
+  "publication_authorization": "not_authorized",
+  "primary_atom": "主旋律电影找到了让年轻人主动买票的方法",
+  "reader_intent": "共鸣",
+  "angle": "青年观众为什么愿意为历史片买单"
+}

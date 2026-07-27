@@ -1,0 +1,20 @@
+{
+  "article_id": "art-A",
+  "slot": "A",
+  "candidate_id": "cand-001",
+  "created_at": "2026-07-27T03:29:11.304682+08:00",
+  "work": "八仙！",
+  "primary_atom": "一部提档上映的国风动画，凭什么能在暑期档逆袭周星驰",
+  "reader_intent": "好奇",
+  "angle": "口碑驱动的票房逆袭：传统IP的现代生命力",
+  "title_skeleton": "八仙逆袭功夫女足",
+  "ending_destination": "国产动画的新可能",
+  "anticipated_character_count": "1800-2200",
+  "sources": {
+    "confirmed_primary": [
+      "src-A01"
+    ]
+  },
+  "claim_coverage_goal": "complete",
+  "material_sufficiency": "ready-for-brief"
+}
