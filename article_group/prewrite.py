@@ -59,18 +59,50 @@ def validate_candidate_pool(pool: dict[str, Any]) -> list[str]:
     required_candidate_fields = (
         "candidate_id", "work", "core_person_or_event", "primary_atom",
         "reader_intent", "angle", "title_skeleton", "ending_destination",
+        "content_map", "event_cluster_id", "reader_question",
         "event_time", "observed_at", "freshness_window", "current_trigger",
         "content_value_scores", "source_roles", "evidence_atom_ids",
         "concrete_anchor_ids", "recommendation",
     )
     required_score_dimensions = ("emotion", "narrative", "share", "human", "freshness")
+    seen_candidate_ids: set[str] = set()
 
-    for candidate in candidates:
-        cid = candidate.get("candidate_id", "unknown")
+    for index, candidate in enumerate(candidates):
+        if not isinstance(candidate, dict):
+            errors.append(f"candidate_record_{index}_must_be_a_dict")
+            continue
 
-        # Required fields
+        raw_cid = candidate.get("candidate_id")
+        if raw_cid is None or (isinstance(raw_cid, str) and not raw_cid.strip()):
+            errors.append(f"candidate_record_{index}_missing_candidate_id")
+            cid = f"record_{index}"
+            normalized_cid = None
+        elif not isinstance(raw_cid, str):
+            errors.append(f"candidate_record_{index}_invalid_candidate_id")
+            cid = f"record_{index}"
+            normalized_cid = None
+        else:
+            cid = raw_cid
+            normalized_cid = _normalized_slot_text(raw_cid)
+            if normalized_cid is None:
+                errors.append(f"candidate_record_{index}_missing_candidate_id")
+            elif normalized_cid in seen_candidate_ids:
+                errors.append(f"candidate_pool_duplicate_candidate_id_{normalized_cid}")
+            else:
+                seen_candidate_ids.add(normalized_cid)
+
+        # Required fields (candidate_id already type/blank-checked above)
         for field in required_candidate_fields:
+            if field == "candidate_id":
+                continue
             if not candidate.get(field) and candidate.get(field) != 0:
+                errors.append(f"candidate_{cid}_missing_{field}")
+
+        for field in ("content_map", "event_cluster_id", "reader_question"):
+            value = candidate.get(field)
+            if value is not None and not isinstance(value, str):
+                errors.append(f"candidate_{cid}_invalid_{field}")
+            elif isinstance(value, str) and not value.strip():
                 errors.append(f"candidate_{cid}_missing_{field}")
 
         # Numeric scores
@@ -155,6 +187,144 @@ def validate_slot_decisions(
             if cid not in candidate_ids:
                 errors.append(f"slot_references_unknown_candidate_{cid}")
 
+    return errors
+
+
+# --- canonical editorial slot contract ---
+
+_CANONICAL_SLOT_FIELDS = (
+    "candidate_id", "work", "primary_atom", "reader_intent", "angle",
+    "content_map", "event_cluster_id", "reader_question",
+)
+_CANONICAL_SLOT_LABELS = {"A", "B", "C"}
+
+
+def _normalized_slot_text(value: object) -> str | None:
+    """Normalize only string values; never coerce untrusted structured input."""
+    if not isinstance(value, str):
+        return None
+    normalized = re.sub(r"\s+", " ", value).strip().lower()
+    return normalized or None
+
+
+def build_slot_contract(pool: dict[str, Any], decisions: dict[str, Any]) -> dict[str, Any]:
+    """Build the canonical slots directly from the locked primary candidates."""
+    candidates = pool.get("candidates", []) if isinstance(pool, dict) else []
+    candidate_by_id = {
+        candidate.get("candidate_id"): candidate
+        for candidate in candidates
+        if isinstance(candidate, dict) and isinstance(candidate.get("candidate_id"), str)
+    } if isinstance(candidates, list) else {}
+    slots = decisions.get("slots", []) if isinstance(decisions, dict) else []
+    contract_slots: list[dict[str, Any]] = []
+    if not isinstance(slots, list):
+        slots = []
+    for decision in slots:
+        if not isinstance(decision, dict):
+            contract_slots.append({})
+            continue
+        slot = decision.get("slot")
+        candidate_id = decision.get("primary_candidate_id")
+        candidate = candidate_by_id.get(candidate_id, {})
+        record = {"slot": slot, "candidate_id": candidate_id}
+        for field in _CANONICAL_SLOT_FIELDS[1:]:
+            record[field] = candidate.get(field) if isinstance(candidate, dict) else None
+        contract_slots.append(record)
+    return {"slots": contract_slots}
+
+
+def validate_slot_contract(
+    contract: dict[str, Any],
+    candidate_pool: dict[str, Any] | None = None,
+    slot_decisions: dict[str, Any] | None = None,
+    artifact_records: list[dict[str, Any]] | None = None,
+) -> list[str]:
+    """Return fail-closed errors for slot drift and daily semantic collisions.
+
+    Change logs are intentionally unsupported in this slice: any field drift fails.
+    Normalization is strictly trim/collapse-whitespace/lowercase.
+    """
+    if not isinstance(contract, dict):
+        return ["slot_contract_must_be_a_dict"]
+    slots = contract.get("slots")
+    if not isinstance(slots, list):
+        return ["slot_contract_slots_must_be_a_list"]
+    if len(slots) != 3:
+        return [f"slot_contract_requires_exactly_3_slots_got_{len(slots)}"]
+
+    errors: list[str] = []
+    slot_by_label: dict[str, dict[str, Any]] = {}
+    # Every dict slot record is retained for lock comparison so a later
+    # duplicate label cannot mask an earlier drifted record (S3-F02).
+    lock_records: list[tuple[str, dict[str, Any]]] = []
+    for record in slots:
+        if not isinstance(record, dict):
+            errors.append("slot_contract_slot_record_must_be_a_dict")
+            continue
+        label = record.get("slot")
+        if not isinstance(label, str) or not label.strip():
+            errors.append("slot_unknown_invalid_slot")
+            continue
+        if label in slot_by_label:
+            errors.append(f"slot_{label}_duplicate_slot_label")
+        else:
+            slot_by_label[label] = record
+        lock_records.append((label, record))
+        for field in _CANONICAL_SLOT_FIELDS:
+            if _normalized_slot_text(record.get(field)) is None:
+                errors.append(f"slot_{label}_invalid_{field}")
+    if set(slot_by_label) != _CANONICAL_SLOT_LABELS:
+        errors.append(f"slot_contract_labels_must_be_A_B_C_got_{sorted(slot_by_label)}")
+
+    if candidate_pool is not None and slot_decisions is not None:
+        expected = build_slot_contract(candidate_pool, slot_decisions).get("slots", [])
+        expected_by_label = {
+            item.get("slot"): item for item in expected
+            if isinstance(item, dict) and isinstance(item.get("slot"), str)
+        }
+        for label, record in lock_records:
+            source = expected_by_label.get(label)
+            if source is None:
+                errors.append(f"slot_{label}_missing_locked_primary")
+                continue
+            for field in _CANONICAL_SLOT_FIELDS:
+                if record.get(field) != source.get(field):
+                    errors.append(f"slot_{label}_candidate_mismatch_{field}")
+
+    if artifact_records is not None:
+        if not isinstance(artifact_records, list):
+            errors.append("artifact_records_must_be_a_list")
+        else:
+            for record in artifact_records:
+                if not isinstance(record, dict):
+                    errors.append("artifact_record_must_be_a_dict")
+                    continue
+                label = record.get("slot")
+                canonical = slot_by_label.get(label) if isinstance(label, str) else None
+                artifact_type = record.get("artifact_type", "artifact")
+                path = record.get("path", "unknown")
+                prefix = f"artifact_{artifact_type}_{path}_slot_{label}"
+                if canonical is None:
+                    errors.append(f"{prefix}_unknown_slot")
+                    continue
+                for field in _CANONICAL_SLOT_FIELDS:
+                    if record.get(field) != canonical.get(field):
+                        errors.append(f"{prefix}_mismatch_{field}")
+
+    for field, tag in (
+        ("work", "normalized_work"),
+        ("event_cluster_id", "event_cluster_id"),
+        ("reader_question", "normalized_reader_question"),
+    ):
+        seen: dict[str, str] = {}
+        for label in sorted(slot_by_label):
+            normalized = _normalized_slot_text(slot_by_label[label].get(field))
+            if normalized is None:
+                continue
+            if normalized in seen:
+                errors.append(f"slot_contract_duplicate_{tag}_{seen[normalized]}_{label}")
+            else:
+                seen[normalized] = label
     return errors
 
 
