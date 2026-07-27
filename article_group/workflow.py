@@ -14,7 +14,19 @@ import json
 import re
 
 SLOTS = ("A", "B", "C")
+EDITORIAL_READY = "R7 editorial-ready"
+MECHANICALLY_VERIFIED = "R7 mechanically-verified"
+AWAITING_INDEPENDENT_REVIEW = "R7.5 awaiting-independent-review"
 REVIEW_READY = "R8 review-ready"
+# Articles eligible for offline mechanical batch validation / build_controlled_run.
+MECHANICAL_INPUT_STATES = {EDITORIAL_READY, MECHANICALLY_VERIFIED}
+# Manifest states that may be promoted to R8 only with Sol approve + controller accept.
+R8_PROMOTION_SOURCE_STATES = {MECHANICALLY_VERIFIED, AWAITING_INDEPENDENT_REVIEW}
+CONTROLLER_ACCEPTANCE_VALUES = {
+    "accepted",
+    "approved_after_re-review",
+    "controller_accepted_r8_review_ready",
+}
 TERMINAL_STATES = {"H4 draft-only", "H5 rejected", "A archived"}
 
 ALLOWED_TRANSITIONS = {
@@ -24,12 +36,19 @@ ALLOWED_TRANSITIONS = {
     "R3 slots-locked": {"R4 evidence-ready", "H1 waiting-source", "H2 backup-switch"},
     "R4 evidence-ready": {"R5 brief-ready", "H1 waiting-source", "H4 draft-only"},
     "R5 brief-ready": {"R6 drafting", "H2 backup-switch", "H4 draft-only"},
-    "R6 drafting": {"R7 editorial-ready", "H3 needs-revision", "H4 draft-only"},
-    "R7 editorial-ready": {REVIEW_READY, "H3 needs-revision", "H4 draft-only"},
+    "R6 drafting": {EDITORIAL_READY, "H3 needs-revision", "H4 draft-only"},
+    # Mechanical green is not R8: editorial-ready may only advance to mechanical verify.
+    EDITORIAL_READY: {MECHANICALLY_VERIFIED, "H3 needs-revision", "H4 draft-only"},
+    MECHANICALLY_VERIFIED: {
+        AWAITING_INDEPENDENT_REVIEW,
+        "H3 needs-revision",
+        "H4 draft-only",
+    },
+    AWAITING_INDEPENDENT_REVIEW: {REVIEW_READY, "H3 needs-revision", "H4 draft-only"},
     REVIEW_READY: {"H3 needs-revision", "H4 draft-only"},
     "H1 waiting-source": {"R4 evidence-ready", "H2 backup-switch", "H4 draft-only"},
     "H2 backup-switch": {"R3 slots-locked", "H4 draft-only"},
-    "H3 needs-revision": {"R6 drafting", "R7 editorial-ready", "H4 draft-only"},
+    "H3 needs-revision": {"R6 drafting", EDITORIAL_READY, "H4 draft-only"},
 }
 
 
@@ -155,6 +174,8 @@ def validate_batch(batch: dict[str, Any], artifact_root: Path | None = None) -> 
     When ``artifact_root`` is supplied, every declared internal artifact must be a
     safe relative path that resolves inside that root and already exists.
     """
+    if not isinstance(batch, dict):
+        return ["batch_must_be_a_dict"]
     errors: list[str] = []
     if batch.get("publication_authorization", "not_authorized") != "not_authorized":
         errors.append("controlled_run_must_not_authorize_publication")
@@ -170,8 +191,9 @@ def validate_batch(batch: dict[str, Any], artifact_root: Path | None = None) -> 
     for article in articles:
         article_id = article.get("article_id", "unknown")
         errors.extend(_require(article, ("article_id", "slot", "work", "primary_atom", "reader_intent", "angle"), f"missing:{article_id}"))
-        if article.get("state") != REVIEW_READY:
-            errors.append(f"article_not_review_ready:{article_id}")
+        state = article.get("state")
+        if state not in MECHANICAL_INPUT_STATES:
+            errors.append(f"article_not_mechanically_eligible:{article_id}:{state}")
         for field in seen:
             value = article.get(field)
             if value in seen[field]:
@@ -232,23 +254,95 @@ def validate_batch(batch: dict[str, Any], artifact_root: Path | None = None) -> 
 
 
 def build_controlled_run(batch: dict[str, Any], output_dir: Path) -> Path:
-    """Write a local review-ready manifest after deterministic gates pass."""
+    """Write a local mechanically-verified manifest after deterministic gates pass.
+
+    This never emits R8. R8 requires ``promote_to_review_ready`` with Sol approve
+    and an explicit controller acceptance value.
+    """
     errors = validate_batch(batch, output_dir)
     if errors:
         raise BatchValidationError(";".join(errors))
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    articles = []
+    for article in batch["articles"]:
+        record = dict(article)
+        record["state"] = MECHANICALLY_VERIFIED
+        articles.append(record)
     manifest = {
         "run_id": batch["run_id"],
         "created_at": datetime.now(UTC).isoformat(),
         "mode": "controlled_first_run",
-        "state": REVIEW_READY,
+        "state": MECHANICALLY_VERIFIED,
         "publication_authorization": "not_authorized",
         "delivery_state": "withheld_pending_independent_review_and_controller_acceptance",
         "network_actions": "none",
         "article_count": 3,
-        "articles": batch["articles"],
+        "articles": articles,
     }
     target = output_dir / "controlled-run-manifest.json"
     target.write_text(json.dumps(manifest, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
     return target
+
+
+def promote_to_review_ready(
+    manifest: dict[str, Any],
+    *,
+    sol_decision: object,
+    controller_acceptance: object,
+    sol_review_ref: str = "",
+    controller_acceptance_ref: str = "",
+) -> dict[str, Any]:
+    """Promote a mechanical/awaiting manifest to R8 only with Sol approve + controller accept.
+
+    Never grants publication authority. Sol timeout / needs_changes /
+    evidence_insufficient / incomplete labels cannot mint R8.
+    """
+    if not isinstance(manifest, dict):
+        raise BatchValidationError("manifest_must_be_a_dict")
+    if manifest.get("publication_authorization", "not_authorized") != "not_authorized":
+        raise BatchValidationError("controlled_run_must_not_authorize_publication")
+
+    current_state = manifest.get("state")
+    if not isinstance(current_state, str) or not current_state.strip():
+        raise BatchValidationError(f"manifest_not_ready_for_r8_promotion:{current_state!r}")
+    if current_state not in R8_PROMOTION_SOURCE_STATES:
+        raise BatchValidationError(f"manifest_not_ready_for_r8_promotion:{current_state}")
+
+    # Exact labels only: no strip/case folding on authorization vocabulary (S4-F03).
+    if sol_decision != "approve":
+        raise BatchValidationError(f"sol_decision_not_approve:{sol_decision!r}")
+
+    if controller_acceptance not in CONTROLLER_ACCEPTANCE_VALUES:
+        raise BatchValidationError(
+            f"controller_acceptance_required:{controller_acceptance!r}"
+        )
+
+    if current_state == MECHANICALLY_VERIFIED:
+        validate_transition(MECHANICALLY_VERIFIED, AWAITING_INDEPENDENT_REVIEW)
+        validate_transition(AWAITING_INDEPENDENT_REVIEW, REVIEW_READY)
+    else:
+        validate_transition(AWAITING_INDEPENDENT_REVIEW, REVIEW_READY)
+
+    promoted = dict(manifest)
+    promoted["state"] = REVIEW_READY
+    promoted["publication_authorization"] = "not_authorized"
+    promoted["sol_decision"] = sol_decision
+    promoted["controller_acceptance"] = controller_acceptance
+    if _nonblank_string(sol_review_ref):
+        promoted["sol_review_ref"] = sol_review_ref.strip()
+    if _nonblank_string(controller_acceptance_ref):
+        promoted["controller_acceptance_ref"] = controller_acceptance_ref.strip()
+
+    articles = promoted.get("articles", [])
+    if isinstance(articles, list):
+        rewritten = []
+        for article in articles:
+            if isinstance(article, dict):
+                record = dict(article)
+                record["state"] = REVIEW_READY
+                rewritten.append(record)
+            else:
+                rewritten.append(article)
+        promoted["articles"] = rewritten
+    return promoted

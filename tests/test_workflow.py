@@ -26,7 +26,7 @@ def valid_batch():
                 "primary_atom": atom,
                 "reader_intent": intent,
                 "angle": angle,
-                "state": "R8 review-ready",
+                "state": "R7 editorial-ready",
                 "markdown_path": f"slots/{slot}/draft.md",
                 "evidence_pack_path": f"slots/{slot}/evidence-pack.md",
                 "writing_brief_path": f"slots/{slot}/writing-brief.md",
@@ -66,13 +66,14 @@ def materialize_artifacts(batch, root: Path):
                 target.write_text("synthetic-only\n", encoding="utf-8")
 
 
-def test_valid_synthetic_batch_creates_review_ready_manifest(tmp_path: Path):
+def test_valid_synthetic_batch_creates_mechanically_verified_manifest(tmp_path: Path):
     batch = valid_batch()
     materialize_artifacts(batch, tmp_path)
     target = build_controlled_run(batch, tmp_path)
 
     payload = target.read_text(encoding="utf-8")
-    assert '"state": "R8 review-ready"' in payload
+    assert '"state": "R7 mechanically-verified"' in payload
+    assert '"state": "R8 review-ready"' not in payload
     assert '"publication_authorization": "not_authorized"' in payload
     assert '"network_actions": "none"' in payload
 
@@ -315,3 +316,178 @@ def test_terminal_draft_cannot_advance():
 def test_invalid_transition_is_rejected():
     with pytest.raises(BatchValidationError, match="invalid_transition"):
         validate_transition("R3 slots-locked", "R6 drafting")
+
+
+# --- Slice 4: mechanical green ≠ R8; promote only after Sol + controller ---
+
+
+def test_validate_batch_rejects_self_declared_r8_without_review_evidence():
+    batch = valid_batch()
+    batch["articles"][0]["state"] = "R8 review-ready"
+
+    assert "article_not_mechanically_eligible:demo-a:R8 review-ready" in validate_batch(batch)
+
+
+def test_build_controlled_run_never_emits_r8_from_mechanical_gates_alone(tmp_path: Path):
+    import json
+
+    batch = valid_batch()
+    materialize_artifacts(batch, tmp_path)
+    # Even if a caller tries to pre-label R8, mechanical build must fail closed
+    # rather than mint review-ready.
+    batch["articles"][0]["state"] = "R8 review-ready"
+    with pytest.raises(BatchValidationError, match="article_not_mechanically_eligible:demo-a"):
+        build_controlled_run(batch, tmp_path)
+
+    batch = valid_batch()
+    materialize_artifacts(batch, tmp_path)
+    target = build_controlled_run(batch, tmp_path)
+    manifest = json.loads(target.read_text(encoding="utf-8"))
+    assert manifest["state"] == "R7 mechanically-verified"
+    assert all(article["state"] == "R7 mechanically-verified" for article in manifest["articles"])
+
+
+@pytest.mark.parametrize(
+    "sol_decision",
+    ["needs_changes", "evidence_insufficient", "timeout", "review-incomplete", ""],
+)
+def test_promote_to_review_ready_rejects_non_approve_sol(sol_decision: str):
+    from article_group.workflow import promote_to_review_ready
+
+    manifest = {
+        "state": "R7.5 awaiting-independent-review",
+        "publication_authorization": "not_authorized",
+        "articles": [{"article_id": "demo-a", "state": "R7.5 awaiting-independent-review"}],
+    }
+    with pytest.raises(BatchValidationError, match="sol_decision_not_approve"):
+        promote_to_review_ready(
+            manifest,
+            sol_decision=sol_decision,
+            controller_acceptance="accepted",
+        )
+
+
+@pytest.mark.parametrize(
+    "controller_acceptance",
+    ["", "pending", "not_accepted", "accepted with known gap", None],
+)
+def test_promote_to_review_ready_rejects_without_controller_accept(controller_acceptance: object):
+    from article_group.workflow import promote_to_review_ready
+
+    manifest = {
+        "state": "R7.5 awaiting-independent-review",
+        "publication_authorization": "not_authorized",
+        "articles": [{"article_id": "demo-a", "state": "R7.5 awaiting-independent-review"}],
+    }
+    with pytest.raises(BatchValidationError, match="controller_acceptance_required"):
+        promote_to_review_ready(
+            manifest,
+            sol_decision="approve",
+            controller_acceptance=controller_acceptance,  # type: ignore[arg-type]
+        )
+
+
+def test_promote_to_review_ready_requires_mechanical_or_awaiting_source_state():
+    from article_group.workflow import promote_to_review_ready
+
+    manifest = {
+        "state": "R6 drafting",
+        "publication_authorization": "not_authorized",
+        "articles": [{"article_id": "demo-a", "state": "R6 drafting"}],
+    }
+    with pytest.raises(BatchValidationError, match="manifest_not_ready_for_r8_promotion"):
+        promote_to_review_ready(
+            manifest,
+            sol_decision="approve",
+            controller_acceptance="accepted",
+        )
+
+
+def test_promote_to_review_ready_sets_r8_only_with_sol_approve_and_controller_accept():
+    from article_group.workflow import promote_to_review_ready
+
+    manifest = {
+        "run_id": "synthetic-controlled-run",
+        "state": "R7 mechanically-verified",
+        "publication_authorization": "not_authorized",
+        "articles": [
+            {"article_id": "demo-a", "state": "R7 mechanically-verified"},
+            {"article_id": "demo-b", "state": "R7 mechanically-verified"},
+        ],
+    }
+    promoted = promote_to_review_ready(
+        manifest,
+        sol_decision="approve",
+        controller_acceptance="approved_after_re-review",
+        sol_review_ref="reviews/sol-rereview.md",
+        controller_acceptance_ref="reviews/controller-acceptance.md",
+    )
+    assert promoted["state"] == "R8 review-ready"
+    assert promoted["publication_authorization"] == "not_authorized"
+    assert promoted["sol_decision"] == "approve"
+    assert promoted["controller_acceptance"] == "approved_after_re-review"
+    assert all(article["state"] == "R8 review-ready" for article in promoted["articles"])
+
+
+def test_mechanized_state_machine_path_to_r8():
+    validate_transition("R6 drafting", "R7 editorial-ready")
+    validate_transition("R7 editorial-ready", "R7 mechanically-verified")
+    validate_transition("R7 mechanically-verified", "R7.5 awaiting-independent-review")
+    validate_transition("R7.5 awaiting-independent-review", "R8 review-ready")
+    with pytest.raises(BatchValidationError, match="invalid_transition"):
+        validate_transition("R7 editorial-ready", "R8 review-ready")
+    with pytest.raises(BatchValidationError, match="invalid_transition"):
+        validate_transition("R7 mechanically-verified", "R8 review-ready")
+
+
+@pytest.mark.parametrize("bad_batch", [None, [], "batch", 0, False, (), {}])
+def test_validate_batch_rejects_non_dict_batch_without_crashing(bad_batch: object):
+    # {} is a dict but empty; still must not AttributeError — empty dict is valid type.
+    if bad_batch == {}:
+        assert isinstance(validate_batch(bad_batch), list)  # type: ignore[arg-type]
+        return
+    assert validate_batch(bad_batch) == ["batch_must_be_a_dict"]  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("bad_state", [None, 1, True, False, [], {}, (), set(), "  "])
+def test_promote_rejects_unhashable_or_non_string_source_state(bad_state: object):
+    from article_group.workflow import promote_to_review_ready
+
+    manifest = {
+        "state": bad_state,
+        "publication_authorization": "not_authorized",
+        "articles": [],
+    }
+    with pytest.raises(BatchValidationError, match="manifest_not_ready_for_r8_promotion"):
+        promote_to_review_ready(
+            manifest,
+            sol_decision="approve",
+            controller_acceptance="accepted",
+        )
+
+
+@pytest.mark.parametrize(
+    "sol_decision,controller_acceptance",
+    [
+        (" approve ", "accepted"),
+        ("approve", " accepted "),
+        ("Approve", "accepted"),
+        ("approve\n", "accepted"),
+    ],
+)
+def test_promote_requires_exact_sol_and_controller_labels(
+    sol_decision: object, controller_acceptance: object
+):
+    from article_group.workflow import promote_to_review_ready
+
+    manifest = {
+        "state": "R7 mechanically-verified",
+        "publication_authorization": "not_authorized",
+        "articles": [],
+    }
+    with pytest.raises(BatchValidationError):
+        promote_to_review_ready(
+            manifest,
+            sol_decision=sol_decision,
+            controller_acceptance=controller_acceptance,
+        )
