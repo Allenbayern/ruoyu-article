@@ -1,0 +1,24 @@
+# Bytecode / test cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtualenvs / local tooling
+.venv/
+venv/
+.env
+.env.*
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Local scratch (never daily-commit material)
+*.swp
+*~
