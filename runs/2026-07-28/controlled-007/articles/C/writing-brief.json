@@ -1,0 +1,27 @@
+{
+  "article_id": "art-C",
+  "slot": "C",
+  "candidate_id": "cand-003",
+  "created_at": "2026-07-28T04:58:54.288909+08:00",
+  "work": "三国争洛阳撤档",
+  "primary_atom": "豆瓣8.1、上千人干了三年，为什么还是被市场挤出影院",
+  "reader_intent": "心疼",
+  "angle": "高口碑低排片：诚意之作撞上没有窗口的档期",
+  "title_skeleton": "8.1分干了三年，还是被挤出影院",
+  "ending_destination": "见正文",
+  "anticipated_character_count": "1800-2200",
+  "sources": {
+    "confirmed_primary": [
+      "src-C01",
+      "src-C02"
+    ],
+    "corroborating": [
+      "src-C03"
+    ]
+  },
+  "claim_coverage_goal": "complete",
+  "material_sufficiency": "ready-for-brief",
+  "content_map": "F",
+  "event_cluster_id": "sanguo-zhengluoyang-withdraw-20260725",
+  "reader_question": "为什么豆瓣8.1的《争洛阳》还要撤档？"
+}

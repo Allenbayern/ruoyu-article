@@ -1,0 +1,480 @@
+{
+  "run_id": "2026-07-28/controlled-007",
+  "created_at": "2026-07-27T21:12:00.058395+00:00",
+  "mode": "controlled_first_run",
+  "state": "R8 review-ready",
+  "publication_authorization": "not_authorized",
+  "delivery_state": "withheld_pending_independent_review_and_controller_acceptance",
+  "network_actions": "none",
+  "article_count": 3,
+  "articles": [
+    {
+      "article_id": "art-A",
+      "slot": "A",
+      "state": "R8 review-ready",
+      "title": "\u522b\u4eba\u64a4\u6863\uff0c\u5b83\u63d0\u524d\u4e00\u5468\u8fdb\u573a",
+      "work": "\u5e74\u4f1a\u4e0d\u80fd\u505c2\u63d0\u6863",
+      "primary_atom": "\u522b\u4eba\u5728\u64a4\u6863\uff0c\u8fd9\u90e8\u804c\u573a\u559c\u5267\u5374\u62a2\u7740\u63d0\u524d\u8fdb\u573a",
+      "reader_intent": "\u597d\u5947",
+      "angle": "\u7a7a\u7a97\u8865\u4f4d\uff1a\u7eed\u4f5c\u4e3a\u4ec0\u4e48\u6562\u628a\u6863\u671f\u5f80\u524d\u62a2\u4e00\u5468",
+      "claim_coverage": "complete",
+      "material_claim_ids": [
+        "A1",
+        "A2",
+        "A3",
+        "A4",
+        "A5",
+        "A6",
+        "A7",
+        "A8",
+        "A9",
+        "A10",
+        "A11",
+        "A12",
+        "A13"
+      ],
+      "claim_mappings": [
+        {
+          "claim_id": "A1",
+          "claim_text": "\u63d0\u6863\u81f38\u67081\u65e5",
+          "draft_locator": "\u63d0\u6863\u81f38\u67081\u65e5",
+          "claim_type": "fact",
+          "support_status": "direct",
+          "source_id": "src-A01",
+          "locator": "8\u67081\u65e5"
+        },
+        {
+          "claim_id": "A2",
+          "claim_text": "7\u670826\u65e5\u5b98\u5ba3",
+          "draft_locator": "7\u670826\u65e5",
+          "claim_type": "fact",
+          "support_status": "direct",
+          "source_id": "src-A01",
+          "locator": "7\u670826\u65e5"
+        },
+        {
+          "claim_id": "A3",
+          "claim_text": "\u8463\u6da6\u5e74\u6267\u5bfc",
+          "draft_locator": "\u8463\u6da6\u5e74\u6267\u5bfc",
+          "claim_type": "fact",
+          "support_status": "direct",
+          "source_id": "src-A01",
+          "locator": "\u8463\u6da6\u5e74"
+        },
+        {
+          "claim_id": "A4",
+          "claim_text": "\u5f20\u82e5\u6600\u767d\u5ba2\u9ad8\u53f6\u9886\u8854",
+          "draft_locator": "\u5f20\u82e5\u6600\u3001\u767d\u5ba2\u3001\u9ad8\u53f6",
+          "claim_type": "fact",
+          "support_status": "direct",
+          "source_id": "src-A01",
+          "locator": "\u5f20\u82e5\u6600"
+        },
+        {
+          "claim_id": "A5",
+          "claim_text": "7\u670827\u65e5\u81f328\u65e5\u70b9\u6620",
+          "draft_locator": "7\u670827\u65e5\u81f328\u65e5",
+          "claim_type": "fact",
+          "support_status": "direct",
+          "source_id": "src-A01",
+          "locator": "7\u670827\u65e5"
+        },
+        {
+          "claim_id": "A6",
+          "claim_text": "\u8d8540\u90e8\u65b0\u7247",
+          "draft_locator": "\u8d8540\u90e8\u65b0\u7247",
+          "claim_type": "fact",
+          "support_status": "direct",
+          "source_id": "src-A02",
+          "locator": "\u8d8540\u90e8"
+        },
+        {
+          "claim_id": "A7",
+          "claim_text": "\u516b\u4ed9\u7968\u623f\u7a81\u78347\u4ebf\u5143",
+          "draft_locator": "\u7968\u623f\u5df2\u7a81\u78347\u4ebf\u5143",
+          "claim_type": "fact",
+          "support_status": "direct",
+          "source_id": "src-A02",
+          "locator": "7\u4ebf\u5143"
+        },
+        {
+          "claim_id": "A8",
+          "claim_text": "\u5218\u5954\u523a\u5934\u611f",
+          "draft_locator": "\u6070\u5230\u597d\u5904\u7684\u523a\u5934\u611f",
+          "claim_type": "attribution",
+          "support_status": "attributed",
+          "source_id": "src-A01",
+          "locator": "\u523a\u5934\u611f"
+        },
+        {
+          "claim_id": "A9",
+          "claim_text": "\u5367\u9f99\u51e4\u96cf",
+          "draft_locator": "\u5367\u9f99\u51e4\u96cf",
+          "claim_type": "attribution",
+          "support_status": "attributed",
+          "source_id": "src-A01",
+          "locator": "\u5367\u9f99\u51e4\u96cf"
+        },
+        {
+          "claim_id": "A10",
+          "claim_text": "\u63d0\u6863\u662f\u53cc\u5203\u5251",
+          "draft_locator": "\u63d0\u6863\u662f\u4e00\u628a\u53cc\u5203\u5251",
+          "claim_type": "attribution",
+          "support_status": "attributed",
+          "source_id": "src-A02",
+          "locator": "\u53cc\u5203\u5251"
+        },
+        {
+          "claim_id": "A11",
+          "claim_text": "\u5927\u9e4f\u5e84\u8fbe\u83f2",
+          "draft_locator": "\u5927\u9e4f\u3001\u5e84\u8fbe\u83f2",
+          "claim_type": "fact",
+          "support_status": "direct",
+          "source_id": "src-A01",
+          "locator": "\u5927\u9e4f"
+        },
+        {
+          "claim_id": "A12",
+          "claim_text": "\u52a8\u673a\u672a\u62ab\u9732",
+          "draft_locator": "\u516c\u5f00\u62a5\u9053\u53ea\u786e\u8ba4\u4e86\u52a8\u4f5c\u548c\u65e5\u671f",
+          "claim_type": "inference",
+          "support_status": "inference",
+          "limitation": "\u7247\u65b9\u5185\u90e8\u63d0\u6863\u52a8\u673a\u672a\u62ab\u9732\uff0c\u6b63\u6587\u4ec5\u62a5\u544a\u52a8\u4f5c\u4e0e\u516c\u5f00\u5e02\u573a\u63cf\u8ff0"
+        },
+        {
+          "claim_id": "A13",
+          "claim_text": "\u5317\u9752\u7f51\u8f6c\u8ff0\u70b9\u6620\u7f51\u53cb\u7559\u8a00\uff08\u642d\u5b50/\u53d1\u75af\u56fe\u9274/\u996e\u6599\uff09",
+          "draft_locator": "\u5fc5\u987b\u548c\u642d\u5b50\u4e00\u8d77\u53bb\u770b",
+          "claim_type": "attribution",
+          "support_status": "attributed",
+          "source_id": "src-A01",
+          "locator": "\u5fc5\u987b\u548c\u642d\u5b50"
+        }
+      ],
+      "concrete_support_types": [
+        "\u4eba\u7269/\u4e3b\u521b",
+        "\u53ef\u6838\u5b9e\u4e8b\u4ef6",
+        "\u89c2\u4f17\u53cd\u5e94"
+      ],
+      "markdown_path": "articles/A/article-draft.md",
+      "evidence_pack_path": "articles/A/evidence-pack.json",
+      "writing_brief_path": "articles/A/writing-brief.json",
+      "html_delivery_state": "withheld",
+      "publication_authorization": "not_authorized",
+      "candidate_id": "cand-001",
+      "content_map": "F",
+      "event_cluster_id": "nianhui2-advance-20260726",
+      "reader_question": "\u4e3a\u4ec0\u4e48\u300a\u5e74\u4f1a\u4e0d\u80fd\u505c2\u300b\u8981\u63d0\u524d\u4e00\u5468\u8fdb\u573a\uff1f"
+    },
+    {
+      "article_id": "art-B",
+      "slot": "B",
+      "state": "R8 review-ready",
+      "title": "\u661f\u7237\u8fde\u575013\u5929\uff0c\u88ab\u52a8\u753b\u8fde\u6380\u4e24\u5929",
+      "work": "\u516b\u4ed9\u5355\u65e5\u53cd\u8d85",
+      "primary_atom": "\u5468\u661f\u9a70\u8fde\u575013\u5929\u699c\u9996\uff0c\u88ab\u4e00\u90e8\u51e1\u4eba\u6210\u4ed9\u7684\u52a8\u753b\u8fde\u7740\u4e24\u5929\u6380\u7ffb",
+      "reader_intent": "\u60ca\u8bb6",
+      "angle": "\u53e3\u7891\u540e\u52b2\uff1a\u6ca1\u6709\u661f\u7237\u62db\u724c\u7684\u52a8\u753b\u5982\u4f55\u8fde\u7eed\u4e24\u65e5\u593a\u51a0",
+      "claim_coverage": "complete",
+      "material_claim_ids": [
+        "B1",
+        "B2",
+        "B3",
+        "B4",
+        "B5",
+        "B6",
+        "B7",
+        "B8",
+        "B9",
+        "B10",
+        "B11",
+        "B12"
+      ],
+      "claim_mappings": [
+        {
+          "claim_id": "B1",
+          "claim_text": "6046\u4e07\u4e0e12474\u4e07",
+          "draft_locator": "6046\u4e07\u5143\u548c12474\u4e07\u5143",
+          "claim_type": "fact",
+          "support_status": "direct",
+          "source_id": "src-B01",
+          "locator": "6046"
+        },
+        {
+          "claim_id": "B2",
+          "claim_text": "\u8fde\u7eed\u4e24\u65e5\u767b\u9876",
+          "draft_locator": "\u8fde\u7eed\u4e24\u65e5\u767b\u9876",
+          "claim_type": "fact",
+          "support_status": "direct",
+          "source_id": "src-B01",
+          "locator": "\u8fde\u7eed\u4e24\u65e5"
+        },
+        {
+          "claim_id": "B3",
+          "claim_text": "\u8fde\u7eed13\u5929\u699c\u9996",
+          "draft_locator": "\u8fde\u7eed13\u5929",
+          "claim_type": "fact",
+          "support_status": "direct",
+          "source_id": "src-B01",
+          "locator": "13\u5929"
+        },
+        {
+          "claim_id": "B4",
+          "claim_text": "\u603b\u7968\u623f\u7a81\u78347\u4ebf",
+          "draft_locator": "\u603b\u7968\u623f\u7a81\u78347\u4ebf",
+          "claim_type": "fact",
+          "support_status": "direct",
+          "source_id": "src-B02",
+          "locator": "7\u4ebf"
+        },
+        {
+          "claim_id": "B5",
+          "claim_text": "\u8c46\u74e38.3",
+          "draft_locator": "\u8c46\u74e38.3",
+          "claim_type": "fact",
+          "support_status": "direct",
+          "source_id": "src-B01",
+          "locator": "8.3"
+        },
+        {
+          "claim_id": "B6",
+          "claim_text": "\u732b\u773c9.7",
+          "draft_locator": "\u732b\u773c\u8bc4\u52069.7",
+          "claim_type": "fact",
+          "support_status": "direct",
+          "source_id": "src-B01",
+          "locator": "9.7"
+        },
+        {
+          "claim_id": "B7",
+          "claim_text": "\u725f\u6b63\u6d0b\u81ea\u7f16\u81ea\u5bfc",
+          "draft_locator": "\u725f\u6b63\u6d0b\u81ea\u7f16\u81ea\u5bfc",
+          "claim_type": "fact",
+          "support_status": "direct",
+          "source_id": "src-B01",
+          "locator": "\u725f\u6b63\u6d0b"
+        },
+        {
+          "claim_id": "B8",
+          "claim_text": "\u51fa\u8eab\u8349\u6839\u7684\u51e1\u4eba",
+          "draft_locator": "\u51fa\u8eab\u8349\u6839\u7684\u51e1\u4eba",
+          "claim_type": "fact",
+          "support_status": "direct",
+          "source_id": "src-B01",
+          "locator": "\u8349\u6839"
+        },
+        {
+          "claim_id": "B9",
+          "claim_text": "\u4e0a\u6620\u7b2c7\u5929",
+          "draft_locator": "\u4e0a\u6620\u7b2c7\u5929",
+          "claim_type": "fact",
+          "support_status": "direct",
+          "source_id": "src-B02",
+          "locator": "\u7b2c7\u5929"
+        },
+        {
+          "claim_id": "B10",
+          "claim_text": "\u4e0a\u5ea7\u738710.6%",
+          "draft_locator": "\u4e0a\u5ea7\u738710.6%",
+          "claim_type": "fact",
+          "support_status": "direct",
+          "source_id": "src-B03",
+          "locator": "10.6%"
+        },
+        {
+          "claim_id": "B11",
+          "claim_text": "\u72d0\u670b\u72d7\u53cb",
+          "draft_locator": "\u72d0\u670b\u72d7\u53cb",
+          "claim_type": "attribution",
+          "support_status": "attributed",
+          "source_id": "src-B01",
+          "locator": "\u72d0\u670b\u72d7\u53cb"
+        },
+        {
+          "claim_id": "B12",
+          "claim_text": "\u540e\u534a\u7a0b\u8dd1\u8d62\u662f\u5bf9\u516c\u5f00\u66f2\u7ebf\u7684\u5f52\u7eb3",
+          "draft_locator": "\u5b83\u628a\u540e\u534a\u7a0b\u8dd1\u8d62\u4e86",
+          "claim_type": "inference",
+          "support_status": "inference",
+          "limitation": "\u516c\u5f00\u6765\u6e90\u652f\u6301\u4e24\u65e5\u53cd\u8d85\u4e0e\u8bc4\u5206/\u4e0a\u5ea7\u7387\u5e76\u7f6e\uff0c\u4e0d\u652f\u6301\u53e3\u7891\u2192\u6392\u7247\u5b8c\u6574\u56e0\u679c\u94fe\uff0c\u4e5f\u4e0d\u652f\u6301\u5177\u4f53\u201c\u670b\u53cb/\u4e8c\u5237/\u5b89\u5229\u6b21\u6570\u201d\u884c\u4e3a\u63cf\u5199\uff1b\u6b63\u6587\u5df2\u964d\u7ea7\u4e3a\u89c2\u5bdf"
+        }
+      ],
+      "concrete_support_types": [
+        "\u53ef\u6838\u5b9e\u4e8b\u4ef6",
+        "\u4f5c\u54c1\u5185\u8bbe\u5b9a",
+        "\u8bc4\u5206\u6570\u636e"
+      ],
+      "markdown_path": "articles/B/article-draft.md",
+      "evidence_pack_path": "articles/B/evidence-pack.json",
+      "writing_brief_path": "articles/B/writing-brief.json",
+      "html_delivery_state": "withheld",
+      "publication_authorization": "not_authorized",
+      "candidate_id": "cand-002",
+      "content_map": "F",
+      "event_cluster_id": "baxian-daily-overtake-20260724",
+      "reader_question": "\u300a\u516b\u4ed9\uff01\u300b\u51ed\u4ec0\u4e48\u8fde\u7eed\u4e24\u5929\u53cd\u8d85\u300a\u529f\u592b\u5973\u8db3\u300b\uff1f"
+    },
+    {
+      "article_id": "art-C",
+      "slot": "C",
+      "state": "R8 review-ready",
+      "title": "8.1\u5206\u5e72\u4e86\u4e09\u5e74\uff0c\u8fd8\u662f\u88ab\u6324\u51fa\u5f71\u9662",
+      "work": "\u4e09\u56fd\u4e89\u6d1b\u9633\u64a4\u6863",
+      "primary_atom": "\u8c46\u74e38.1\u3001\u4e0a\u5343\u4eba\u5e72\u4e86\u4e09\u5e74\uff0c\u4e3a\u4ec0\u4e48\u8fd8\u662f\u88ab\u5e02\u573a\u6324\u51fa\u5f71\u9662",
+      "reader_intent": "\u5fc3\u75bc",
+      "angle": "\u9ad8\u53e3\u7891\u4f4e\u6392\u7247\uff1a\u8bda\u610f\u4e4b\u4f5c\u649e\u4e0a\u6ca1\u6709\u7a97\u53e3\u7684\u6863\u671f",
+      "claim_coverage": "complete",
+      "material_claim_ids": [
+        "C1",
+        "C2",
+        "C3",
+        "C4",
+        "C5",
+        "C6",
+        "C7",
+        "C8",
+        "C9",
+        "C10",
+        "C11",
+        "C12",
+        "C13"
+      ],
+      "claim_mappings": [
+        {
+          "claim_id": "C1",
+          "claim_text": "7\u670825\u65e5\u64a4\u6863",
+          "draft_locator": "7\u670825\u65e5",
+          "claim_type": "fact",
+          "support_status": "direct",
+          "source_id": "src-C01",
+          "locator": "7\u670825\u65e5"
+        },
+        {
+          "claim_id": "C2",
+          "claim_text": "\u8c46\u74e38.1\u5206",
+          "draft_locator": "\u8c46\u74e38.1\u5206",
+          "claim_type": "fact",
+          "support_status": "direct",
+          "source_id": "src-C01",
+          "locator": "8.1"
+        },
+        {
+          "claim_id": "C3",
+          "claim_text": "\u4e0a\u5343\u540d\u521b\u4f5c\u8005\u5386\u65f6\u4e09\u5e74",
+          "draft_locator": "\u4e0a\u5343\u540d\u521b\u4f5c\u8005\u5386\u65f6\u4e09\u5e74",
+          "claim_type": "attribution",
+          "support_status": "attributed",
+          "source_id": "src-C01",
+          "locator": "\u4e09\u5e74"
+        },
+        {
+          "claim_id": "C4",
+          "claim_text": "\u7968\u623f8146.5\u4e07",
+          "draft_locator": "\u7968\u623f\u51718146.5\u4e07",
+          "claim_type": "fact",
+          "support_status": "direct",
+          "source_id": "src-C01",
+          "locator": "8146.5"
+        },
+        {
+          "claim_id": "C5",
+          "claim_text": "\u6392\u72470.8%",
+          "draft_locator": "0.8%",
+          "claim_type": "fact",
+          "support_status": "direct",
+          "source_id": "src-C01",
+          "locator": "0.8%"
+        },
+        {
+          "claim_id": "C6",
+          "claim_text": "\u5e02\u573a\u7a7a\u95f4\u4e0d\u8db3",
+          "draft_locator": "\u8fdc\u8fdc\u4e0d\u8db3\u4ee5\u8ba9\u60f3\u770b",
+          "claim_type": "attribution",
+          "support_status": "attributed",
+          "source_id": "src-C01",
+          "locator": "\u5e02\u573a\u7a7a\u95f4"
+        },
+        {
+          "claim_id": "C7",
+          "claim_text": "\u8f9f\u8c23\u64a4\u6863\u4f20\u95fb",
+          "draft_locator": "\u8f9f\u8c23\u64a4\u6863\u4f20\u95fb",
+          "claim_type": "fact",
+          "support_status": "direct",
+          "source_id": "src-C01",
+          "locator": "\u8f9f\u8c23"
+        },
+        {
+          "claim_id": "C8",
+          "claim_text": "\u76f8\u4fe1\u4f5c\u54c1\u76f8\u4fe1\u89c2\u4f17",
+          "draft_locator": "\u76f8\u4fe1\u4f5c\u54c1\uff0c\u76f8\u4fe1\u89c2\u4f17\uff0c\u76f8\u4fe1\u5e02\u573a",
+          "claim_type": "attribution",
+          "support_status": "attributed",
+          "source_id": "src-C01",
+          "locator": "\u76f8\u4fe1\u4f5c\u54c1"
+        },
+        {
+          "claim_id": "C9",
+          "claim_text": "\u4e0d\u597d\u770b\u53ef\u9000\u7968",
+          "draft_locator": "\u53ef\u4ee5\u627e\u7247\u65b9\u9000\u7968",
+          "claim_type": "fact",
+          "support_status": "direct",
+          "source_id": "src-C01",
+          "locator": "\u9000\u7968"
+        },
+        {
+          "claim_id": "C10",
+          "claim_text": "7\u670810\u65e5\u4e0a\u6620",
+          "draft_locator": "7\u670810\u65e5",
+          "claim_type": "fact",
+          "support_status": "direct",
+          "source_id": "src-C02",
+          "locator": "7\u670810\u65e5"
+        },
+        {
+          "claim_id": "C11",
+          "claim_text": "\u957f\u5b89\u4e09\u4e07\u91cc18.24\u4ebf",
+          "draft_locator": "18.24\u4ebf\u7968\u623f",
+          "claim_type": "fact",
+          "support_status": "direct",
+          "source_id": "src-C01",
+          "locator": "18.24"
+        },
+        {
+          "claim_id": "C12",
+          "claim_text": "\u7a97\u53e3\u5728\u6536",
+          "draft_locator": "\u7a97\u53e3\u5728\u6536",
+          "claim_type": "inference",
+          "support_status": "inference",
+          "limitation": "\u201c\u7a97\u53e3\u5728\u6536\u201d\u662f\u5bf9\u6392\u7247\u4e0e\u64a4\u6863\u65f6\u95f4\u7ebf\u7684\u89c2\u5bdf\u6027\u5f52\u7eb3\uff0c\u975e\u5355\u4e00\u5b98\u65b9\u5b9a\u6027"
+        },
+        {
+          "claim_id": "C13",
+          "claim_text": "\u6f8e\u6e43\u79f0\u521b\u4e0b\u8ffd\u5149\u52a8\u753b\u8fd1\u5e74\u4f5c\u54c1\u6700\u4f4e\u7968\u623f\u7eaa\u5f55",
+          "draft_locator": "\u521b\u4e0b\u8ffd\u5149\u52a8\u753b\u8fd1\u5e74\u4f5c\u54c1\u7684\u6700\u4f4e\u7968\u623f\u7eaa\u5f55",
+          "claim_type": "attribution",
+          "support_status": "attributed",
+          "source_id": "src-C03",
+          "locator": "\u6700\u4f4e\u7968\u623f\u7eaa\u5f55"
+        }
+      ],
+      "concrete_support_types": [
+        "\u53ef\u6838\u5b9e\u4e8b\u4ef6",
+        "\u7247\u65b9\u58f0\u660e",
+        "\u4eba\u7269/\u56e2\u961f"
+      ],
+      "markdown_path": "articles/C/article-draft.md",
+      "evidence_pack_path": "articles/C/evidence-pack.json",
+      "writing_brief_path": "articles/C/writing-brief.json",
+      "html_delivery_state": "withheld",
+      "publication_authorization": "not_authorized",
+      "candidate_id": "cand-003",
+      "content_map": "F",
+      "event_cluster_id": "sanguo-zhengluoyang-withdraw-20260725",
+      "reader_question": "\u4e3a\u4ec0\u4e48\u8c46\u74e38.1\u7684\u300a\u4e89\u6d1b\u9633\u300b\u8fd8\u8981\u64a4\u6863\uff1f"
+    }
+  ],
+  "sol_decision": "approve",
+  "controller_acceptance": "approved_after_re-review",
+  "sol_review_ref": "deleg_5c7fa621 needs_changes \u2192 repair \u2192 deleg_90dbec96 approve (micro)",
+  "controller_acceptance_ref": "runs/2026-07-28/controlled-007/controller-acceptance.md"
+}

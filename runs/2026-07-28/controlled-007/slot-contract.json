@@ -1,0 +1,37 @@
+{
+  "slots": [
+    {
+      "slot": "A",
+      "candidate_id": "cand-001",
+      "work": "年会不能停2提档",
+      "primary_atom": "别人在撤档，这部职场喜剧却抢着提前进场",
+      "reader_intent": "好奇",
+      "angle": "空窗补位：续作为什么敢把档期往前抢一周",
+      "content_map": "F",
+      "event_cluster_id": "nianhui2-advance-20260726",
+      "reader_question": "为什么《年会不能停2》要提前一周进场？"
+    },
+    {
+      "slot": "B",
+      "candidate_id": "cand-002",
+      "work": "八仙单日反超",
+      "primary_atom": "周星驰连坐13天榜首，被一部凡人成仙的动画连着两天掀翻",
+      "reader_intent": "惊讶",
+      "angle": "口碑后劲：没有星爷招牌的动画如何连续两日夺冠",
+      "content_map": "F",
+      "event_cluster_id": "baxian-daily-overtake-20260724",
+      "reader_question": "《八仙！》凭什么连续两天反超《功夫女足》？"
+    },
+    {
+      "slot": "C",
+      "candidate_id": "cand-003",
+      "work": "三国争洛阳撤档",
+      "primary_atom": "豆瓣8.1、上千人干了三年，为什么还是被市场挤出影院",
+      "reader_intent": "心疼",
+      "angle": "高口碑低排片：诚意之作撞上没有窗口的档期",
+      "content_map": "F",
+      "event_cluster_id": "sanguo-zhengluoyang-withdraw-20260725",
+      "reader_question": "为什么豆瓣8.1的《争洛阳》还要撤档？"
+    }
+  ]
+}

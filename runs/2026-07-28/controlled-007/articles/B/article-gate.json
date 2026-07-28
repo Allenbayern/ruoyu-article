@@ -1,0 +1,148 @@
+{
+  "article_id": "art-B",
+  "slot": "B",
+  "state": "R8 review-ready",
+  "title": "星爷连坐13天，被动画连掀两天",
+  "work": "八仙单日反超",
+  "primary_atom": "周星驰连坐13天榜首，被一部凡人成仙的动画连着两天掀翻",
+  "reader_intent": "惊讶",
+  "angle": "口碑后劲：没有星爷招牌的动画如何连续两日夺冠",
+  "claim_coverage": "complete",
+  "material_claim_ids": [
+    "B1",
+    "B2",
+    "B3",
+    "B4",
+    "B5",
+    "B6",
+    "B7",
+    "B8",
+    "B9",
+    "B10",
+    "B11",
+    "B12"
+  ],
+  "claim_mappings": [
+    {
+      "claim_id": "B1",
+      "claim_text": "6046万与12474万",
+      "draft_locator": "6046万元和12474万元",
+      "claim_type": "fact",
+      "support_status": "direct",
+      "source_id": "src-B01",
+      "locator": "6046"
+    },
+    {
+      "claim_id": "B2",
+      "claim_text": "连续两日登顶",
+      "draft_locator": "连续两日登顶",
+      "claim_type": "fact",
+      "support_status": "direct",
+      "source_id": "src-B01",
+      "locator": "连续两日"
+    },
+    {
+      "claim_id": "B3",
+      "claim_text": "连续13天榜首",
+      "draft_locator": "连续13天",
+      "claim_type": "fact",
+      "support_status": "direct",
+      "source_id": "src-B01",
+      "locator": "13天"
+    },
+    {
+      "claim_id": "B4",
+      "claim_text": "总票房突破7亿",
+      "draft_locator": "总票房突破7亿",
+      "claim_type": "fact",
+      "support_status": "direct",
+      "source_id": "src-B02",
+      "locator": "7亿"
+    },
+    {
+      "claim_id": "B5",
+      "claim_text": "豆瓣8.3",
+      "draft_locator": "豆瓣8.3",
+      "claim_type": "fact",
+      "support_status": "direct",
+      "source_id": "src-B01",
+      "locator": "8.3"
+    },
+    {
+      "claim_id": "B6",
+      "claim_text": "猫眼9.7",
+      "draft_locator": "猫眼评分9.7",
+      "claim_type": "fact",
+      "support_status": "direct",
+      "source_id": "src-B01",
+      "locator": "9.7"
+    },
+    {
+      "claim_id": "B7",
+      "claim_text": "牟正洋自编自导",
+      "draft_locator": "牟正洋自编自导",
+      "claim_type": "fact",
+      "support_status": "direct",
+      "source_id": "src-B01",
+      "locator": "牟正洋"
+    },
+    {
+      "claim_id": "B8",
+      "claim_text": "出身草根的凡人",
+      "draft_locator": "出身草根的凡人",
+      "claim_type": "fact",
+      "support_status": "direct",
+      "source_id": "src-B01",
+      "locator": "草根"
+    },
+    {
+      "claim_id": "B9",
+      "claim_text": "上映第7天",
+      "draft_locator": "上映第7天",
+      "claim_type": "fact",
+      "support_status": "direct",
+      "source_id": "src-B02",
+      "locator": "第7天"
+    },
+    {
+      "claim_id": "B10",
+      "claim_text": "上座率10.6%",
+      "draft_locator": "上座率10.6%",
+      "claim_type": "fact",
+      "support_status": "direct",
+      "source_id": "src-B03",
+      "locator": "10.6%"
+    },
+    {
+      "claim_id": "B11",
+      "claim_text": "狐朋狗友",
+      "draft_locator": "狐朋狗友",
+      "claim_type": "attribution",
+      "support_status": "attributed",
+      "source_id": "src-B01",
+      "locator": "狐朋狗友"
+    },
+    {
+      "claim_id": "B12",
+      "claim_text": "后半程跑赢是对公开曲线的归纳",
+      "draft_locator": "它把后半程跑赢了",
+      "claim_type": "inference",
+      "support_status": "inference",
+      "limitation": "公开来源支持两日反超与评分/上座率并置，不支持口碑→排片完整因果链，也不支持具体“朋友/二刷/安利次数”行为描写；正文已降级为观察"
+    }
+  ],
+  "concrete_support_types": [
+    "可核实事件",
+    "作品内设定",
+    "评分数据"
+  ],
+  "markdown_path": "articles/B/article-draft.md",
+  "evidence_pack_path": "articles/B/evidence-pack.json",
+  "writing_brief_path": "articles/B/writing-brief.json",
+  "html_delivery_state": "withheld",
+  "publication_authorization": "not_authorized",
+  "candidate_id": "cand-002",
+  "content_map": "F",
+  "event_cluster_id": "baxian-daily-overtake-20260724",
+  "reader_question": "《八仙！》凭什么连续两天反超《功夫女足》？"
+}

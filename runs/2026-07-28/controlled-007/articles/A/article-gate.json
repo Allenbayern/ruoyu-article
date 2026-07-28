@@ -1,0 +1,158 @@
+{
+  "article_id": "art-A",
+  "slot": "A",
+  "state": "R8 review-ready",
+  "title": "别人撤档，它提前一周进场",
+  "work": "年会不能停2提档",
+  "primary_atom": "别人在撤档，这部职场喜剧却抢着提前进场",
+  "reader_intent": "好奇",
+  "angle": "空窗补位：续作为什么敢把档期往前抢一周",
+  "claim_coverage": "complete",
+  "material_claim_ids": [
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8",
+    "A9",
+    "A10",
+    "A11",
+    "A12",
+    "A13"
+  ],
+  "claim_mappings": [
+    {
+      "claim_id": "A1",
+      "claim_text": "提档至8月1日",
+      "draft_locator": "提档至8月1日",
+      "claim_type": "fact",
+      "support_status": "direct",
+      "source_id": "src-A01",
+      "locator": "8月1日"
+    },
+    {
+      "claim_id": "A2",
+      "claim_text": "7月26日官宣",
+      "draft_locator": "7月26日",
+      "claim_type": "fact",
+      "support_status": "direct",
+      "source_id": "src-A01",
+      "locator": "7月26日"
+    },
+    {
+      "claim_id": "A3",
+      "claim_text": "董润年执导",
+      "draft_locator": "董润年执导",
+      "claim_type": "fact",
+      "support_status": "direct",
+      "source_id": "src-A01",
+      "locator": "董润年"
+    },
+    {
+      "claim_id": "A4",
+      "claim_text": "张若昀白客高叶领衔",
+      "draft_locator": "张若昀、白客、高叶",
+      "claim_type": "fact",
+      "support_status": "direct",
+      "source_id": "src-A01",
+      "locator": "张若昀"
+    },
+    {
+      "claim_id": "A5",
+      "claim_text": "7月27日至28日点映",
+      "draft_locator": "7月27日至28日",
+      "claim_type": "fact",
+      "support_status": "direct",
+      "source_id": "src-A01",
+      "locator": "7月27日"
+    },
+    {
+      "claim_id": "A6",
+      "claim_text": "超40部新片",
+      "draft_locator": "超40部新片",
+      "claim_type": "fact",
+      "support_status": "direct",
+      "source_id": "src-A02",
+      "locator": "超40部"
+    },
+    {
+      "claim_id": "A7",
+      "claim_text": "八仙票房突破7亿元",
+      "draft_locator": "票房已突破7亿元",
+      "claim_type": "fact",
+      "support_status": "direct",
+      "source_id": "src-A02",
+      "locator": "7亿元"
+    },
+    {
+      "claim_id": "A8",
+      "claim_text": "刘奔刺头感",
+      "draft_locator": "恰到好处的刺头感",
+      "claim_type": "attribution",
+      "support_status": "attributed",
+      "source_id": "src-A01",
+      "locator": "刺头感"
+    },
+    {
+      "claim_id": "A9",
+      "claim_text": "卧龙凤雏",
+      "draft_locator": "卧龙凤雏",
+      "claim_type": "attribution",
+      "support_status": "attributed",
+      "source_id": "src-A01",
+      "locator": "卧龙凤雏"
+    },
+    {
+      "claim_id": "A10",
+      "claim_text": "提档是双刃剑",
+      "draft_locator": "提档是一把双刃剑",
+      "claim_type": "attribution",
+      "support_status": "attributed",
+      "source_id": "src-A02",
+      "locator": "双刃剑"
+    },
+    {
+      "claim_id": "A11",
+      "claim_text": "大鹏庄达菲",
+      "draft_locator": "大鹏、庄达菲",
+      "claim_type": "fact",
+      "support_status": "direct",
+      "source_id": "src-A01",
+      "locator": "大鹏"
+    },
+    {
+      "claim_id": "A12",
+      "claim_text": "动机未披露",
+      "draft_locator": "公开报道只确认了动作和日期",
+      "claim_type": "inference",
+      "support_status": "inference",
+      "limitation": "片方内部提档动机未披露，正文仅报告动作与公开市场描述"
+    },
+    {
+      "claim_id": "A13",
+      "claim_text": "北青网转述点映网友留言（搭子/发疯图鉴/饮料）",
+      "draft_locator": "必须和搭子一起去看",
+      "claim_type": "attribution",
+      "support_status": "attributed",
+      "source_id": "src-A01",
+      "locator": "必须和搭子"
+    }
+  ],
+  "concrete_support_types": [
+    "人物/主创",
+    "可核实事件",
+    "观众反应"
+  ],
+  "markdown_path": "articles/A/article-draft.md",
+  "evidence_pack_path": "articles/A/evidence-pack.json",
+  "writing_brief_path": "articles/A/writing-brief.json",
+  "html_delivery_state": "withheld",
+  "publication_authorization": "not_authorized",
+  "candidate_id": "cand-001",
+  "content_map": "F",
+  "event_cluster_id": "nianhui2-advance-20260726",
+  "reader_question": "为什么《年会不能停2》要提前一周进场？"
+}

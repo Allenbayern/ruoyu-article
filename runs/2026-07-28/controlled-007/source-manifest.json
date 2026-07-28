@@ -1,0 +1,111 @@
+{
+  "run_id": "2026-07-28/controlled-007",
+  "captured_at": "2026-07-28T04:27:01.649537+08:00",
+  "timezone": "+08:00",
+  "sources": [
+    {
+      "source_id": "src-A01",
+      "role": "confirmed-primary",
+      "independence_group": "qq-bynet",
+      "url": "https://news.qq.com/rain/a/20260726A07FW100",
+      "title": "《年会不能停2！》提档至8月1日，张若昀、白客等“癫疯”出击抢先爆笑",
+      "candidate_id": "cand-001",
+      "relative_path": "sources/src-A01-qq-nianhui-advance.html",
+      "captured_at": "2026-07-28T04:27:01.649537+08:00",
+      "sha256": "658ab2c9812af2c7a1cf2a25524a4ba52dd2600c96f67ce9e883e6f864f6e457",
+      "size_bytes": 69006,
+      "usable": true
+    },
+    {
+      "source_id": "src-A02",
+      "role": "confirmed-primary",
+      "independence_group": "thepaper",
+      "url": "https://www.thepaper.cn/newsDetail_forward_33664288",
+      "title": "电影《群星闪耀时》上映2天宣布撤档，《年会不能停2！》提档",
+      "candidate_id": "cand-001",
+      "relative_path": "sources/src-A02-thepaper-nianhui-context.html",
+      "captured_at": "2026-07-28T04:27:01.649537+08:00",
+      "sha256": "97640ee638039aca2e3abf5628c1db5adbdfe810b3c3c91e5811baef5aec1fb9",
+      "size_bytes": 28754,
+      "usable": true
+    },
+    {
+      "source_id": "src-B01",
+      "role": "confirmed-primary",
+      "independence_group": "sina-tech",
+      "url": "https://finance.sina.com.cn/tech/discovery/2026-07-27/doc-inikfnpa8471989.shtml",
+      "title": "《八仙！》单日票房反超《功夫女足》：连续两日成单日票房冠军",
+      "candidate_id": "cand-002",
+      "relative_path": "sources/src-B01-sina-baxian-overtake.html",
+      "captured_at": "2026-07-28T04:27:01.649537+08:00",
+      "sha256": "541b08c0e50e6efd190b22aa2e7f97594fc212ca86c38b809aa424a53c8796bc",
+      "size_bytes": 109962,
+      "usable": true
+    },
+    {
+      "source_id": "src-B02",
+      "role": "confirmed-primary",
+      "independence_group": "china-com",
+      "url": "https://ent.china.com/movie/newszh/11005281/20260726/49634449.html",
+      "title": "《八仙！》总票房破7亿元 口碑逆袭引领暑期档",
+      "candidate_id": "cand-002",
+      "relative_path": "sources/src-B02-china-baxian-7yi.html",
+      "captured_at": "2026-07-28T04:27:01.649537+08:00",
+      "sha256": "3063cd607ca59bb6cb1b37387babf52d08319b885c19b1900d766c9202547ecc",
+      "size_bytes": 52703,
+      "usable": true
+    },
+    {
+      "source_id": "src-B03",
+      "role": "corroborating",
+      "independence_group": "sohu",
+      "url": "https://www.sohu.com/a/1054521760_114941",
+      "title": "《八仙！》单日反超《功夫女足》夺冠 累计票房破5亿",
+      "candidate_id": "cand-002",
+      "relative_path": "sources/src-B03-sohu-baxian-overtake.html",
+      "captured_at": "2026-07-28T04:27:01.649537+08:00",
+      "sha256": "928ca380ee1484c53ff4dfeff110b49d4dfd4ef9748fe7d3bd2fabbfd4c4f8d5",
+      "size_bytes": 19219,
+      "usable": true
+    },
+    {
+      "source_id": "src-C01",
+      "role": "confirmed-primary",
+      "independence_group": "guancha",
+      "url": "https://www.guancha.cn/internation/2026_07_25_825070.shtml",
+      "title": "《三国第一部：争洛阳》宣布撤档",
+      "candidate_id": "cand-003",
+      "relative_path": "sources/src-C01-guancha-sanguo-withdraw.html",
+      "captured_at": "2026-07-28T04:27:01.649537+08:00",
+      "sha256": "7f35e38e817308bbae889d303d006fda73a3ecd114b40eb762469c3364382291",
+      "size_bytes": 61076,
+      "usable": true
+    },
+    {
+      "source_id": "src-C02",
+      "role": "confirmed-primary",
+      "independence_group": "sina-wm",
+      "url": "https://finance.sina.com.cn/wm/2026-07-26/doc-inikcuef0910379.shtml",
+      "title": "《三国第一部：争洛阳》宣布撤档！豆瓣8.1分，票房却不到8200万元",
+      "candidate_id": "cand-003",
+      "relative_path": "sources/src-C02-sina-sanguo-withdraw.html",
+      "captured_at": "2026-07-28T04:27:01.649537+08:00",
+      "sha256": "53eed56af1806c23fcb5c0d0ec13b6f53ebda0461d771b0f92b4cc293f110d66",
+      "size_bytes": 98633,
+      "usable": true
+    },
+    {
+      "source_id": "src-C03",
+      "role": "corroborating",
+      "independence_group": "thepaper",
+      "url": "https://www.thepaper.cn/newsDetail_forward_33660177",
+      "title": "《八仙！》大爆《三国》撤档，两部高分动画的“冰与火”",
+      "candidate_id": "cand-003",
+      "relative_path": "sources/src-C03-thepaper-sanguo-icefire.html",
+      "captured_at": "2026-07-28T04:27:01.649537+08:00",
+      "sha256": "a3cd68125e325dd23faca929b3e5b30ed84d487f9e83863d14df1410aea3d655",
+      "size_bytes": 68094,
+      "usable": true
+    }
+  ]
+}

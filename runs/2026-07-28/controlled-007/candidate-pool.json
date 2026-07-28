@@ -1,0 +1,381 @@
+{
+  "run_id": "2026-07-28/controlled-007",
+  "observed_at": "2026-07-28T04:27:01.649537+08:00",
+  "timezone": "+08:00",
+  "candidates": [
+    {
+      "candidate_id": "cand-001",
+      "work": "年会不能停2提档",
+      "core_person_or_event": "董润年执导、张若昀白客高叶领衔的职场喜剧续作，7月26日官宣从8月7日提档至8月1日，并开启7月27-28日全国限时点映",
+      "primary_atom": "别人在撤档，这部职场喜剧却抢着提前进场",
+      "reader_intent": "好奇",
+      "angle": "空窗补位：续作为什么敢把档期往前抢一周",
+      "title_skeleton": "别人撤档，它提档一周",
+      "ending_destination": "观众要的不只是笑，是及时赶到的笑声",
+      "content_map": "F",
+      "event_cluster_id": "nianhui2-advance-20260726",
+      "reader_question": "为什么《年会不能停2》要提前一周进场？",
+      "event_time": "2026-07-26T15:44:00+08:00",
+      "observed_at": "2026-07-28T04:27:01.649537+08:00",
+      "freshness_window": "fermenting-1-3d",
+      "current_trigger": "提档官宣+点映窗口仍在发酵，媒体持续报道",
+      "content_value_scores": {
+        "emotion": 3,
+        "narrative": 3,
+        "share": 3,
+        "human": 3,
+        "freshness": 3
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2",
+        "e3",
+        "e4"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2",
+        "a3"
+      ],
+      "recommendation": "A",
+      "reject_or_wait_reason": ""
+    },
+    {
+      "candidate_id": "cand-002",
+      "work": "八仙单日反超",
+      "core_person_or_event": "国风动画《八仙！》7月24-25日单日票房6046万/12474万连续两日反超《功夫女足》，总票房破7亿，豆瓣8.3",
+      "primary_atom": "周星驰连坐13天榜首，被一部凡人成仙的动画连着两天掀翻",
+      "reader_intent": "惊讶",
+      "angle": "口碑后劲：没有星爷招牌的动画如何连续两日夺冠",
+      "title_skeleton": "星爷连坐13天，被动画掀翻",
+      "ending_destination": "观众最终还是把票投给了想看的故事",
+      "content_map": "F",
+      "event_cluster_id": "baxian-daily-overtake-20260724",
+      "reader_question": "《八仙！》凭什么连续两天反超《功夫女足》？",
+      "event_time": "2026-07-25T23:00:00+08:00",
+      "observed_at": "2026-07-28T04:27:01.649537+08:00",
+      "freshness_window": "fermenting-1-3d",
+      "current_trigger": "连续两日单日冠军与破7亿数据被多家媒体追报",
+      "content_value_scores": {
+        "emotion": 3,
+        "narrative": 3,
+        "share": 3,
+        "human": 2,
+        "freshness": 3
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2",
+        "e3",
+        "e4"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2",
+        "a3"
+      ],
+      "recommendation": "B",
+      "reject_or_wait_reason": ""
+    },
+    {
+      "candidate_id": "cand-003",
+      "work": "三国争洛阳撤档",
+      "core_person_or_event": "追光动画《三国第一部：争洛阳》上映16天、豆瓣8.1、票房约8146.5万-8278万，排片仅0.8%后宣布撤档；曾否认撤档并推出不好看可退票",
+      "primary_atom": "豆瓣8.1、上千人干了三年，为什么还是被市场挤出影院",
+      "reader_intent": "心疼",
+      "angle": "高口碑低排片：诚意之作撞上没有窗口的档期",
+      "title_skeleton": "8.1分也挤不进场",
+      "ending_destination": "观众想看，不等于市场给得起位置",
+      "content_map": "F",
+      "event_cluster_id": "sanguo-zhengluoyang-withdraw-20260725",
+      "reader_question": "为什么豆瓣8.1的《争洛阳》还要撤档？",
+      "event_time": "2026-07-25T22:00:00+08:00",
+      "observed_at": "2026-07-28T04:27:01.649537+08:00",
+      "freshness_window": "fermenting-1-3d",
+      "current_trigger": "撤档声明与票房/排片数据持续被转载讨论",
+      "content_value_scores": {
+        "emotion": 3,
+        "narrative": 3,
+        "share": 3,
+        "human": 3,
+        "freshness": 3
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2",
+        "e3",
+        "e4",
+        "e5"
+      ],
+      "concrete_anchor_ids": [
+        "a1",
+        "a2",
+        "a3",
+        "a4"
+      ],
+      "recommendation": "C",
+      "reject_or_wait_reason": ""
+    },
+    {
+      "candidate_id": "cand-004",
+      "work": "群星闪耀时撤档",
+      "core_person_or_event": "黄渤吴磊航天片上映后撤档",
+      "primary_atom": "一部7分多的航天片为何撑不住",
+      "reader_intent": "吃瓜",
+      "angle": "一部7分多的航天片为何撑不住",
+      "title_skeleton": "群星闪耀时撤档",
+      "ending_destination": "见编辑会",
+      "content_map": "F",
+      "event_cluster_id": "qunxing-withdraw-20260726",
+      "reader_question": "群星为什么撤档",
+      "event_time": "2026-07-26T22:00:00+08:00",
+      "observed_at": "2026-07-28T04:27:01.649537+08:00",
+      "freshness_window": "fermenting-1-3d",
+      "current_trigger": "仍有公开报道可检索",
+      "content_value_scores": {
+        "emotion": 2,
+        "narrative": 2,
+        "share": 2,
+        "human": 2,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2"
+      ],
+      "concrete_anchor_ids": [
+        "a1"
+      ],
+      "recommendation": "Archive",
+      "reject_or_wait_reason": "controlled-006已写主核，避免重复"
+    },
+    {
+      "candidate_id": "cand-005",
+      "work": "功夫女足口碑票房",
+      "core_person_or_event": "周星驰新片高票房中低分",
+      "primary_atom": "20亿与6分多的落差还能讲什么",
+      "reader_intent": "吃瓜",
+      "angle": "20亿与6分多的落差还能讲什么",
+      "title_skeleton": "功夫女足口碑票房",
+      "ending_destination": "见编辑会",
+      "content_map": "F",
+      "event_cluster_id": "gongfu-nvzu-score-gap",
+      "reader_question": "功夫女足口碑为何掉",
+      "event_time": "2026-07-20T00:00:00+08:00",
+      "observed_at": "2026-07-28T04:27:01.649537+08:00",
+      "freshness_window": "revival",
+      "current_trigger": "历史报道可检索，缺当日强新触发",
+      "content_value_scores": {
+        "emotion": 2,
+        "narrative": 2,
+        "share": 2,
+        "human": 2,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2"
+      ],
+      "concrete_anchor_ids": [
+        "a1"
+      ],
+      "recommendation": "Archive",
+      "reject_or_wait_reason": "controlled-005已写，避免重复"
+    },
+    {
+      "candidate_id": "cand-006",
+      "work": "八仙提档逆袭旧切口",
+      "core_person_or_event": "八仙提档后口碑走高",
+      "primary_atom": "提档国漫如何逆袭",
+      "reader_intent": "好奇",
+      "angle": "提档国漫如何逆袭",
+      "title_skeleton": "八仙提档逆袭旧切",
+      "ending_destination": "见编辑会",
+      "content_map": "F",
+      "event_cluster_id": "baxian-ti dang-old",
+      "reader_question": "八仙提档本身还新鲜吗",
+      "event_time": "2026-07-18T00:00:00+08:00",
+      "observed_at": "2026-07-28T04:27:01.649537+08:00",
+      "freshness_window": "revival",
+      "current_trigger": "历史报道可检索，缺当日强新触发",
+      "content_value_scores": {
+        "emotion": 2,
+        "narrative": 2,
+        "share": 2,
+        "human": 2,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2"
+      ],
+      "concrete_anchor_ids": [
+        "a1"
+      ],
+      "recommendation": "Archive",
+      "reject_or_wait_reason": "controlled-005已写提档逆袭主核；本批改写单日反超切口"
+    },
+    {
+      "candidate_id": "cand-007",
+      "work": "暑期档票房57亿",
+      "core_person_or_event": "总盘数据破57亿",
+      "primary_atom": "57亿说明了什么",
+      "reader_intent": "好奇",
+      "angle": "57亿说明了什么",
+      "title_skeleton": "暑期档票房57亿",
+      "ending_destination": "见编辑会",
+      "content_map": "F",
+      "event_cluster_id": "summer-box-57yi",
+      "reader_question": "暑期档为何破57亿",
+      "event_time": "2026-07-27T00:00:00+08:00",
+      "observed_at": "2026-07-28T04:27:01.649537+08:00",
+      "freshness_window": "same-day",
+      "current_trigger": "票房数据更新",
+      "content_value_scores": {
+        "emotion": 2,
+        "narrative": 2,
+        "share": 2,
+        "human": 2,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2"
+      ],
+      "concrete_anchor_ids": [
+        "a1"
+      ],
+      "recommendation": "Reject",
+      "reject_or_wait_reason": "纯数据盘点，无人物命运主核"
+    },
+    {
+      "candidate_id": "cand-008",
+      "work": "魔方小姐上映",
+      "core_person_or_event": "杨紫琼刘昊然魔方题材",
+      "primary_atom": "七十岁的她为什么还要拧魔方",
+      "reader_intent": "共鸣",
+      "angle": "七十岁的她为什么还要拧魔方",
+      "title_skeleton": "魔方小姐上映",
+      "ending_destination": "见编辑会",
+      "content_map": "A",
+      "event_cluster_id": "mofang-xiaojie-release",
+      "reader_question": "魔方小姐值不值得看",
+      "event_time": "2026-06-30T00:00:00+08:00",
+      "observed_at": "2026-07-28T04:27:01.649537+08:00",
+      "freshness_window": "revival",
+      "current_trigger": "历史报道可检索，缺当日强新触发",
+      "content_value_scores": {
+        "emotion": 2,
+        "narrative": 2,
+        "share": 2,
+        "human": 2,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2"
+      ],
+      "concrete_anchor_ids": [
+        "a1"
+      ],
+      "recommendation": "Wait",
+      "reject_or_wait_reason": "上映已近月，缺新鲜强触发，作备用人物向"
+    },
+    {
+      "candidate_id": "cand-009",
+      "work": "特立独行白敬亭",
+      "core_person_or_event": "白敬亭魏翔喜剧",
+      "primary_atom": "这部喜剧还剩什么讨论",
+      "reader_intent": "吃瓜",
+      "angle": "这部喜剧还剩什么讨论",
+      "title_skeleton": "特立独行白敬亭",
+      "ending_destination": "见编辑会",
+      "content_map": "F",
+      "event_cluster_id": "teli-duxing-202607",
+      "reader_question": "特立独行还有没有新切口",
+      "event_time": "2026-07-03T00:00:00+08:00",
+      "observed_at": "2026-07-28T04:27:01.649537+08:00",
+      "freshness_window": "revival",
+      "current_trigger": "历史报道可检索，缺当日强新触发",
+      "content_value_scores": {
+        "emotion": 2,
+        "narrative": 2,
+        "share": 2,
+        "human": 2,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2"
+      ],
+      "concrete_anchor_ids": [
+        "a1"
+      ],
+      "recommendation": "Archive",
+      "reject_or_wait_reason": "讨论度弱，缺引爆点"
+    },
+    {
+      "candidate_id": "cand-010",
+      "work": "年会不能停2点映",
+      "core_person_or_event": "点映好评与喜剧特辑",
+      "primary_atom": "点映里的笑声能不能撑起提档",
+      "reader_intent": "好奇",
+      "angle": "点映里的笑声能不能撑起提档",
+      "title_skeleton": "年会不能停2点映",
+      "ending_destination": "见编辑会",
+      "content_map": "F",
+      "event_cluster_id": "nianhui2-point-screen",
+      "reader_question": "点映热度能否撑起提档",
+      "event_time": "2026-07-27T12:00:00+08:00",
+      "observed_at": "2026-07-28T04:27:01.649537+08:00",
+      "freshness_window": "same-day",
+      "current_trigger": "全国限时点映窗口",
+      "content_value_scores": {
+        "emotion": 2,
+        "narrative": 2,
+        "share": 2,
+        "human": 2,
+        "freshness": 2
+      },
+      "source_roles": [
+        "confirmed-primary"
+      ],
+      "evidence_atom_ids": [
+        "e1",
+        "e2"
+      ],
+      "concrete_anchor_ids": [
+        "a1"
+      ],
+      "recommendation": "Archive",
+      "reject_or_wait_reason": "作A备用细节，不单独立项主文"
+    }
+  ]
+}

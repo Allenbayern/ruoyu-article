@@ -1,0 +1,18 @@
+{
+  "run_id": "2026-07-28/controlled-007",
+  "sol_delegation": "deleg_5c7fa621",
+  "sol_decision": "needs_changes",
+  "accepted_finding_ids": [
+    "C7-F01",
+    "C7-F02",
+    "C7-F03"
+  ],
+  "repairs": {
+    "C7-F01": "A: 北青网转述归因 + 新增 A13 attribution mapping to src-A01 (locators 必须和搭子); not deleted because source supports quotes",
+    "C7-F02": "B: removed invented friend/rewatch/安利-count path; hedged ranking/排片 causal chain; kept B12 inference with stronger limitation",
+    "C7-F03": "C: attributed 最低票房纪录 to 澎湃 wording + added C13 mapping to src-C03 locator 最低票房纪录"
+  },
+  "rebuilt_at": "2026-07-28T05:11:42.208424+08:00",
+  "mechanical_state_after_repair": "R7 mechanically-verified",
+  "publication_authorization": "not_authorized"
+}

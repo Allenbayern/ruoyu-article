@@ -1,0 +1,158 @@
+{
+  "article_id": "art-C",
+  "slot": "C",
+  "state": "R8 review-ready",
+  "title": "8.1分干了三年，还是被挤出影院",
+  "work": "三国争洛阳撤档",
+  "primary_atom": "豆瓣8.1、上千人干了三年，为什么还是被市场挤出影院",
+  "reader_intent": "心疼",
+  "angle": "高口碑低排片：诚意之作撞上没有窗口的档期",
+  "claim_coverage": "complete",
+  "material_claim_ids": [
+    "C1",
+    "C2",
+    "C3",
+    "C4",
+    "C5",
+    "C6",
+    "C7",
+    "C8",
+    "C9",
+    "C10",
+    "C11",
+    "C12",
+    "C13"
+  ],
+  "claim_mappings": [
+    {
+      "claim_id": "C1",
+      "claim_text": "7月25日撤档",
+      "draft_locator": "7月25日",
+      "claim_type": "fact",
+      "support_status": "direct",
+      "source_id": "src-C01",
+      "locator": "7月25日"
+    },
+    {
+      "claim_id": "C2",
+      "claim_text": "豆瓣8.1分",
+      "draft_locator": "豆瓣8.1分",
+      "claim_type": "fact",
+      "support_status": "direct",
+      "source_id": "src-C01",
+      "locator": "8.1"
+    },
+    {
+      "claim_id": "C3",
+      "claim_text": "上千名创作者历时三年",
+      "draft_locator": "上千名创作者历时三年",
+      "claim_type": "attribution",
+      "support_status": "attributed",
+      "source_id": "src-C01",
+      "locator": "三年"
+    },
+    {
+      "claim_id": "C4",
+      "claim_text": "票房8146.5万",
+      "draft_locator": "票房共8146.5万",
+      "claim_type": "fact",
+      "support_status": "direct",
+      "source_id": "src-C01",
+      "locator": "8146.5"
+    },
+    {
+      "claim_id": "C5",
+      "claim_text": "排片0.8%",
+      "draft_locator": "0.8%",
+      "claim_type": "fact",
+      "support_status": "direct",
+      "source_id": "src-C01",
+      "locator": "0.8%"
+    },
+    {
+      "claim_id": "C6",
+      "claim_text": "市场空间不足",
+      "draft_locator": "远远不足以让想看",
+      "claim_type": "attribution",
+      "support_status": "attributed",
+      "source_id": "src-C01",
+      "locator": "市场空间"
+    },
+    {
+      "claim_id": "C7",
+      "claim_text": "辟谣撤档传闻",
+      "draft_locator": "辟谣撤档传闻",
+      "claim_type": "fact",
+      "support_status": "direct",
+      "source_id": "src-C01",
+      "locator": "辟谣"
+    },
+    {
+      "claim_id": "C8",
+      "claim_text": "相信作品相信观众",
+      "draft_locator": "相信作品，相信观众，相信市场",
+      "claim_type": "attribution",
+      "support_status": "attributed",
+      "source_id": "src-C01",
+      "locator": "相信作品"
+    },
+    {
+      "claim_id": "C9",
+      "claim_text": "不好看可退票",
+      "draft_locator": "可以找片方退票",
+      "claim_type": "fact",
+      "support_status": "direct",
+      "source_id": "src-C01",
+      "locator": "退票"
+    },
+    {
+      "claim_id": "C10",
+      "claim_text": "7月10日上映",
+      "draft_locator": "7月10日",
+      "claim_type": "fact",
+      "support_status": "direct",
+      "source_id": "src-C02",
+      "locator": "7月10日"
+    },
+    {
+      "claim_id": "C11",
+      "claim_text": "长安三万里18.24亿",
+      "draft_locator": "18.24亿票房",
+      "claim_type": "fact",
+      "support_status": "direct",
+      "source_id": "src-C01",
+      "locator": "18.24"
+    },
+    {
+      "claim_id": "C12",
+      "claim_text": "窗口在收",
+      "draft_locator": "窗口在收",
+      "claim_type": "inference",
+      "support_status": "inference",
+      "limitation": "“窗口在收”是对排片与撤档时间线的观察性归纳，非单一官方定性"
+    },
+    {
+      "claim_id": "C13",
+      "claim_text": "澎湃称创下追光动画近年作品最低票房纪录",
+      "draft_locator": "创下追光动画近年作品的最低票房纪录",
+      "claim_type": "attribution",
+      "support_status": "attributed",
+      "source_id": "src-C03",
+      "locator": "最低票房纪录"
+    }
+  ],
+  "concrete_support_types": [
+    "可核实事件",
+    "片方声明",
+    "人物/团队"
+  ],
+  "markdown_path": "articles/C/article-draft.md",
+  "evidence_pack_path": "articles/C/evidence-pack.json",
+  "writing_brief_path": "articles/C/writing-brief.json",
+  "html_delivery_state": "withheld",
+  "publication_authorization": "not_authorized",
+  "candidate_id": "cand-003",
+  "content_map": "F",
+  "event_cluster_id": "sanguo-zhengluoyang-withdraw-20260725",
+  "reader_question": "为什么豆瓣8.1的《争洛阳》还要撤档？"
+}
