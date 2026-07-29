@@ -19,6 +19,12 @@ venv/
 .idea/
 .vscode/
 
+# Audit trail — never daily-commit material (Slice 6)
+runs/
+reviews/
+docs/
+ARTICLE_GROUP_OPERATING_CONTRACT_v1_DRAFT.md
+
 # Local scratch (never daily-commit material)
 *.swp
 *~
