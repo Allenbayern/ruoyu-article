@@ -28,3 +28,8 @@ ARTICLE_GROUP_OPERATING_CONTRACT_v1_DRAFT.md
 # Local scratch (never daily-commit material)
 *.swp
 *~
+
+# Discarded per user instruction: keep on disk but untracked (audit/workspace hygiene)
+briefs/
+scripts/
+references/learning-samples/

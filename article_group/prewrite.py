@@ -130,6 +130,14 @@ def validate_candidate_pool(pool: dict[str, Any]) -> list[str]:
         if candidate_observed is None:
             errors.append(f"candidate_{cid}_invalid_observed_at")
 
+    # Social-topic compliance (five gates): fail-closed for social candidates.
+    try:
+        from article_group.compliance_gate import validate_pool_five_gates
+    except ImportError:  # pragma: no cover - module missing, do not fail pool on import
+        pass
+    else:
+        errors.extend(validate_pool_five_gates(pool))
+
     return errors
 
 

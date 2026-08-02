@@ -3,6 +3,9 @@ name = "ruoyu-film-daily"
 version = "0.1.0"
 description = "Offline controlled-production gates for the Ruoyu film article group"
 requires-python = ">=3.14"
+dependencies = [
+    "trafilatura==2.1.0",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
