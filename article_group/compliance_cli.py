@@ -86,15 +86,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps({"error": str(error)}, ensure_ascii=False), file=sys.stderr)
         return 2
 
+    candidates: list[Any] = []
     if args.candidate:
         reports = [_single_candidate_report(data)]
         errors = reports[0]["errors"]
     else:
         errors = validate_pool_five_gates(data)
-        candidates = data.get("candidates", []) if isinstance(data.get("candidates"), list) else []
-        reports = [_single_candidate_report(candidate) for candidate in candidates]
+        candidates = (
+            data.get("candidates", [])
+            if isinstance(data.get("candidates"), list)
+            else []
+        )
+        reports = [
+            _single_candidate_report(candidate)
+            for candidate in candidates
+            if isinstance(candidate, dict)
+        ]
 
     declaration_valid = not errors
+    invalid_declaration_count = sum(
+        1 for report in reports if not report["declaration_valid"]
+    )
+    if not args.candidate:
+        invalid_declaration_count += sum(
+            1 for candidate in candidates if not isinstance(candidate, dict)
+        )
     grade_counts = {
         grade: sum(1 for report in reports if report["overall"] == grade)
         for grade in ("PASS", "CONDITIONAL", "FAIL")
@@ -103,9 +119,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "compliant": declaration_valid,
         "declaration_valid": declaration_valid,
         "candidate_count": len(reports),
-        "invalid_declaration_count": sum(
-            1 for report in reports if not report["declaration_valid"]
-        ),
+        "invalid_declaration_count": invalid_declaration_count,
         "grade_counts": grade_counts,
         "errors": errors,
         "reports": reports,

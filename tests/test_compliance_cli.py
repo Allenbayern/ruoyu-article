@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
+from pathlib import Path
 
 from article_group.compliance_cli import main
 
@@ -94,3 +97,74 @@ def test_cli_uses_legacy_result_when_overall_is_missing(tmp_path, capsys):
     assert main(["--candidate", str(source), "--json"]) == 0
 
     assert json.loads(capsys.readouterr().out)["overall"] == "PASS"
+
+
+def test_cli_rejects_non_object_pool_member_as_invalid_json_input():
+    result = subprocess.run(
+        [sys.executable, "-m", "article_group.compliance_cli", "--json"],
+        input='{"candidates":["bad"]}',
+        text=True,
+        capture_output=True,
+        cwd=Path(__file__).resolve().parents[1],
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert result.stderr == ""
+    report = json.loads(result.stdout)
+    assert report["declaration_valid"] is False
+    assert report["invalid_declaration_count"] == 1
+    assert report["reports"] == []
+    assert report["grade_counts"] == {"PASS": 0, "CONDITIONAL": 0, "FAIL": 0}
+    assert report["errors"] == ["candidate_record_0_must_be_a_dict"]
+
+
+def test_cli_counts_one_invalid_dict_declaration_despite_five_gate_errors(tmp_path, capsys):
+    candidate = _candidate(
+        recommendation="A",
+        gates={
+            "gate1_news_license": "INVALID",
+            "gate2_privacy": "INVALID",
+            "gate3_judicial": "INVALID",
+            "gate4_copyright": "INVALID",
+            "gate5_sensationalism": "INVALID",
+            "overall": "INVALID",
+        },
+    )
+    source = tmp_path / "pool.json"
+    source.write_text(json.dumps({"candidates": [candidate]}), encoding="utf-8")
+
+    assert main(["--pool", str(source), "--json"]) == 2
+
+    report = json.loads(capsys.readouterr().out)
+    assert report["candidate_count"] == 1
+    assert report["invalid_declaration_count"] == 1
+    assert len(report["errors"]) == 5
+
+
+def test_cli_counts_each_malformed_pool_member_once(tmp_path, capsys):
+    source = tmp_path / "pool.json"
+    source.write_text(json.dumps({"candidates": ["bad", None]}), encoding="utf-8")
+
+    assert main(["--pool", str(source), "--json"]) == 2
+
+    report = json.loads(capsys.readouterr().out)
+    assert report["candidate_count"] == 0
+    assert report["invalid_declaration_count"] == 2
+    assert report["errors"] == [
+        "candidate_record_0_must_be_a_dict",
+        "candidate_record_1_must_be_a_dict",
+    ]
+
+
+def test_cli_counts_malformed_member_alongside_valid_dict(tmp_path, capsys):
+    candidate = _candidate(recommendation="A", gates=_five_gates(overall="PASS"))
+    source = tmp_path / "pool.json"
+    source.write_text(json.dumps({"candidates": [candidate, "bad"]}), encoding="utf-8")
+
+    assert main(["--pool", str(source), "--json"]) == 2
+
+    report = json.loads(capsys.readouterr().out)
+    assert report["candidate_count"] == 1
+    assert report["invalid_declaration_count"] == 1
+    assert report["reports"][0]["declaration_valid"] is True
