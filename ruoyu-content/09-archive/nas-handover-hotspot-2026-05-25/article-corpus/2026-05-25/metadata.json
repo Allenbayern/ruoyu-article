@@ -1,0 +1,233 @@
+{
+  "date": "2026-05-25",
+  "fetch_time": "2026-05-25T15:36:08.353293+08:00",
+  "pipeline": "hotspot-v2",
+  "total": 24,
+  "film_count": 12,
+  "social_count": 12,
+  "stats": {
+    "fetched": 23,
+    "failed": 0,
+    "partial": 1,
+    "skipped": 0,
+    "blocked": 2
+  },
+  "articles": [
+    {
+      "file": "film/001-《蜘蛛侠：崭新之日》曝首支预告，被全世界遗忘的蜘蛛侠开启新征程.md",
+      "title": "《蜘蛛侠：崭新之日》曝首支预告，被全世界遗忘的蜘蛛侠开启新征程",
+      "source": "时光网",
+      "url": "https://content.mtime.com/article/229493656",
+      "word_count": 962,
+      "status": "full",
+      "category": "film"
+    },
+    {
+      "file": "film/002-阔别十年，“寒战”再启！电影《寒战1994》于香港举办发布会.md",
+      "title": "阔别十年，“寒战”再启！电影《寒战1994》于香港举办发布会",
+      "source": "时光网",
+      "url": "https://content.mtime.com/article/229493730",
+      "word_count": 2804,
+      "status": "full",
+      "category": "film"
+    },
+    {
+      "file": "film/003-《阳光女子合唱团》定档4月4日，现象级治愈佳作打破18年票房纪录.md",
+      "title": "《阳光女子合唱团》定档4月4日，现象级治愈佳作打破18年票房纪录",
+      "source": "时光网",
+      "url": "https://content.mtime.com/article/229493652",
+      "word_count": 988,
+      "status": "full",
+      "category": "film"
+    },
+    {
+      "file": "film/004-《拆弹专家2》惊喜重映 “年度爽片”再登大银幕.md",
+      "title": "《拆弹专家2》惊喜重映 “年度爽片”再登大银幕",
+      "source": "时光网",
+      "url": "https://content.mtime.com/article/229493474",
+      "word_count": 804,
+      "status": "full",
+      "category": "film"
+    },
+    {
+      "file": "film/005-周深倾情献唱《挽救计划》中文主题曲，本周五奔赴太空拯救宇宙.md",
+      "title": "周深倾情献唱《挽救计划》中文主题曲，本周五奔赴太空拯救宇宙",
+      "source": "时光网",
+      "url": "https://content.mtime.com/article/229493472",
+      "word_count": 1002,
+      "status": "full",
+      "category": "film"
+    },
+    {
+      "file": "film/006-《沙丘3》发布首支预告，维伦纽瓦的“沙丘”系列三部曲最终篇.md",
+      "title": "《沙丘3》发布首支预告，维伦纽瓦的“沙丘”系列三部曲最终篇",
+      "source": "时光网",
+      "url": "https://content.mtime.com/article/229493542",
+      "word_count": 271,
+      "status": "full",
+      "category": "film"
+    },
+    {
+      "file": "film/007-《真人快打2》内地定档5月8日，R级动作盛宴同步北美.md",
+      "title": "《真人快打2》内地定档5月8日，R级动作盛宴同步北美",
+      "source": "时光网",
+      "url": "https://content.mtime.com/article/229493238",
+      "word_count": 392,
+      "status": "full",
+      "category": "film"
+    },
+    {
+      "file": "film/008-2026奥斯卡获奖名单公布：《一战再战》以斩获6项大奖领跑.md",
+      "title": "2026奥斯卡获奖名单公布：《一战再战》以斩获6项大奖领跑",
+      "source": "时光网",
+      "url": "https://content.mtime.com/article/229493305",
+      "word_count": 564,
+      "status": "full",
+      "category": "film"
+    },
+    {
+      "file": "film/009-《你好，爱美丽》预售开启，导演邀你共赴温暖治愈旅程.md",
+      "title": "《你好，爱美丽》预售开启，导演邀你共赴温暖治愈旅程",
+      "source": "时光网",
+      "url": "https://content.mtime.com/article/229493199",
+      "word_count": 1085,
+      "status": "full",
+      "category": "film"
+    },
+    {
+      "file": "film/010-《拼桌》发布“爱情调味”口碑特辑，王传君江疏影演绎从“饭搭子”到灵魂知己.md",
+      "title": "《拼桌》发布“爱情调味”口碑特辑，王传君江疏影演绎从“饭搭子”到灵魂知己",
+      "source": "时光网",
+      "url": "https://content.mtime.com/article/229493222",
+      "word_count": 501,
+      "status": "full",
+      "category": "film"
+    },
+    {
+      "file": "film/011-《我的妈耶》曝关系海报，马思纯白客黄明昊解锁热闹“妈友圈”.md",
+      "title": "《我的妈耶》曝关系海报，马思纯白客黄明昊解锁热闹“妈友圈”",
+      "source": "时光网",
+      "url": "https://content.mtime.com/article/229493196",
+      "word_count": 919,
+      "status": "full",
+      "category": "film"
+    },
+    {
+      "file": "film/012-女性犯罪爽片《蜂蜜的针》定档3月28日，袁泉毁容式演绎致命女人.md",
+      "title": "女性犯罪爽片《蜂蜜的针》定档3月28日，袁泉毁容式演绎致命女人",
+      "source": "时光网",
+      "url": "https://content.mtime.com/article/229493219",
+      "word_count": 1374,
+      "status": "full",
+      "category": "film"
+    },
+    {
+      "file": "social/001-欢迎来到小众软件论坛.md",
+      "title": "欢迎来到小众软件论坛",
+      "source": "小众软件",
+      "url": "https://meta.appinn.net/t/topic/2319",
+      "word_count": 293,
+      "status": "full",
+      "category": "social"
+    },
+    {
+      "file": "social/002-公司内部接 AI，到底要不要自己再套一层中转？.md",
+      "title": "公司内部接 AI，到底要不要自己再套一层中转？",
+      "source": "小众软件",
+      "url": "https://meta.appinn.net/t/topic/85942",
+      "word_count": 679,
+      "status": "full",
+      "category": "social"
+    },
+    {
+      "file": "social/003-发现频道：最近10日的热门排行榜2026年第21期.md",
+      "title": "发现频道：最近10日的热门排行榜[2026年第21期]",
+      "source": "小众软件",
+      "url": "https://meta.appinn.net/t/topic/85933",
+      "word_count": 153,
+      "status": "partial",
+      "category": "social"
+    },
+    {
+      "file": "social/004-Deepseek V4 Pro 结束 2.5 折优惠，新价格是 14 折！.md",
+      "title": "Deepseek V4 Pro 结束 2.5 折优惠，新价格是 1/4 折！",
+      "source": "小众软件",
+      "url": "https://meta.appinn.net/t/topic/85848",
+      "word_count": 601,
+      "status": "full",
+      "category": "social"
+    },
+    {
+      "file": "social/005-AI写的软件是不是导致软件产能过剩了.md",
+      "title": "AI写的软件是不是导致软件产能过剩了",
+      "source": "小众软件",
+      "url": "https://meta.appinn.net/t/topic/85734",
+      "word_count": 2120,
+      "status": "full",
+      "category": "social"
+    },
+    {
+      "file": "social/006-【投票】我也有相同的问题.md",
+      "title": "【投票】我也有相同的问题",
+      "source": "小众软件",
+      "url": "https://meta.appinn.net/t/topic/85620",
+      "word_count": 1521,
+      "status": "full",
+      "category": "social"
+    },
+    {
+      "file": "social/007-说出来我都不信：Linux 漏洞第4、第5爆了  Nginx 也继续爆漏洞.md",
+      "title": "说出来我都不信：Linux 漏洞第4、第5爆了 / Nginx 也继续爆漏洞",
+      "source": "小众软件",
+      "url": "https://meta.appinn.net/t/topic/85796",
+      "word_count": 1678,
+      "status": "full",
+      "category": "social"
+    },
+    {
+      "file": "social/008-谷畜发布新规,recaptcha需要用搭载谷歌服务的手机扫码二维码,国内用户完了.md",
+      "title": "谷畜发布新规,recaptcha需要用搭载谷歌服务的手机扫码二维码,国内用户完了",
+      "source": "小众软件",
+      "url": "https://meta.appinn.net/t/topic/85738",
+      "word_count": 1343,
+      "status": "full",
+      "category": "social"
+    },
+    {
+      "file": "social/009-【遇见笔记】AI 与笔记结合的迷思（第二日）.md",
+      "title": "【遇见笔记】AI 与笔记结合的迷思（第二日）",
+      "source": "小众软件",
+      "url": "https://meta.appinn.net/t/topic/85919",
+      "word_count": 2833,
+      "status": "full",
+      "category": "social"
+    },
+    {
+      "file": "social/010-X-Y 问题.md",
+      "title": "X-Y 问题",
+      "source": "小众软件",
+      "url": "https://meta.appinn.net/t/topic/85732",
+      "word_count": 1535,
+      "status": "full",
+      "category": "social"
+    },
+    {
+      "file": "social/011-图片压缩工具.md",
+      "title": "图片压缩工具",
+      "source": "小众软件",
+      "url": "https://meta.appinn.net/t/topic/85793",
+      "word_count": 1416,
+      "status": "full",
+      "category": "social"
+    },
+    {
+      "file": "social/012-你就领吧，一领一个不吱声（纪念碑谷3，古墓丽影1-3等）.md",
+      "title": "你就领吧，一领一个不吱声（纪念碑谷3，古墓丽影1-3等）",
+      "source": "小众软件",
+      "url": "https://meta.appinn.net/t/topic/85817",
+      "word_count": 636,
+      "status": "full",
+      "category": "social"
+    }
+  ]
+}
