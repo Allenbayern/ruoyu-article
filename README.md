@@ -1,33 +1,58 @@
 # Ruoyu Film Daily
 
-This repository contains the controlled-production workflow for the Ruoyu film article group.
+Controlled-production workflow for the Ruoyu (若雨随影) film article group:
+offline gates, source capture, discovery radar, and adversarial-reviewed delivery
+batches. All validators are deterministic and fail-closed; nothing in this
+repository ever publishes, merges, deploys, or sends messages.
 
 ## Current state
 
-- Phase 1 contract and internal templates exist.
-- Phase 2 offline validators and synthetic negative tests exist.
-- The next permitted operation is one manually initiated, real-source controlled batch that stops at `R8 review-ready`.
-- No cron, source registry, publisher integration, message delivery, HTML renderer, image pipeline, or publication path is implemented or authorized.
+- Controlled batches through **controlled-014**: three publish-level drafts
+  produced under the adversarial-review Gate (Sol independent review →
+  scoped repairs → re-review → controller acceptance). Deliverables are
+  frozen single-file HTML with producer provenance seals; no external
+  publication is performed.
+- 305 offline tests pass (validators, CLI, source capture, discovery radar,
+  compliance gates).
+- No cron, source registry, publisher integration, image pipeline, or
+  publication path is implemented or authorized.
 
-## First-run boundary
+## Layout
 
-Use [controlled-first-run-brief.md](templates/controlled-first-run-brief.md) as the task contract. The run must stop after independent review handoff. A green local validator confirms only deterministic batch gates; it does not establish factual truth, article quality, `publish-ready`, or publication authorization.
+| Path | Purpose |
+|---|---|
+| `article_group/workflow.py` | Controlled-run state machine and batch validation (R0–R8, delivery authorization) |
+| `article_group/prewrite.py` | Pre-write gates: candidate pools, slots, freshness windows, editorial selection |
+| `article_group/compliance_gate.py` | Three-state (PASS/CONDITIONAL/FAIL) social-topic compliance gate with five gates and graded rules |
+| `article_group/compliance_cli.py` | Manual CLI: five-gates compliance declaration check (`--pool`/`--candidate`, `--json`) |
+| `article_group/sync_compliance.py` | Sync five-gates declarations from candidate JSONs into a Markdown checklist |
+| `article_group/toutiao_capture.py` | Public Toutiao article snapshot for evidence (no cookies/JS/anti-bot) |
+| `article_group/toutiao_cli.py` | CLI entry point for the Toutiao capture |
+| `article_group/yuafeng_hot.py` | Read-only Yuafeng hot-list client (UC, Tencent News, aggregates) |
+| `article_group/discovery_radar.py` | Isolated R0 discovery-radar artifact builder |
+| `article_group/yuafeng_radar_cli.py` | CLI to build one R0 discovery-only radar JSON |
+| `article_group/delivery.py` | Plain-text deliverable derive/validate (Markdown stays canonical) |
+| `article_group/git_hygiene.py` | Fail-closed git hygiene gates (never runs git itself) |
+| `briefs/` | Per-task contract briefs (authoring, repairs, Sol review/re-review) |
+| `templates/` | First-run brief, candidate card, evidence pack, delivery checklist, five gates |
+| `runs/` | Per-run roots: sources, drafts, frozen artifacts, review packets, seals |
 
-## Offline verification
+## Verification
 
 ```bash
-python3 -m pytest -q
+uv run python3 -m pytest -q
 ```
 
-The tests use synthetic records only. They verify state transitions, slot and angle separation, claim-coverage requirements, withheld HTML, and the no-publication boundary.
+Tests use synthetic records only. They verify state transitions, slot and angle
+separation, claim-coverage requirements, withheld HTML, freshness windows, the
+no-publication boundary, and the compliance surface.
 
-## Manual Toutiao evidence capture
+## Manual source capture (Toutiao)
 
-The public Toutiao adapter captures one explicit article URL into an explicit local
-run root. It fetches the official mobile page without cookies, proxies, browser
-automation, JavaScript execution, or anti-bot bypass. A successful command writes
-only `sources/<source-id>.txt` and prints one source-manifest entry; it does not
-select a candidate, create an article, advance a workflow state, or publish.
+Fetches one explicit public article URL into an explicit local run root. A
+successful command writes only `sources/<source-id>.txt` and one
+source-manifest entry; it never selects a candidate, creates an article,
+advances a workflow state, or publishes.
 
 ```bash
 uv run python -m article_group.toutiao_cli \
@@ -37,27 +62,59 @@ uv run python -m article_group.toutiao_cli \
   --independence-group toutiao:<article-id>
 ```
 
-## Yuafeng hot-list discovery adapter
+## Discovery radar (Yuafeng)
 
-The read-only Yuafeng adapter fetches trending-list data from
-api-v2.yuafeng.cn. Every result is discovery-only (never evidence).
+Read-only trending-list discovery. Every result is discovery-only — never
+evidence for factual claims.
 
 ```python
 from article_group.yuafeng_hot import fetch_uc_hot, fetch_tencent_news, fetch_aggregate
 
-# UC hot list
 result = fetch_uc_hot()
-
-# Tencent news with optional page and type
 result = fetch_tencent_news(page=1, type_="hot")
-
-# Aggregate — one of: 知乎热榜, 微博热榜, 微信热文榜, 澎湃热榜,
-#                     百度热点, 知乎日报, 今日头条热榜, 梨视频总榜
-result = fetch_aggregate("微博热榜")
+result = fetch_aggregate("微博热榜")  # 知乎热榜/微博热榜/微信热文榜/澎湃热榜/百度热点/知乎日报/今日头条热榜/梨视频总榜
 ```
 
 The API key is read from the `YUAFENG_API_KEY` environment variable at
-call-time. It is never persisted, logged, or included in exception messages.
+call-time; it is never persisted, logged, or included in exception messages.
 
-The command returns exit code `2` and emits JSON on stderr when the public static
-page is unavailable, challenged, unsupported, or the local snapshot is invalid.
+Build a local R0 radar artifact (discovery-only JSON, caller-addressed):
+
+```bash
+uv run python -m article_group.yuafeng_radar_cli \
+  --output-path runs/2026-08-05/radar/r0.json \
+  --sources '[{"name": "uc"}, {"name": "aggregate", "action": "微博热榜"}]'
+```
+
+## Compliance surface
+
+```bash
+# Declaration check for a candidate pool or a single candidate
+uv run python -m article_group.compliance_cli --pool runs/<run>/candidates.json
+
+# Sync declarations into the Markdown checklist
+uv run python -m article_group.sync_compliance \
+  --input path/to/candidates.json --output docs/social-compliance.md
+```
+
+Exit code 0 means each declaration passes the validator; it does not mean
+every candidate's declared grade is PASS.
+
+## Delivery discipline
+
+- Markdown is canonical; `article-plain.txt` is the copy-paste deliverable for
+  platforms that do not parse Markdown.
+- Publish-level batches freeze a single-file HTML deliverable (inline CSS) and
+  record a provenance seal binding `sha256:<digest>` of the frozen artifact;
+  the binding is verified before acceptance.
+- Batch acceptance requires fresh evidence reviewed by the controller; final
+  review is performed independently (Sol route) under the adversarial-review
+  Gate, and the controller makes every acceptance decision. Nothing here
+  authorizes external publication.
+
+## Boundary
+
+A green local validator confirms only deterministic batch gates — it does not
+establish factual truth, article quality, `publish-ready`, or publication
+authorization. Factual assertions require verbatim citations in the run's
+`citations-ledger.json`.
