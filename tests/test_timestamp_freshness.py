@@ -22,7 +22,7 @@ def _days_ago(days: int) -> str:
 def test_future_candidate_event_time_is_rejected():
     from article_group.prewrite import validate_candidate_pool
 
-    from tests.test_prewrite_contract import valid_candidate_pool
+    from test_prewrite_contract import valid_candidate_pool
     pool = valid_candidate_pool()
     pool["candidates"][0]["event_time"] = _future()
     errors = validate_candidate_pool(pool)
@@ -132,7 +132,7 @@ def test_observed_before_event_rejected():
 def test_future_observed_at_is_rejected():
     from article_group.prewrite import validate_candidate_pool
 
-    from tests.test_prewrite_contract import valid_candidate_pool
+    from test_prewrite_contract import valid_candidate_pool
     pool = valid_candidate_pool()
     pool["observed_at"] = _future()
     errors = validate_candidate_pool(pool)
