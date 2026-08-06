@@ -1,5 +1,7 @@
 # Ruoyu Film Daily
 
+> **中文版：** [README.zh-CN.md](README.zh-CN.md) · **English:** [README.md](README.md)
+
 Controlled-production workflow for the Ruoyu (若雨随影) film article group:
 offline gates, source capture, discovery radar, and adversarial-reviewed delivery
 batches. All validators are deterministic and fail-closed; nothing in this
