@@ -1,0 +1,33 @@
+{
+  "source": "reddit",
+  "subreddit": "TrueOffMyChest",
+  "submission_url": "https://www.reddit.com/r/TrueOffMyChest/comments/sample/i_found_a_letter_after_my_father_died/",
+  "submission_id": "sample_submission_01",
+  "submission_title": "I found an anonymous letter in my father's old phone after he died",
+  "comments": [
+    {
+      "comment_id": "sample_comment_01",
+      "author": "reader_01",
+      "comment": "This is exactly why I always tell people to ask before they judge. I am crying.",
+      "likes": 3921,
+      "reply_count": 18,
+      "publish_time": "2026-06-10T13:00:00Z"
+    },
+    {
+      "comment_id": "sample_comment_02",
+      "author": "reader_02",
+      "comment": "My dad was like this too. Silent people carry the heaviest things.",
+      "likes": 2704,
+      "reply_count": 9,
+      "publish_time": "2026-06-10T13:12:00Z"
+    },
+    {
+      "comment_id": "sample_comment_03",
+      "author": "reader_03",
+      "comment": "The old phone detail destroyed me. That is such a powerful image.",
+      "likes": 1810,
+      "reply_count": 5,
+      "publish_time": "2026-06-10T13:28:00Z"
+    }
+  ]
+}

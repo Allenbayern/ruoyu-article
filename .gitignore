@@ -33,3 +33,12 @@ ARTICLE_GROUP_OPERATING_CONTRACT_v1_DRAFT.md
 briefs/
 scripts/
 references/learning-samples/
+
+# media-intel-aios dormant backup (2026-08-07, SOL-ABSORB-003 fix): backup scripts/docs
+# are retained repository artifacts and must be tracked; only the backup's own
+# config/private/ is excluded (see projects/media-intel-aios/.gitignore).
+!projects/media-intel-aios/scripts/
+!projects/media-intel-aios/scripts/**
+!projects/media-intel-aios/docs/
+!projects/media-intel-aios/docs/**
+

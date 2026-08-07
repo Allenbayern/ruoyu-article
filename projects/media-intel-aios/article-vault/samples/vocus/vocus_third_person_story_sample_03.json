@@ -1,0 +1,18 @@
+{
+  "source": "vocus",
+  "url": "https://vocus.cc/article/sample-third-person-story",
+  "title": "她失蹤那天，所有人都以為他在說謊",
+  "author": "測試作者",
+  "publish_time": "2026-06-11T15:35:00Z",
+  "salon_name": "故事測試樣本",
+  "tags": [
+    "故事",
+    "懸疑",
+    "真相"
+  ],
+  "content": "她失蹤那天，所有人都以為他在說謊。後來真相慢慢浮出來，原來那場誤會背後藏著更大的秘密。兩人的關係因此徹底改變。",
+  "content_type": "article",
+  "like_count": null,
+  "comment_count": null,
+  "sample_evidence": "validator_third_person_story"
+}

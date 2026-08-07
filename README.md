@@ -14,10 +14,14 @@ repository ever publishes, merges, deploys, or sends messages.
   scoped repairs → re-review → controller acceptance). Deliverables are
   frozen single-file HTML with producer provenance seals; no external
   publication is performed.
-- 305 offline tests pass (validators, CLI, source capture, discovery radar,
-  compliance gates).
+- 345 offline tests pass (validators, CLI, source capture, discovery radar,
+  compliance gates, absorbed offline sample parsers).
 - No cron, source registry, publisher integration, image pipeline, or
   publication path is implemented or authorized.
+- 2026-08-07: absorbed 8 offline sample parsers from the legacy
+  `media-intel-aios` project into `article_group/sources/`; the legacy
+  project's automation is backed up read-only under `projects/media-intel-aios/`
+  (dormant, not enabled).
 
 ## Layout
 
@@ -33,11 +37,13 @@ repository ever publishes, merges, deploys, or sends messages.
 | `article_group/yuafeng_hot.py` | Read-only Yuafeng hot-list client (UC, Tencent News, aggregates) |
 | `article_group/discovery_radar.py` | Isolated R0 discovery-radar artifact builder |
 | `article_group/yuafeng_radar_cli.py` | CLI to build one R0 discovery-only radar JSON |
+| `article_group/sources/` | Absorbed offline sample parsers (Douban, Vocus, Xiniu, hotboard, Zhihu backfill, lead routing) — pure stdlib, no network, no credentials, no judgment; absorbed from the legacy `media-intel-aios` project (2026-08-07) |
 | `article_group/delivery.py` | Plain-text deliverable derive/validate (Markdown stays canonical) |
 | `article_group/git_hygiene.py` | Fail-closed git hygiene gates (never runs git itself) |
 | `briefs/` | Per-task contract briefs (authoring, repairs, Sol review/re-review) |
 | `templates/` | First-run brief, candidate card, evidence pack, delivery checklist, five gates |
 | `runs/` | Per-run roots: sources, drafts, frozen artifacts, review packets, seals |
+| `projects/media-intel-aios/` | Read-only legacy backup (code/tests/README snapshot, daily3 automation kept dormant) — never imported or run without explicit authorization |
 
 ## Verification
 
