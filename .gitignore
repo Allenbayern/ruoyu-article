@@ -42,3 +42,6 @@ references/learning-samples/
 !projects/media-intel-aios/docs/
 !projects/media-intel-aios/docs/**
 
+# Hermes desktop attachment cache (local only, never commit)
+.hermes/
+
