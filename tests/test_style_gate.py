@@ -180,6 +180,19 @@ def test_validate_batch_style_uses_h1_for_single_article_title():
     assert article["title_gap"]["title"] == "撤档之后，谁还敢相信定档海报"
 
 
+def test_validate_batch_style_mixed_h1_h2_titles_per_article():
+    """Mixed h1/h2 across articles must resolve per-article, never by global index."""
+    delivery = """
+    <html><head><title>混合标题</title></head><body>
+    <article><h1>甲文标题</h1><p>《寻她》撤档后，原定上映计划发生了变化。</p></article>
+    <article><h2>乙文标题</h2><p>《八仙！》今日宣布定档8月19日，全国上映。</p></article>
+    <article><h2>丙文标题</h2><p>《不想失去你》由蓝鸿春监制，郑润奇导演。</p></article>
+    </body></html>
+    """
+    titles = [a["title"] for a in validate_batch_style(delivery)["articles"]]
+    assert titles == ["甲文标题", "乙文标题", "丙文标题"]
+
+
 def test_validate_batch_style_on_frozen_negative():
     """The frozen controlled-014 pre-fix delivery must FAIL the gate.
 

@@ -310,6 +310,9 @@ def validate_batch_style(html_text: str) -> dict[str, Any]:
     articles = re.findall(r"<article\b([^>]*)>(.*?)</article>", html_text, re.S)
     per_article: list[dict[str, Any]] = []
     for i, (attrs, article) in enumerate(articles):
+        # 标题约定：每篇 <article> 内一个 h1 或 h2 作标题，取第一个出现的
+        # 标题标签；多个标题标签并存属不合规交付（行为为取第一个），
+        # 绝不跨文章串用全局 h2 索引（h1/h2 混用或数量不一时会错位）。
         heading_match = re.search(r"<h[12][^>]*>(.*?)</h[12]>", article, re.S)
         title = (visible_text(heading_match.group(1)) if heading_match
                  else f"article-{i + 1}")
