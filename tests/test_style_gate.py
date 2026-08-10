@@ -167,6 +167,19 @@ def test_validate_batch_style_on_clean_delivery():
     assert result["article_count"] == 3
 
 
+def test_validate_batch_style_uses_h1_for_single_article_title():
+    delivery = """
+    <html><head><title>撤档之后，谁还敢相信定档海报</title></head><body>
+    <article data-hook="《寻她》撤档">
+      <h1>撤档之后，谁还敢相信定档海报</h1>
+      <p>《寻她》撤档后，原定上映计划发生了变化。</p>
+    </article></body></html>
+    """
+    article = validate_batch_style(delivery)["articles"][0]
+    assert article["title"] == "撤档之后，谁还敢相信定档海报"
+    assert article["title_gap"]["title"] == "撤档之后，谁还敢相信定档海报"
+
+
 def test_validate_batch_style_on_frozen_negative():
     """The frozen controlled-014 pre-fix delivery must FAIL the gate.
 

@@ -308,11 +308,11 @@ def validate_batch_style(html_text: str) -> dict[str, Any]:
     means at least one `error`-severity hit in reader-facing text.
     """
     articles = re.findall(r"<article\b([^>]*)>(.*?)</article>", html_text, re.S)
-    h2s = re.findall(r"<h2[^>]*>(.*?)</h2>", html_text, re.S)
-    titles = [visible_text(h) for h in h2s]
     per_article: list[dict[str, Any]] = []
     for i, (attrs, article) in enumerate(articles):
-        title = titles[i] if i < len(titles) else f"article-{i + 1}"
+        heading_match = re.search(r"<h[12][^>]*>(.*?)</h[12]>", article, re.S)
+        title = (visible_text(heading_match.group(1)) if heading_match
+                 else f"article-{i + 1}")
         paras_html = re.findall(r"<p[^>]*>(.*?)</p>", article, re.S)
         paras = [visible_text(p) for p in paras_html]
         full = "".join(paras)
