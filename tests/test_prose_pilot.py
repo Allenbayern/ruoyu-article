@@ -22,7 +22,8 @@ def test_advance_thin_pure_feeling():
 
 
 def test_advance_pause_reference_echo():
-    p = "还是那句话，这个故事真正的意义在于陪伴。"
+    # 纯回指复述（还是那句话 + 上文），无事实/论证推进 → pause
+    p = "还是那句话，上文已经交代过了，这里就不再展开重复了。"
     assert _para_advance_status(p)["verdict"] == "pause"
 
 

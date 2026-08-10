@@ -80,6 +80,19 @@ _PAUSE_SIGNALS = [
     re.compile(r"(这里|上文|前面|刚才|正如前文|如前面所)"),
 ]
 
+# 论证推进信号：解释性/评论性段落以「新判断、新概念、新角度」推进，
+# 不一定引入新事实。这是若雨随影文章（先事实、后解读）区别于
+# 纯事实写作的关键通道。
+_ARGUE_SIGNALS = [
+    re.compile(r"(意味着|说明|表明|体现|暴露|揭示|反映|恰恰|反而|之所以)"),
+    re.compile(r"(才是|正是|不过是|更像是|并不是|不只是)"),
+    re.compile(r"(因为|所以|因此|于是|由此|进而|由此看)"),
+    re.compile(r"(当[^。！？]{2,24}时|越[^。！？]{2,20}越|与其说|与其)"),
+    re.compile(r"(把[^。！？]{2,24}(归结为|放大成|变成|当成|当作|写成|拍成))"),
+    re.compile(r"(价值|意义|逻辑|本质|秩序|结构|关系|边界|代价)"),
+    re.compile(r"(问题|答案|原因|理由|判断|结论|信号|方向|变化)"),
+]
+
 # 段落开场重复：相邻内容段中，开场 6 字完全相同视为重复开场。
 _OPENER_LEN = 6
 
@@ -95,16 +108,24 @@ def _is_content_para(p: str) -> bool:
 
 
 def _para_advance_status(p: str) -> dict[str, Any]:
-    """单段推进判断：has_new / pause / thin。"""
+    """单段推进判断：has_new / pause / thin。
+
+    has_new 包含两条通道：事实推进（_ADVANCE_SIGNALS）与论证推进
+    （_ARGUE_SIGNALS）。pause 仅当既无事实也无论证推进、且命中复述信号。
+    """
     signals = [pat.search(p) for pat in _ADVANCE_SIGNALS]
     hits = [m.group(0)[:24] for m in signals if m]
+    argue = [pat.search(p) for pat in _ARGUE_SIGNALS]
+    argue_hits = [m.group(0)[:24] for m in argue if m]
     pauses = [pat.search(p) for pat in _PAUSE_SIGNALS]
     pause_hits = [m.group(0)[:24] for m in pauses if m]
-    if pause_hits:
-        return {"verdict": "pause", "hits": hits, "pause_hits": pause_hits}
-    if hits:
-        return {"verdict": "has_new", "hits": hits, "pause_hits": []}
-    return {"verdict": "thin", "hits": [], "pause_hits": []}
+    if pause_hits and not hits and not argue_hits:
+        return {"verdict": "pause", "hits": hits, "pause_hits": pause_hits,
+                "argue_hits": argue_hits}
+    if hits or argue_hits:
+        return {"verdict": "has_new", "hits": hits, "pause_hits": [],
+                "argue_hits": argue_hits}
+    return {"verdict": "thin", "hits": [], "pause_hits": [], "argue_hits": []}
 
 
 def _opener(p: str) -> str:
@@ -254,20 +275,34 @@ def _ledger_from_path(path: str | None) -> list[dict[str, Any]]:
 # --------------------------------------------------------------------------
 # 主分析
 # --------------------------------------------------------------------------
+def _is_section_header(p: str) -> bool:
+    """章节小标题：短（≤14 字）且不以句末标点收尾的独立段。
+
+    若雨随影成稿用独立 `<p>` 作章节小标题（如「谁在给 9.4 分」）。
+    这类结构段不属于内容段，不参与 thin/pause 判定。
+    """
+    if _han_len(p) > 14:
+        return False
+    return not bool(re.search(r"[。！？!?…]$", p))
+
+
 def analyze_text(text: str, title: str, ledger_quotes: list[dict[str, Any]]) -> dict[str, Any]:
     paragraphs = [p for p in re.split(r"\n+", text) if p.strip()]
     paras = [re.sub(r"^[#\-\d\.、\s]+", "", p).strip() for p in paragraphs]
     paras = [p for p in paras if _is_content_para(p)]
+    # 章节小标题不计入内容段（不参与 thin/pause），但保留计数
+    header_count = sum(1 for p in paras if _is_section_header(p))
+    content = [p for p in paras if not _is_section_header(p)]
 
     # 段落推进
-    adv = [_para_advance_status(p) for p in paras]
+    adv = [_para_advance_status(p) for p in content]
     thin = [i + 1 for i, a in enumerate(adv) if a["verdict"] == "thin"]
     pauses = [i + 1 for i, a in enumerate(adv) if a["verdict"] == "pause"]
 
-    # 开场重复
+    # 开场重复（按过滤后内容段编号）
     repeat_openers: list[dict[str, Any]] = []
     seen: dict[str, int] = {}
-    for i, p in enumerate(paras):
+    for i, p in enumerate(content):
         op = _opener(p)
         if op in seen and i - seen[op] <= 3:
             repeat_openers.append({"para": i + 1, "opener": op,
@@ -288,7 +323,8 @@ def analyze_text(text: str, title: str, ledger_quotes: list[dict[str, Any]]) -> 
     return {
         "title": title,
         "chars": _han_len(text),
-        "content_paragraphs": len(paras),
+        "content_paragraphs": len(content),
+        "section_headers": header_count,
         "material": {
             "anchors": counts,
             "anchor_total": sum(counts.values()),
