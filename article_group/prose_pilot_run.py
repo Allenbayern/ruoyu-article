@@ -122,8 +122,6 @@ def main(argv: list[str] | None = None) -> int:
         md.append("")
         for r in b["articles"]:
             mat = r["material"]
-            prog = r["progression"]
-            thin = prog["thin_paragraphs"]
             md.append(f"- **{r['label']}**（{r['chars']}字 / {r['content_paragraphs']}段）")
             md.append(f"  - 材料锚点 {mat['anchor_total']}（阈值 {mat['bare_threshold']}）："
                       f"{mat['anchors'] if mat['anchors'] else '无'}"
@@ -131,14 +129,7 @@ def main(argv: list[str] | None = None) -> int:
             if mat["matched_sources"]:
                 srcs = ", ".join(mat["matched_sources"][:3])
                 md.append(f"  - ledger 逐字命中 {mat['ledger_matched_quotes']} 条: {srcs}")
-            if thin:
-                md.append(f"  - ⚠ 无新增量段落 {len(thin)} 个: 第 {','.join(map(str, thin))} 段")
-            if prog["pause_paragraphs"]:
-                md.append(f"  - ⚠ 疑似复述/回指段落 {len(prog['pause_paragraphs'])} 个: 第 {','.join(map(str, prog['pause_paragraphs']))} 段")
-            if prog["repeated_openers"]:
-                md.append(f"  - ⚠ 相邻重复开场 {len(prog['repeated_openers'])} 处: "
-                          + "; ".join(f"第{o['para']}段「{o['opener']}」" for o in prog["repeated_openers"][:3]))
-            for w in r["syntax_warnings"][:6]:
+            for w in r["syntax_warnings"]:
                 md.append(f"  - ⚠ {w['signal']}: {w['detail']}")
             md.append("")
         md.append("")

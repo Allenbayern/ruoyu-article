@@ -1,44 +1,17 @@
-"""prose_pilot 试点检查器的单元测试（advisory only，不碰 style_gate）。"""
+"""prose_pilot 后台检查器测试（advisory only，不碰 style_gate）。
 
-import json
+v2 精简（2026-08-10 盲测后）：仅「材料清单 + 判断词密度」两个已采纳通道；
+段落推进（thin/pause/开场重复）与同构排比/句长过齐/抒情词/长前置成分已弃用。
+"""
 
 from article_group.prose_pilot import (
-    _para_advance_status,
     _syntax_warnings,
     analyze_html,
     analyze_text,
 )
 
 
-# --- 段落推进 -----------------------------------------------------------
-def test_advance_has_new_with_fact():
-    p = "《八仙！》今日宣布定档8月19日，全国上映。"
-    assert _para_advance_status(p)["verdict"] == "has_new"
-
-
-def test_advance_thin_pure_feeling():
-    p = "这种温柔让人久久不能平静，看完之后心里很暖。"
-    assert _para_advance_status(p)["verdict"] == "thin"
-
-
-def test_advance_pause_reference_echo():
-    # 纯回指复述（还是那句话 + 上文），无事实/论证推进 → pause
-    p = "还是那句话，上文已经交代过了，这里就不再展开重复了。"
-    assert _para_advance_status(p)["verdict"] == "pause"
-
-
-# --- 句法软警告 ---------------------------------------------------------
-def test_anaphora_window_detected():
-    t = "他要找的是真相，他要找的是答案，他要找的是出口。"
-    assert any(w["signal"] == "同构排比" for w in _syntax_warnings(t))
-
-
-def test_sentence_length_evenness_warned():
-    # 8 句以上、句长高度一致 → 句长过齐
-    t = "今天天气不错。我出门走了走。街上人不太多。风吹过来很凉。树影落在地上。有人牵狗路过。我把手插兜里。慢慢往家走。"
-    assert any(w["signal"] == "句长过齐" for w in _syntax_warnings(t))
-
-
+# --- 判断词密度（候选 B，盲测 100% 验证）-------------------------------
 def test_judgment_marker_high_count():
     t = "真正重要的是选择，真正重要的是坚持，真正重要的是不放弃，真正重要的是方向。"
     assert any("洞察路标" in w["signal"] for w in _syntax_warnings(t))
@@ -49,7 +22,7 @@ def test_no_false_warning_on_clean_text():
     assert _syntax_warnings(t) == []
 
 
-# --- 材料清单 + ledger 匹配 ---------------------------------------------
+# --- 材料清单 + ledger 匹配（候选 A，零误报）---------------------------
 def test_material_anchors_counted():
     r = analyze_text(
         "《八仙！》2026年8月19日上映，由郑润奇导演，共8个角色，定档消息来自官方。",
@@ -70,6 +43,7 @@ def test_ledger_quote_matched():
     assert r["material"]["matched_sources"]
 
 
+# --- HTML 提取 ----------------------------------------------------------
 def test_html_analysis_extracts_articles():
     html = (
         "<article><h2>第一篇</h2><p>《八仙！》今日宣布定档8月19日，全国上映，导演郑润奇表示影片筹备多年，正式官宣。</p>"
@@ -79,9 +53,12 @@ def test_html_analysis_extracts_articles():
     results = analyze_html(html, [])
     assert len(results) == 2
     assert results[0]["title"] == "第一篇"
-    assert results[0]["progression"]["thin_paragraphs"] == [2]
+    assert results[0]["material"]["anchor_total"] >= 2
 
 
-def test_result_is_advisory_only():
+# --- 弃用通道验证 --------------------------------------------------------
+def test_paragraph_progression_channel_removed():
+    # v2 弃用：报告不再输出 progression 通道；advisory 性质不变
     r = analyze_text("《八仙！》今日宣布定档8月19日，全国上映。", "测试稿", [])
+    assert "progression" not in r
     assert r["advisory"] is True

@@ -1,13 +1,14 @@
-"""prose_pilot: 试点版「材料-推进-句法」后台写作检查（human-writing 吸收，v1）。
+"""prose_pilot: 后台「材料-密度」写作检查（human-writing 吸收，v2 精简）。
 
 来源
 ----
-本模块吸收 human-writing（github.com/KKKKhazix/human-writing，commit 4fda173f）
-的三类能力，改写为若雨随影后台试点工具：
+本模块吸收 human-writing（github.com/KKKKhazix/human-writing，commit 4fda173f），
+2026-08-10 盲测后精简为两个已采纳通道：
   1. 材料清单前置（原 SKILL.md 材料门槛）：写前/评审时核对可追溯材料是否足够。
-  2. 段落新增量（原 SKILL.md 段落推进）：每段是否带来新事实/动作/例子/后果。
-  3. 句法软警告（原 scripts/check_prose.py 的 warning 层）：
-     同构排比、句长过齐、段落开场重复、洞察路标过密、抒情词过密、长前置成分。
+  2. 判断词密度（洞察路标过密）：「真正/其实/本质上/说到底…」单篇 ≥3 次提示。
+  段落推进（thin/pause）、同构排比、句长过齐、抒情词、长前置成分均已弃用
+  （盲测 precision 不达 80% 门槛，见 runs/2026-08-10/prose-pilot/README.md）。
+
 
 边界（与既有体系的关系）
 ------------------------
@@ -33,7 +34,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import statistics
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
@@ -57,138 +57,30 @@ _MATERIAL_BARE_MIN = 5  # human-writing 材料门槛参照值（非硬性，仅�
 _LEDGER_QUOTE_MARKERS = ("原文", "原文写道", "官方", "官宣", "报道", "数据显示")
 
 # --------------------------------------------------------------------------
-# 段落推进检测
-# --------------------------------------------------------------------------
-# 内容段：以汉字开头、长度 >= 30 字的段落参与推进检测（排除标题/导语/页脚）。
-# 推进信号：新事实锚点、新数字/日期、动作动词、结果/后果、举例、转折、
-# 人物/作品专名、问句。原文复述（段首是引号/原话）或纯感受重复判为停滞。
-_PARA_MIN_LEN = 30
-_ADVANCE_SIGNALS = [
-    re.compile(r"[《》]"),
-    re.compile(r"\d{1,2}月\d{1,2}日|\d{4}年"),
-    re.compile(r"\d+(?:\.\d+)?[万千万亿个部届人天年次座轮批月元%％]"),
-    re.compile(r"(宣布|发布|官宣|定档|上映|开售|上线|开播|上线|推出|启动|落地|成立|签约|投产|完成|通过|获批)"),
-    re.compile(r"(导演|编剧|主演|监制|饰演|出演|担任|加盟)"),
-    re.compile(r"(导致|使得|带来|变成|引发|推动|挤压|淘汰|改写|翻盘|崩了|救了|成了)"),
-    re.compile(r"(例如|比如|举例|以[^。！？]{1,16}为例|还有[^。！？]{1,16}(也在|同样|跟着))"),
-    re.compile(r"(但|不过|然而|偏偏|讽刺的是|有意思的是|没想到|结果)"),
-    re.compile(r"[？?]"),
-]
-_PAUSE_SIGNALS = [
-    re.compile(r"^(“[^”]{2,40}”|『[^』]{2,40}』|“[^”]{2,40}$)"),  # 原话复述开头
-    re.compile(r"(还是那句话|说到底|归根结底|也就是说|换句话说)"),
-    re.compile(r"(这里|上文|前面|刚才|正如前文|如前面所)"),
-]
-
-# 论证推进信号：解释性/评论性段落以「新判断、新概念、新角度」推进，
-# 不一定引入新事实。这是若雨随影文章（先事实、后解读）区别于
-# 纯事实写作的关键通道。
-_ARGUE_SIGNALS = [
-    re.compile(r"(意味着|说明|表明|体现|暴露|揭示|反映|恰恰|反而|之所以)"),
-    re.compile(r"(才是|正是|不过是|更像是|并不是|不只是)"),
-    re.compile(r"(因为|所以|因此|于是|由此|进而|由此看)"),
-    re.compile(r"(当[^。！？]{2,24}时|越[^。！？]{2,20}越|与其说|与其)"),
-    re.compile(r"(把[^。！？]{2,24}(归结为|放大成|变成|当成|当作|写成|拍成))"),
-    re.compile(r"(价值|意义|逻辑|本质|秩序|结构|关系|边界|代价)"),
-    re.compile(r"(问题|答案|原因|理由|判断|结论|信号|方向|变化)"),
-]
-
-# 段落开场重复：相邻内容段中，开场 6 字完全相同视为重复开场。
-_OPENER_LEN = 6
-
-
 def _han_len(text: str) -> int:
     return len(re.findall(r"[\u3400-\u4dbf\u4e00-\u9fff]", text))
 
 
-def _is_content_para(p: str) -> bool:
-    if _han_len(p) < _PARA_MIN_LEN:
-        return False
-    return bool(re.match(r"^[\u3400-\u4dbf\u4e00-\u9fff“”‘’『』「」《》\d这那]", p))
 
-
-def _para_advance_status(p: str) -> dict[str, Any]:
-    """单段推进判断：has_new / pause / thin。
-
-    has_new 包含两条通道：事实推进（_ADVANCE_SIGNALS）与论证推进
-    （_ARGUE_SIGNALS）。pause 仅当既无事实也无论证推进、且命中复述信号。
-    """
-    signals = [pat.search(p) for pat in _ADVANCE_SIGNALS]
-    hits = [m.group(0)[:24] for m in signals if m]
-    argue = [pat.search(p) for pat in _ARGUE_SIGNALS]
-    argue_hits = [m.group(0)[:24] for m in argue if m]
-    pauses = [pat.search(p) for pat in _PAUSE_SIGNALS]
-    pause_hits = [m.group(0)[:24] for m in pauses if m]
-    if pause_hits and not hits and not argue_hits:
-        return {"verdict": "pause", "hits": hits, "pause_hits": pause_hits,
-                "argue_hits": argue_hits}
-    if hits or argue_hits:
-        return {"verdict": "has_new", "hits": hits, "pause_hits": [],
-                "argue_hits": argue_hits}
-    return {"verdict": "thin", "hits": [], "pause_hits": [], "argue_hits": []}
-
-
-def _opener(p: str) -> str:
-    stripped = re.sub(r"^(“|『|「)", "", p)
-    return stripped[:_OPENER_LEN]
 
 
 # --------------------------------------------------------------------------
 # 句法软警告（从 check_prose.py 的 warning 层移植，改为本项目口径）
 # --------------------------------------------------------------------------
 _JUDGMENT_MARKERS = ("真正", "其实", "本质上", "说到底", "归根结底", "关键在", "重点在")
-_LYRIC_WORDS = ("时光", "岁月", "梦想", "温柔", "治愈", "感动", "力量",
-                "光", "温度", "答案", "意义", "瞬间", "我们", "人生")
-_LONG_LEFT = re.compile(r"[，,][^，。！？]{18,}[的地得]")
-
-
-def _sentence_lengths(text: str) -> list[int]:
-    return [len(s) for s in re.split(r"[。！？!?]", text) if _han_len(s) >= 4]
-
-
-def _anaphora_windows(text: str) -> list[str]:
-    """同句内三连以上同构小句（以相同 2 字开头），返回示例。"""
-    windows = []
-    for m in re.finditer(r"[^。！？]{8,80}", text):
-        seg = m.group(0)
-        clauses = re.split(r"[，,；;：:]", seg)
-        if len(clauses) < 3:
-            continue
-        head = [re.sub(r"^(“|『)", "", c)[:2] for c in clauses]
-        for i in range(len(head) - 2):
-            if head[i] and head[i] == head[i + 1] == head[i + 2]:
-                windows.append(seg[:60])
-                break
-    return windows
 
 
 def _syntax_warnings(text: str) -> list[dict[str, Any]]:
+    """已采纳的密度信号：判断词（洞察路标）过密。
+
+    盲测结论（2026-08-10）：仅此信号与材料清单达 80% 验收门槛；
+    同构排比/句长过齐/抒情词/长前置成分均未采纳，段落推进通道已弃用。
+    """
     out: list[dict[str, Any]] = []
-    # 1) 同构排比
-    for w in _anaphora_windows(text)[:3]:
-        out.append({"signal": "同构排比", "detail": w})
-    # 2) 句长变异系数过低（句子过于整齐）
-    lens = _sentence_lengths(text)
-    if len(lens) >= 8:
-        cv = statistics.pstdev(lens) / (statistics.mean(lens) or 1)
-        if cv < 0.42:
-            out.append({
-                "signal": "句长过齐",
-                "detail": f"变异系数 {cv:.2f} (<0.42)，共 {len(lens)} 句——长短句差距小，节奏像机器排的",
-            })
-    # 3) 洞察路标/抒情词过密
     for marker in _JUDGMENT_MARKERS:
         n = text.count(marker)
         if n >= 3:
             out.append({"signal": "洞察路标", "detail": f"“{marker}”出现 {n} 次"})
-    for word in _LYRIC_WORDS:
-        n = text.count(word)
-        if n >= 4:
-            out.append({"signal": "抒情词过密", "detail": f"“{word}”出现 {n} 次"})
-    # 4) 长前置成分（主干出现晚）
-    long_left = [m.group(0)[:40] for m in _LONG_LEFT.finditer(text)][:3]
-    if long_left:
-        out.append({"signal": "长前置成分", "detail": "；".join(long_left)})
     return out
 
 
@@ -287,44 +179,23 @@ def _is_section_header(p: str) -> bool:
 
 
 def analyze_text(text: str, title: str, ledger_quotes: list[dict[str, Any]]) -> dict[str, Any]:
-    paragraphs = [p for p in re.split(r"\n+", text) if p.strip()]
-    paras = [re.sub(r"^[#\-\d\.、\s]+", "", p).strip() for p in paragraphs]
-    paras = [p for p in paras if _is_content_para(p)]
-    # 章节小标题不计入内容段（不参与 thin/pause），但保留计数
-    header_count = sum(1 for p in paras if _is_section_header(p))
-    content = [p for p in paras if not _is_section_header(p)]
+    paragraphs = [re.sub(r"^[#\-\d\.、\s]+", "", p).strip()
+                  for p in re.split(r"\n+", text) if p.strip()]
 
-    # 段落推进
-    adv = [_para_advance_status(p) for p in content]
-    thin = [i + 1 for i, a in enumerate(adv) if a["verdict"] == "thin"]
-    pauses = [i + 1 for i, a in enumerate(adv) if a["verdict"] == "pause"]
-
-    # 开场重复（按过滤后内容段编号）
-    repeat_openers: list[dict[str, Any]] = []
-    seen: dict[str, int] = {}
-    for i, p in enumerate(content):
-        op = _opener(p)
-        if op in seen and i - seen[op] <= 3:
-            repeat_openers.append({"para": i + 1, "opener": op,
-                                   "first_seen": seen[op] + 1})
-        else:
-            seen.setdefault(op, i)
-
-    # 材料清单
+    # 材料清单（已采纳候选 A）
     counts = _claim_material_counts(text)
     matched: list[dict[str, Any]] = []
     for quote in ledger_quotes:
         if _ledger_quote_match(text, quote["text"]):
             matched.append(quote)
 
-    # 句法软警告
+    # 判断词密度（已采纳候选 B）
     warnings = _syntax_warnings(text)
 
     return {
         "title": title,
         "chars": _han_len(text),
-        "content_paragraphs": len(content),
-        "section_headers": header_count,
+        "content_paragraphs": len(paragraphs),
         "material": {
             "anchors": counts,
             "anchor_total": sum(counts.values()),
@@ -332,11 +203,6 @@ def analyze_text(text: str, title: str, ledger_quotes: list[dict[str, Any]]) -> 
             "below_threshold": sum(counts.values()) < _MATERIAL_BARE_MIN,
             "ledger_matched_quotes": len(matched),
             "matched_sources": sorted({f"{q['source_id']}:{q['title'][:30]}" for q in matched}),
-        },
-        "progression": {
-            "thin_paragraphs": thin,
-            "pause_paragraphs": pauses,
-            "repeated_openers": repeat_openers,
         },
         "syntax_warnings": warnings,
         "advisory": True,
@@ -356,7 +222,7 @@ def analyze_html(html_text: str, ledger_quotes: list[dict[str, Any]]) -> list[di
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="试点版材料-推进-句法后台检查（advisory only）")
+    parser = argparse.ArgumentParser(description="后台材料/密度检查（advisory only；材料清单 + 判断词密度）")
     parser.add_argument("path", help="HTML 交付文件或纯文本文件")
     parser.add_argument("--ledger", help="citations-ledger.json 路径（可选）")
     args = parser.parse_args(argv)
