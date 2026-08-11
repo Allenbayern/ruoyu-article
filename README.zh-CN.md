@@ -5,8 +5,9 @@
 ## 当前状态
 
 - 受控批次已完成至 **controlled-014**：在对抗性审查 Gate（Sol 独立审查 → 限定范围修复 → 复审 → 控制器验收）下产出三篇可发布级成稿。交付物为带来源封条（provenance seal）的冻结单文件 HTML；**不对外发布**。
-- 305 个离线测试全部通过（校验器、CLI、来源捕获、发现雷达、合规门禁）。
+- 403 个离线测试全部通过（校验器、CLI、来源捕获、发现雷达、合规门禁）。
 - 未实现也未授权：cron、来源注册表、发布器集成、图片管线、发布路径。
+- 2026-08-11：契约系统落地——`article_group/case_contract.py`（事实/反馈词汇与技法引用校验）、`article_group/bilibili_capture.py`（B站长文公开证据捕获）、`v2_contract/`（任务卡/流转影子校验器，冻结 V2 词表）、`templates/evidence-pack.md` P1 冻结。自宿主糖果梦热榜（tgmeng）作为第二个只读发现雷达接入（影视榜 + AI 聚合糖果指数）。
 
 ## 目录结构
 
@@ -22,6 +23,12 @@
 | `article_group/yuafeng_hot.py` | 只读玉峰热榜客户端（UC、腾讯新闻、聚合榜） |
 | `article_group/discovery_radar.py` | 隔离的 R0 发现雷达产物构建器 |
 | `article_group/yuafeng_radar_cli.py` | 构建单个 R0 发现专用雷达 JSON 的 CLI |
+| `article_group/tgmeng_hot.py` | 只读糖果梦热榜客户端（自宿主 NAS：9 榜 + 糖果指数 8 类；缓存路径，零 AI 消耗） |
+| `article_group/tgmeng_radar.py` | tgmeng 源的隔离 R0 发现雷达构建器 |
+| `article_group/tgmeng_radar_cli.py` | 构建单个 tgmeng R0 发现专用雷达 JSON 的 CLI |
+| `article_group/case_contract.py` | case 卡契约校验器：事实/反馈词汇与技法引用（`validate_case_card`、`validate_fact_evidence_pack`） |
+| `article_group/bilibili_capture.py` | B站长文公开研究证据捕获与校验（依赖 `case_contract`） |
+| `v2_contract/` | V2 契约影子校验器：任务卡 JSON + 冻结状态词表 YAML（jsonschema）——绝不导入或改动 `article_group/` |
 | `article_group/delivery.py` | 纯文本交付物派生/校验（Markdown 保持为规范稿） |
 | `article_group/git_hygiene.py` | fail-closed 的 git 卫生门禁（自身绝不运行 git） |
 | `briefs/` | 各任务契约 brief（写作、修复、Sol 审查/复审） |
@@ -69,6 +76,39 @@ uv run python -m article_group.yuafeng_radar_cli \
   --output-path runs/2026-08-05/radar/r0.json \
   --sources '[{"name": "uc"}, {"name": "aggregate", "action": "微博热榜"}]'
 ```
+
+## 发现雷达（糖果梦热榜）
+
+第二个只读雷达，基于自宿主糖果梦热榜聚合器（局域网 `http://192.168.100.123:4399`）。结果仅用于发现——绝不作为事实主张的证据；糖果指数为 AI 聚合选题信号，**不得当事实引用**（双源核验不变）。
+
+```bash
+# 榜单：weibo zhihu bilibili douyin toutiao baidu maoyan tencent aiqiyi
+# 糖果指数类目：all technology finance entertainment car sports game livelihood
+uv run python -m article_group.tgmeng_radar_cli \
+  --output-path runs/tgmeng/2026-08-11-r0.json \
+  --boards "maoyan tencent aiqiyi" \
+  --candy "entertainment all"
+```
+
+所有请求走服务端缓存路径（零 AI 消耗）；冷缓存窗口表现为稳定的 `source_empty` 错误码，绝不产生伪造数据。
+
+## 契约校验器
+
+```bash
+# V2 影子契约：任务卡 JSON + 冻结状态词表
+uv run python -m v2_contract.validate_task_card path/to/task-card.json
+uv run python -m v2_contract.validate_transition "R7 mechanically-verified" "R7.5 awaiting-independent-review"
+```
+
+```python
+# case 卡契约：事实/反馈词汇与技法引用
+from article_group.case_contract import validate_case_card, validate_fact_evidence_pack
+
+validate_case_card({"case_id": "C-001", ...})          # 校验失败抛 CaseContractError（稳定错误码）
+validate_fact_evidence_pack({"evidence_domain": "ruoyu_article_fact_evidence", ...})
+```
+
+`v2_contract/` 为影子模式：只读取冻结契约文件并报告错误，绝不发布、授权或改动工作流状态。
 
 ## 合规面
 

@@ -14,7 +14,7 @@ repository ever publishes, merges, deploys, or sends messages.
   scoped repairs → re-review → controller acceptance). Deliverables are
   frozen single-file HTML with producer provenance seals; no external
   publication is performed.
-- 345 offline tests pass (validators, CLI, source capture, discovery radar,
+- 403 offline tests pass (validators, CLI, source capture, discovery radar,
   compliance gates, absorbed offline sample parsers).
 - No cron, source registry, publisher integration, image pipeline, or
   publication path is implemented or authorized.
@@ -22,6 +22,13 @@ repository ever publishes, merges, deploys, or sends messages.
   `media-intel-aios` project into `article_group/sources/`; the legacy
   project's automation is backed up read-only under `projects/media-intel-aios/`
   (dormant, not enabled).
+- 2026-08-11: contract system landed — `article_group/case_contract.py`
+  (fact/feedback vocabulary and technique-reference validation),
+  `article_group/bilibili_capture.py` (public Bilibili long-form evidence
+  capture), `v2_contract/` (shadow task-card/transition validators, frozen
+  V2 vocabulary), and `templates/evidence-pack.md` P1 freeze. The
+  self-hosted 糖果梦热榜 (tgmeng) aggregator is wired in as a second
+  read-only discovery radar (film boards + AI-aggregated candy index).
 
 ## Layout
 
@@ -37,6 +44,12 @@ repository ever publishes, merges, deploys, or sends messages.
 | `article_group/yuafeng_hot.py` | Read-only Yuafeng hot-list client (UC, Tencent News, aggregates) |
 | `article_group/discovery_radar.py` | Isolated R0 discovery-radar artifact builder |
 | `article_group/yuafeng_radar_cli.py` | CLI to build one R0 discovery-only radar JSON |
+| `article_group/tgmeng_hot.py` | Read-only 糖果梦热榜 client (self-hosted NAS: 9 boards + 8 candy-index categories; cache path, zero AI spend) |
+| `article_group/tgmeng_radar.py` | Isolated R0 discovery-radar builder for tgmeng sources |
+| `article_group/tgmeng_radar_cli.py` | CLI to build one tgmeng R0 discovery-only radar JSON |
+| `article_group/case_contract.py` | Case-card contract validator: fact/feedback vocabulary, technique references (`validate_case_card`, `validate_fact_evidence_pack`) |
+| `article_group/bilibili_capture.py` | Public Bilibili long-form research-evidence capture and validation (uses `case_contract`) |
+| `v2_contract/` | Shadow V2 contract validators: task-card JSON + frozen state-vocabulary YAML (jsonschema) — never imports or mutates `article_group/` |
 | `article_group/sources/` | Absorbed offline sample parsers (Douban, Vocus, Xiniu, hotboard, Zhihu backfill, lead routing) — pure stdlib, no network, no credentials, no judgment; absorbed from the legacy `media-intel-aios` project (2026-08-07) |
 | `article_group/delivery.py` | Plain-text deliverable derive/validate (Markdown stays canonical) |
 | `article_group/git_hygiene.py` | Fail-closed git hygiene gates (never runs git itself) |
@@ -93,6 +106,44 @@ uv run python -m article_group.yuafeng_radar_cli \
   --output-path runs/2026-08-05/radar/r0.json \
   --sources '[{"name": "uc"}, {"name": "aggregate", "action": "微博热榜"}]'
 ```
+
+## Discovery radar (Tgmeng)
+
+Second read-only radar backed by the self-hosted 糖果梦热榜 aggregator
+(LAN: `http://192.168.100.123:4399`). Results are discovery-only — never
+evidence for factual claims; the candy index is an AI-aggregated topic
+signal and must not be quoted as fact (double-source verification applies).
+
+```bash
+# Boards: weibo zhihu bilibili douyin toutiao baidu maoyan tencent aiqiyi
+# Candy categories: all technology finance entertainment car sports game livelihood
+uv run python -m article_group.tgmeng_radar_cli \
+  --output-path runs/tgmeng/2026-08-11-r0.json \
+  --boards "maoyan tencent aiqiyi" \
+  --candy "entertainment all"
+```
+
+All requests hit the server-side cache path (no AI spend). A cold-cache
+window surfaces as a stable `source_empty` error, never fabricated data.
+
+## Contract validators
+
+```bash
+# V2 shadow contract: task-card JSON + frozen state vocabulary
+uv run python -m v2_contract.validate_task_card path/to/task-card.json
+uv run python -m v2_contract.validate_transition "R7 mechanically-verified" "R7.5 awaiting-independent-review"
+```
+
+```python
+# Case-card contract: fact/feedback vocabulary and technique references
+from article_group.case_contract import validate_case_card, validate_fact_evidence_pack
+
+validate_case_card({"case_id": "C-001", ...})          # raises CaseContractError with a stable code
+validate_fact_evidence_pack({"evidence_domain": "ruoyu_article_fact_evidence", ...})
+```
+
+`v2_contract/` is shadow mode: it reads frozen contract files, reports
+errors, and never publishes, authorizes, or changes workflow state.
 
 ## Compliance surface
 
