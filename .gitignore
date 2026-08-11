@@ -42,6 +42,9 @@ references/learning-samples/
 !projects/media-intel-aios/docs/
 !projects/media-intel-aios/docs/**
 
+# ...but never its bytecode cache (negate above would otherwise un-ignore it)
+projects/media-intel-aios/scripts/__pycache__/
+
 # Hermes desktop attachment cache (local only, never commit)
 .hermes/
 
