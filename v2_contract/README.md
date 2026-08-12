@@ -11,13 +11,57 @@ uv run python -m v2_contract.validate_task_card path/to/task-card.json
 uv run python -m v2_contract.validate_transition "R7 mechanically-verified" "R7.5 awaiting-independent-review"
 ```
 
-Both commands use the frozen contract files by default. Override them for an isolated fixture with `--schema`, `--vocabulary`, or both. Exit codes are:
+`validate_task_card` defaults to the frozen v1.1 task-card schema. New task cards must use `schema_version: "1.1"` and include `daily_output_policy`. Existing v1.0 task cards remain supported only when their frozen schema is selected explicitly:
+
+```bash
+uv run python -m v2_contract.validate_task_card path/to/v1.0-task-card.json \
+  --schema docs/plans/ruoyu-production-v2/2026-08-11-contract-v1.0/task-card-v1.0.schema.json
+```
+
+`validate_transition` continues to use the frozen v1.0 state vocabulary by default. Override either validator's frozen inputs for an isolated fixture with `--schema`, `--vocabulary`, or both. Exit codes are:
 
 | Exit code | Meaning |
 |---:|---|
 | 0 | Input is valid, or the requested transition exists in the vocabulary table. |
 | 1 | Input loaded successfully but contract validation failed. The command prints `INVALID` and deterministic error identifiers. |
 | 2 | Input/schema/vocabulary could not be loaded or parsed. The command prints `INPUT_ERROR` to stderr. |
+
+## Batch preflight
+
+Before calling the existing batch workflow, materialize the proposed batch as JSON
+and run its read-only V2 preflight from the repository root:
+
+```bash
+uv run python -m v2_contract.run_preflight \
+  --batch path/to/proposed-batch.json \
+  --run-dir runs/YYYY-MM-DD/controlled-NNN
+```
+
+The required `batch` object contains `run_id`, `manifest_state`, `target_state`,
+and `articles`. Each article carries the v1.1 task-card mapping fields: the
+`article_id`/`candidate_id`/A-B-C slot and editorial fields, `source_refs`,
+`gate_status`, delivery authorization/state, and the three frozen policy objects
+including `daily_output_policy`. The command maps only supplied fields, fixes
+`schema_version` to `1.1`, validates each mapped card, and validates the requested
+`manifest_state -> target_state` using the frozen vocabulary's complete `exits` set.
+Every article's `state` must also equal the authoritative `manifest_state`; a
+disagreement is reported as `FAIL`/exit 1. Candidate IDs from `candidate-pool.json`
+are normalized by trimming, collapsing whitespace, and lowercasing; duplicate
+normalized IDs are rejected as `INPUT_ERROR`/exit 2 before any candidate can be
+selected by overwrite.
+
+With `--run-dir`, preflight also reads `candidate-pool.json`, `source-manifest.json`,
+and `task-cards/task-card-*.md` only to verify that the batch agrees with the
+controlled-run evidence. It never writes a task card, manifest, batch, workflow
+state, or production artifact. The JSON report uses `PASS`/exit 0, `FAIL`/exit 1,
+and `INPUT_ERROR`/exit 2; missing mapping fields are reported as
+`preflight.missing_mapping_fields:<article_id>:<field-list>`.
+
+Batch-flow integration point: run this command after a proposed batch JSON is
+assembled and before any call to `article_group.workflow.validate_batch` or
+`build_controlled_run`. A passing preflight is deterministic evidence only; it does
+not authorize the workflow call, independent review, controller acceptance, or
+publication.
 
 The Python API returns a list of error strings. An empty list means valid:
 
@@ -41,7 +85,12 @@ transition_errors = validate_transition("R6 drafting", "R7 editorial-ready")
 - `H4 draft-only` as `publication_authorization=not_authorized`;
 - all three frozen variant `const` values, including rejection of `pending_allen`.
 
-`validate_transition` loads the YAML `transitions` table and accepts only an exact direct `(from, to)` pair. Unknown states and missing transition rows are reported separately.
+`validate_transition` derives its complete direct-transition set exclusively from every
+`states[].exits` declaration in the frozen YAML. This exits union is the sole
+state-legality authority and corresponds to `article_group/workflow.py`'s executable
+`ALLOWED_TRANSITIONS`. The YAML `transitions` table is a narrower, gate-bearing
+progression-semantics annotation; it is not consulted to decide whether a direct state
+transition is legal. Unknown states and missing exit pairs are reported separately.
 
 ## Failure semantics
 

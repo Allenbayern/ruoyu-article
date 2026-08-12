@@ -13,7 +13,7 @@ from yaml import YAMLError, safe_load
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SCHEMA = ROOT / "docs/plans/ruoyu-production-v2/2026-08-11-contract-v1.0/task-card-v1.0.schema.json"
+DEFAULT_SCHEMA = ROOT / "docs/plans/ruoyu-production-v2/2026-08-11-contract-v1.1/task-card-v1.1.schema.json"
 DEFAULT_VOCABULARY = ROOT / "docs/plans/ruoyu-production-v2/2026-08-11-contract-v1.0/state-vocabulary-v1.0.yaml"
 VARIANT_PATHS = {
     "dr_02_variant": ("review_policy", "dr_02_variant"),

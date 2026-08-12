@@ -27,18 +27,20 @@ def _known_states(vocabulary: dict[str, Any]) -> set[str]:
 
 
 def _allowed_transitions(vocabulary: dict[str, Any]) -> set[tuple[str, str]]:
-    transitions = vocabulary.get("transitions")
-    if not isinstance(transitions, list):
+    states = vocabulary.get("states")
+    if not isinstance(states, dict):
         return set()
 
     allowed: set[tuple[str, str]] = set()
-    for transition in transitions:
-        if not isinstance(transition, dict):
+    for current, state_definition in states.items():
+        if not isinstance(current, str) or not isinstance(state_definition, dict):
             continue
-        current = transition.get("from")
-        target = transition.get("to")
-        if isinstance(current, str) and isinstance(target, str):
-            allowed.add((current, target))
+        exits = state_definition.get("exits")
+        if not isinstance(exits, list):
+            continue
+        for target in exits:
+            if isinstance(target, str):
+                allowed.add((current, target))
     return allowed
 
 
