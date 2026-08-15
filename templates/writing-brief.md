@@ -33,6 +33,7 @@
 
 ## Evidence Boundaries
 
+- **动笔前核验**：写作前必须 web_search 主题 + 关键实体，回写事实包；信号只作选题入口（2026-08-14 空枪/沈腾案例硬纪律）。
 - must_prove_claim_ids:
 - must_not_say:
 - attribution_requirements:

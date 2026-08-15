@@ -16,9 +16,11 @@
 | `discovery_signal` | 发现通道线索（来自 R0 radar / 搜索 / 榜单） | 仅检索线索，不构成表现证据 |
 | `fulltext_snapshot_ref` | 全文快照路径 + `#sha256=` | `runs/<date>/viral-research/sources/` |
 | `performance_evidence_ref` | 表现档案路径 | `runs/<date>/viral-research/metrics/` |
-| `qualification_status` | `qualified_viral` / `observed_pending` / `research_only` | 由 performance_evidence 机械判定，不可手写 |
+| `evidence_origin` | `client` / `vendor` | 决定证据边界；供应商值不可表示为客户端值 |
+| `account_id` / `subject_category` | 账号与题材分类 | 技巧多样性校验使用；不得跨域复用 |
+| `qualification_status` | `qualified_viral` / `vendor_qualified` / `observed_pending` / `research_only` | 由 performance_evidence 机械判定，不可手写 |
 | `qualification_reason` | 逐项判定理由 | 与表现档案一致 |
-| `sample_rank` | 仅 `qualified_viral` 在知识库爆款实证表的序号 | P3 回填时分配，P1/P2 留空 |
+| `sample_rank` | 仅 `qualified_viral` 在知识库爆款实证表的序号 | P3 回填时分配，P1/P2 留空；供应商批次排名另存于 vendor observation |
 
 ## 拆解 9 字段（day1 实证格式，每篇爆文一张卡）
 
@@ -42,3 +44,4 @@
 - 拆解内容必须来自 `fulltext_snapshot_ref` 同篇全文；不得凭标题、摘要、账号体量或搜索排序推断。
 - 「可复用技巧」在 P2 蒸馏与 controller 裁决前一律 `promising`，本阶段不得生成正式技巧条目。
 - `observed_pending` / `research_only` 样本的拆解卡只能作为观察/补采/反例材料，不得支撑正式正向技巧。
+- `qualified_viral` 必须回链客户端证据、且逐项指标观测不得早于预冻结的 `metric_plan` 与版本化规则；`vendor_qualified` 必须回链 v0 原始批次证据及其声明的排名上限。
