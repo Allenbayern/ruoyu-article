@@ -59,10 +59,56 @@ class PreflightInputError(ValueError):
     """Raised when a batch or supplied run context cannot be loaded."""
 
 
+class _JSONDict(dict[str, Any]):
+    """JSON object retaining duplicate-key information for fail-closed loading."""
+
+    def __init__(self, pairs: list[tuple[str, Any]]) -> None:
+        super().__init__()
+        self.duplicate_fields: list[str] = []
+        for key, value in pairs:
+            if key in self:
+                if key not in self.duplicate_fields:
+                    self.duplicate_fields.append(key)
+                continue
+            self[key] = value
+
+
+def _object_pairs_hook(pairs: list[tuple[str, Any]]) -> _JSONDict:
+    return _JSONDict(pairs)
+
+
+def _duplicate_field_error(payload: object, label: str = "batch") -> str | None:
+    object_label = label
+    if isinstance(payload, dict):
+        article_id = payload.get("article_id")
+        if isinstance(article_id, str) and article_id.strip():
+            object_label = article_id.strip()
+    if isinstance(payload, _JSONDict) and payload.duplicate_fields:
+        duplicate_field = payload.duplicate_fields[0]
+        return f"preflight.duplicate_field:{object_label}:{duplicate_field}"
+    if isinstance(payload, dict):
+        for value in payload.values():
+            error = _duplicate_field_error(value, object_label)
+            if error is not None:
+                return error
+    elif isinstance(payload, list):
+        for value in payload:
+            error = _duplicate_field_error(value, label)
+            if error is not None:
+                return error
+    return None
+
+
 def _load_json_object(path: Path) -> dict[str, Any]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload = json.loads(
+        path.read_text(encoding="utf-8"),
+        object_pairs_hook=_object_pairs_hook,
+    )
     if not isinstance(payload, dict):
         raise PreflightInputError(f"JSON document must be an object: {path}")
+    duplicate_error = _duplicate_field_error(payload)
+    if duplicate_error is not None:
+        raise PreflightInputError(duplicate_error)
     return payload
 
 
@@ -253,6 +299,9 @@ def preflight_batch(batch: dict[str, Any], run_dir: Path | None = None) -> dict[
     """Return a deterministic report without changing batch, manifest, or workflow state."""
     if not isinstance(batch, dict):
         raise PreflightInputError("batch JSON must be an object")
+    duplicate_error = _duplicate_field_error(batch)
+    if duplicate_error is not None:
+        raise PreflightInputError(duplicate_error)
     raw_run_id = batch.get("run_id")
     if not _nonblank_string(raw_run_id):
         raise PreflightInputError("batch run_id must be a non-empty string")

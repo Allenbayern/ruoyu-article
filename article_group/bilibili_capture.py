@@ -179,8 +179,37 @@ def build_case_cards(root: str | Path) -> dict[str, Any]:
             card = {
                 "sample_id": sample_id,
                 "evidence_domain": "competitive_research_evidence",
+                "evidence_origin": "client",
+                "account_id": str(raw_result.get("author") or sample_id),
+                "subject_category": str(raw_result.get("theme") or "unspecified"),
                 "snapshot_ref": f"{_relative_ref(body_path, packet_root)}#sha256={source_meta['clean_sha256']}",
                 "performance_evidence_ref": _relative_ref(api_path, packet_root),
+                "metric_plan_version": _text(
+                    plan.get("metric_plan_version"), "metric_plan_version_missing"
+                ),
+                "metric_plan_frozen_at": _text(
+                    plan.get("metric_plan_frozen_at"), "metric_plan_frozen_at_missing"
+                ),
+                "client_evidence": {
+                    "evidence_ref": _text(
+                        raw_result.get("client_evidence_ref"),
+                        "client_evidence_ref_missing",
+                    ),
+                    "original_display": _text(
+                        raw_result.get("client_original_display"),
+                        "client_original_display_missing",
+                    ),
+                    "observed_at": observed_at,
+                    "confirmer": _text(
+                        raw_result.get("client_confirmer"),
+                        "client_evidence_confirmer_missing",
+                    ),
+                    "sha256": _text(
+                        raw_result.get("client_evidence_sha256"),
+                        "client_evidence_sha256_missing",
+                    ),
+                    "sanitized": True,
+                },
                 "metric_plan": plan_items,
                 "metrics": _metric_cards(
                     plan_items,

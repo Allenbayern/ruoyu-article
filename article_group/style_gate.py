@@ -69,6 +69,20 @@ _READING_REPORT_TONE: list[tuple[str, str, str]] = [
     (r"把边界说清楚", "tone:把边界说清楚", "审稿腔：'把边界说清楚'"),
 ]
 
+# 2b) 自我提醒句 — writing-process reminders leaked into reader-facing text.
+#    Allen 2026-08-12 (controlled-018, verbatim): "还没上映的电影，不能提前
+#    写出它的票房……这句话在文章中有什么意义吗，这不就是你提醒自己的一句话吗？
+#    我希望这些要求能记下来，不能每次都让我提醒。" Redline is NOT the boundary
+#    itself (预测/口碑/制式/观看条件 口径是合规内容), it is the REMINDER
+#    phrasing addressed at the writer: "还没上映…不能提前写出…", "这条边界
+#    不难写，却很容易被忘掉" — internal self-talk, not article content.
+_SELF_REMINDER: list[tuple[str, str, str]] = [
+    (r"还没上映的电影，不能提前写出它的票房", "tone:未上映提醒句", "自我提醒句（用户点名）：写作要求不得出现在正文"),
+    (r"不能提前写出[^。！？]{0,12}票房", "tone:不能提前写票房", "自我提醒句：'不能提前写出…票房'变体"),
+    (r"这条边界不难写", "tone:边界自白", "自我提醒句：'这条边界不难写'是写作提醒不是内容"),
+    (r"很容易在(热搜|转发|讨论)里被忘掉", "tone:易被忘掉自白", "自我提醒句：'很容易被忘掉'是写作提醒不是内容"),
+]
+
 # 3) 流程标识 — pipeline artifacts must not leak into reader-facing text.
 _PIPELINE_MARKERS: list[tuple[str, str, str]] = [
     (r"候选稿", "pipeline:候选稿", "流程标识：候选稿"),
@@ -102,7 +116,7 @@ def _compile(table: list[tuple[str, str, str]]) -> list[tuple[re.Pattern, str, s
 
 
 _SOURCE_RULES = _compile(_SOURCE_SELF_CONFESSION)
-_TONE_RULES = _compile(_READING_REPORT_TONE)
+_TONE_RULES = _compile(_READING_REPORT_TONE + _SELF_REMINDER)
 _PIPELINE_RULES = _compile(_PIPELINE_MARKERS)
 _BOUNDARY_RULES = _compile(_COMMENT_AS_FACT)
 
@@ -310,16 +324,32 @@ def validate_batch_style(html_text: str) -> dict[str, Any]:
     articles = re.findall(r"<article\b([^>]*)>(.*?)</article>", html_text, re.S)
     per_article: list[dict[str, Any]] = []
     for i, (attrs, article) in enumerate(articles):
+        # 文末「资料来源」引用附录（.sources）：Allen 2026-08-15 明确要求
+        # 「资料来源区建议保留；正式发布时最好做成可点击的一手链接」。
+        # 来源自证红线（正文不点名媒体）不适用于该引用附录；tone/pipeline/
+        # boundary 规则仍照扫两区。
+        src_match = re.search(r'(<div class="sources">.*?</div>)', article, re.S)
+        body_html, sources_html = (article, "")
+        if src_match:
+            body_html = article[:src_match.start()] + article[src_match.end():]
+            sources_html = src_match.group(1)
         # 标题约定：每篇 <article> 内一个 h1 或 h2 作标题，取第一个出现的
         # 标题标签；多个标题标签并存属不合规交付（行为为取第一个），
         # 绝不跨文章串用全局 h2 索引（h1/h2 混用或数量不一时会错位）。
         heading_match = re.search(r"<h[12][^>]*>(.*?)</h[12]>", article, re.S)
         title = (visible_text(heading_match.group(1)) if heading_match
                  else f"article-{i + 1}")
-        paras_html = re.findall(r"<p[^>]*>(.*?)</p>", article, re.S)
+        paras_html = re.findall(r"<p[^>]*>(.*?)</p>", body_html, re.S)
         paras = [visible_text(p) for p in paras_html]
         full = "".join(paras)
         hits = scan_style(full)
+        if sources_html:
+            src_paras = [visible_text(p)
+                         for p in re.findall(r"<p[^>]*>(.*?)</p>", sources_html, re.S)]
+            src_full = "".join(src_paras)
+            hits.extend(_scan_rules(src_full, _TONE_RULES, "error"))
+            hits.extend(_scan_rules(src_full, _PIPELINE_RULES, "error"))
+            hits.extend(_scan_rules(src_full, _BOUNDARY_RULES, "warning"))
         hook = opening_hook_check(paras)
         hook_match = re.search(r'data-hook="([^"]*)"', attrs)
         per_article.append({

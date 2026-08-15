@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from numbers import Real
+import re
 from typing import Any
 
 
 QUALIFICATION_STATUSES = frozenset(
-    {"qualified_viral", "observed_pending", "research_only"}
+    {"qualified_viral", "vendor_qualified", "observed_pending", "research_only"}
 )
 RESEARCH_DOMAIN = "competitive_research_evidence"
 FACT_DOMAIN = "ruoyu_article_fact_evidence"
@@ -39,6 +41,23 @@ def _text(value: object, code: str) -> str:
 def _number(value: object, code: str) -> float:
     _require(isinstance(value, Real) and not isinstance(value, bool), code)
     return float(value)
+
+
+def _timestamp(value: object, code: str) -> datetime:
+    text = _text(value, code)
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError as error:
+        raise CaseContractError(code) from error
+    _require(parsed.tzinfo is not None, code)
+    _require(parsed.utcoffset() == timedelta(hours=8), code)
+    return parsed
+
+
+def _sha256(value: object, code: str) -> str:
+    digest = _text(value, code)
+    _require(bool(re.fullmatch(r"[0-9a-fA-F]{64}", digest)), code)
+    return digest.lower()
 
 
 def _metric_map(card: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -124,6 +143,132 @@ def _validate_rule(
     return minimums, rank_maximums
 
 
+def _validate_client_origin(card: dict[str, Any]) -> None:
+    _require(card.get("evidence_origin") == "client", "client_origin_evidence_required")
+    _text(card.get("metric_plan_version"), "client_metric_plan_version_missing")
+    metric_plan_frozen_at = _timestamp(
+        card.get("metric_plan_frozen_at"), "client_metric_plan_not_prefrozen"
+    )
+    rule = _mapping(card.get("threshold_or_rank_rule"), "threshold_or_rank_rule_missing")
+    _text(rule.get("version"), "client_rule_version_missing")
+    rule_frozen_at = _timestamp(rule.get("frozen_at"), "client_rule_not_prefrozen")
+    evidence = _mapping(card.get("client_evidence"), "client_evidence_missing")
+    _text(evidence.get("evidence_ref"), "client_evidence_ref_missing")
+    _text(evidence.get("original_display"), "client_original_display_missing")
+    evidence_observed_at = _timestamp(
+        evidence.get("observed_at"), "client_evidence_observed_at_missing"
+    )
+    _require(
+        metric_plan_frozen_at <= evidence_observed_at,
+        "client_metric_plan_not_prefrozen",
+    )
+    _require(
+        rule_frozen_at <= evidence_observed_at,
+        "client_rule_not_prefrozen",
+    )
+    _text(evidence.get("confirmer"), "client_evidence_confirmer_missing")
+    _sha256(evidence.get("sha256"), "client_evidence_sha256_missing")
+    _require(evidence.get("sanitized") is True, "client_evidence_not_sanitized")
+    for raw_metric in _items(card.get("metrics"), "metrics_must_be_a_list"):
+        metric = _mapping(raw_metric, "metric_must_be_an_object")
+        metric_observed_at = _timestamp(
+            metric.get("observed_at"), "metric_observed_at_missing"
+        )
+        _require(
+            metric_plan_frozen_at <= metric_observed_at,
+            "client_metric_plan_not_prefrozen",
+        )
+        _require(
+            rule_frozen_at <= metric_observed_at,
+            "client_rule_not_prefrozen",
+        )
+        _require(
+            "vendor" not in str(metric.get("source", "")).lower(),
+            "qualified_viral_requires_client_metrics",
+        )
+
+
+def _vendor_observations(card: dict[str, Any]) -> list[dict[str, Any]]:
+    _require(card.get("evidence_origin") == "vendor", "vendor_origin_required")
+    _require("client_evidence" not in card, "vendor_cannot_carry_client_evidence")
+    _require("metrics" not in card, "vendor_cannot_carry_client_metrics")
+    rule = _mapping(card.get("vendor_rule"), "vendor_rule_missing")
+    _require(rule.get("version") == "v0", "vendor_rule_version_invalid")
+    _require(
+        isinstance(rule.get("source_batch_rank_max"), int)
+        and not isinstance(rule.get("source_batch_rank_max"), bool)
+        and 1 <= rule["source_batch_rank_max"] <= 5,
+        "vendor_rank_rule_invalid",
+    )
+    publication = _timestamp(card.get("publication_time"), "vendor_publication_time_missing")
+    raw_observations = _items(
+        card.get("vendor_observations"), "vendor_observations_must_be_a_list"
+    )
+    observations: list[dict[str, Any]] = []
+    batch_refs: set[str] = set()
+    batch_digests: set[str] = set()
+    for raw_observation in raw_observations:
+        observation = _mapping(raw_observation, "vendor_observation_must_be_an_object")
+        observed_at = _timestamp(
+            observation.get("observed_at"), "vendor_observed_at_missing"
+        )
+        _require(observed_at >= publication, "vendor_observation_before_publication")
+        rank = observation.get("source_batch_rank")
+        _require(
+            isinstance(rank, int) and not isinstance(rank, bool) and 1 <= rank <= 5,
+            "vendor_source_batch_rank_invalid",
+        )
+        _require(
+            rank <= rule["source_batch_rank_max"],
+            "vendor_source_batch_rank_exceeds_rule",
+        )
+        metrics = _mapping(observation.get("metrics"), "vendor_metrics_missing")
+        _require(metrics.get("readNum") is not None, "vendor_read_num_missing")
+        _number(metrics.get("readNum"), "vendor_read_num_invalid")
+        _require(
+            metrics.get("likeNum") is not None or metrics.get("judgeIndex") is not None,
+            "vendor_engagement_metric_missing",
+        )
+        if metrics.get("likeNum") is not None:
+            _number(metrics.get("likeNum"), "vendor_like_num_invalid")
+        if metrics.get("judgeIndex") is not None:
+            _number(metrics.get("judgeIndex"), "vendor_judge_index_invalid")
+        source = observation.get("source")
+        if source is not None:
+            _require(
+                "client" not in str(source).lower(),
+                "vendor_client_value_mislabelled",
+            )
+        batch_ref = _text(observation.get("raw_batch_ref"), "vendor_raw_batch_ref_missing")
+        batch_digest = _sha256(
+            observation.get("raw_batch_sha256"), "vendor_raw_batch_sha256_missing"
+        )
+        _require(batch_ref not in batch_refs, "vendor_raw_batch_ref_reused")
+        _require(batch_digest not in batch_digests, "vendor_raw_batch_sha256_reused")
+        batch_refs.add(batch_ref)
+        batch_digests.add(batch_digest)
+        _require(observation.get("immutable") is True, "vendor_observation_not_immutable")
+        _require(observed_at <= publication + timedelta(days=7), "vendor_observation_after_window")
+        observations.append(observation)
+    observations.sort(key=lambda item: _timestamp(item["observed_at"], "vendor_observed_at_missing"))
+    return observations
+
+
+def _vendor_status(card: dict[str, Any]) -> str:
+    try:
+        observations = _vendor_observations(card)
+    except CaseContractError:
+        return "observed_pending"
+    publication = _timestamp(card["publication_time"], "vendor_publication_time_missing")
+    for index, first_item in enumerate(observations):
+        first = _timestamp(first_item["observed_at"], "vendor_observed_at_missing")
+        for second_item in observations[index + 1 :]:
+            second = _timestamp(second_item["observed_at"], "vendor_observed_at_missing")
+            if second - first >= timedelta(hours=24) and second <= publication + timedelta(days=7):
+                return "vendor_qualified"
+    return "observed_pending"
+
+
 def _thresholds_met(
     metrics: dict[str, dict[str, Any]],
     minimums: dict[str, float],
@@ -149,6 +294,9 @@ def _thresholds_met(
 def assess_qualification(card: dict[str, Any]) -> str:
     """Return the highest defensible status without inventing missing metrics."""
     _require(card.get("evidence_domain") == RESEARCH_DOMAIN, RESEARCH_DOMAIN)
+    _text(card.get("qualification_reason"), "qualification_reason_missing")
+    if card.get("evidence_origin") == "vendor":
+        return _vendor_status(card)
     planned, metrics = _validate_metric_plan(card)
     minimums, rank_maximums = _validate_rule(card, planned)
     required_visible = {
@@ -167,6 +315,7 @@ def assess_qualification(card: dict[str, Any]) -> str:
         return "observed_pending"
     if not _thresholds_met(metrics, minimums, rank_maximums):
         return "observed_pending"
+    _validate_client_origin(card)
     return "qualified_viral"
 
 
@@ -245,6 +394,8 @@ def validate_case_card(
     _text(card.get("snapshot_ref"), "snapshot_ref_missing")
     _text(card.get("performance_evidence_ref"), "performance_evidence_ref_missing")
     status = assess_qualification(card)
+    if card.get("evidence_origin") == "vendor":
+        _vendor_observations(card)
     declared_status = card.get("qualification_status")
     if declared_status is not None:
         _require(declared_status in QUALIFICATION_STATUSES, "invalid_qualification_status")
@@ -257,6 +408,8 @@ def validate_case_card(
 def validate_technique_candidate(
     technique: dict[str, Any], cases: dict[str, dict[str, Any]]
 ) -> None:
+    _require(isinstance(technique, dict), "technique_must_be_an_object")
+    _require(isinstance(cases, dict), "cases_must_be_a_mapping")
     _text(technique.get("technique_id"), "technique_id_missing")
     _require(
         technique.get("kind") in {"title", "opening", "structure", "interaction"},
@@ -264,10 +417,46 @@ def validate_technique_candidate(
     )
     refs = _items(technique.get("qualified_sample_refs"), "qualified_sample_refs_must_be_a_list")
     _require(refs, "qualified_sample_refs_missing")
-    for raw_ref in refs:
-        ref = _text(raw_ref, "qualified_sample_ref_invalid")
+    normalized_refs = [_text(raw_ref, "qualified_sample_ref_invalid") for raw_ref in refs]
+    _require(len(normalized_refs) == len(set(normalized_refs)), "duplicate_qualified_sample_ref")
+    statuses: list[str] = []
+    supports: list[dict[str, Any]] = []
+    for ref in normalized_refs:
         _require(ref in cases, f"sample_ref_unresolvable:{ref}")
+        status = validate_case_card(cases[ref])
+        _require(status in {"qualified_viral", "vendor_qualified"}, "technique_support_not_qualified")
+        statuses.append(status)
+        supports.append(cases[ref])
+
+    vendor_count = statuses.count("vendor_qualified")
+    client_count = statuses.count("qualified_viral")
+    if vendor_count or technique.get("evidence_basis") == "mixed_client_vendor":
         _require(
-            validate_case_card(cases[ref]) == "qualified_viral",
-            "technique_support_not_qualified",
+            technique.get("evidence_basis") == "mixed_client_vendor",
+            "mixed_evidence_basis_required",
+        )
+        _require(client_count >= 1, "mixed_requires_qualified_viral")
+        _require(vendor_count >= 2, "mixed_requires_two_vendor_qualified")
+        _require(
+            len({_text(item.get("account_id"), "technique_account_id_missing") for item in supports})
+            >= 3,
+            "mixed_needs_three_distinct_accounts",
+        )
+        _require(
+            len({_text(item.get("subject_category"), "technique_subject_category_missing") for item in supports})
+            >= 3,
+            "mixed_needs_three_distinct_subject_categories",
+        )
+        _require(
+            technique.get("verification_state") == "verified",
+            "mixed_verification_state_must_be_verified",
+        )
+        _require(
+            technique.get("automatic_publication_authority") is False,
+            "mixed_publication_authority_missing",
+        )
+    else:
+        _require(
+            technique.get("automatic_publication_authority") is False,
+            "client_only_publication_authority_must_be_false",
         )

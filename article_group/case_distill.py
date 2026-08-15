@@ -3,8 +3,8 @@
 契约（设计 ④原则提炼 + P2 验收行）：
 - 输入一批结构卡（>= 5 张），每张先经 case_contract.validate_case_card 校验；
   跨域（evidence_domain 非 competitive_research_evidence）、资格不匹配、字段缺失即拒绝
-- 只聚合 qualified_viral 卡的技巧观察进正向候选；observed_pending / research_only 的
-  同类观察只进 excluded_observations[]，不得计入 frequency
+- 聚合 qualified_viral 与 vendor_qualified 卡的技巧观察；observed_pending / research_only 的
+  同类观察只进 excluded_observations[]，不得计入任何正向频次
 - supporting_qualified_samples[] 每项含 sample_id、snapshot_ref、performance_evidence_ref
 - 输出候选 JSON：technique / technique_type / frequency / supporting_qualified_samples[] /
   performance_evidence_refs[] / excluded_observations[] / negative_cards[] / risk_note
@@ -94,7 +94,7 @@ def distill_candidates(cards: dict[str, dict[str, Any]]) -> list[dict[str, Any]]
             "_observations": observations,
         }
 
-    # 技巧键 -> 候选聚合（frequency 只计 qualified_viral）
+    # 技巧键 -> 候选聚合（client/vendor evidence stays separately attributed）
     candidates: dict[tuple[str, str, str], dict[str, Any]] = {}
     negative_cards: list[str] = []
 
@@ -113,7 +113,9 @@ def distill_candidates(cards: dict[str, dict[str, Any]]) -> list[dict[str, Any]]
                     "technique_type": technique_type,
                     "technique_id": obs.get("technique_id"),
                     "frequency": 0,
+                    "vendor_frequency": 0,
                     "supporting_qualified_samples": [],
+                    "supporting_vendor_samples": [],
                     "performance_evidence_refs": [],
                     "excluded_observations": [],
                     "negative_cards": [],
@@ -135,6 +137,18 @@ def distill_candidates(cards: dict[str, dict[str, Any]]) -> list[dict[str, Any]]
                 ref = card["performance_evidence_ref"]
                 if ref not in candidate["performance_evidence_refs"]:
                     candidate["performance_evidence_refs"].append(ref)
+            elif status == "vendor_qualified":
+                candidate["vendor_frequency"] += 1
+                candidate["supporting_vendor_samples"].append(
+                    {
+                        "sample_id": sample_id,
+                        "snapshot_ref": _text(card.get("snapshot_ref"), "snapshot_ref_missing"),
+                        "performance_evidence_ref": _text(
+                            card.get("performance_evidence_ref"),
+                            "performance_evidence_ref_missing",
+                        ),
+                    }
+                )
             else:
                 candidate["excluded_observations"].append(
                     {
@@ -150,6 +164,14 @@ def distill_candidates(cards: dict[str, dict[str, Any]]) -> list[dict[str, Any]]
         key=lambda c: (-c["frequency"], c["technique"], c["technique_type"]),
     )
     for candidate in ordered:
+        if candidate["frequency"] and candidate["vendor_frequency"]:
+            candidate["evidence_basis"] = "mixed_client_vendor"
+        elif candidate["frequency"]:
+            candidate["evidence_basis"] = "client_only"
+        else:
+            candidate["evidence_basis"] = "vendor_only"
+        candidate["verification_state"] = "promising"
+        candidate["automatic_publication_authority"] = False
         candidate["negative_cards"] = [
             sid for sid in negative_cards if sid not in candidate["negative_cards"]
         ]
