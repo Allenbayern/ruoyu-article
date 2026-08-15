@@ -2,8 +2,8 @@
 
 验收要点（设计 ④蒸馏 + P2 行）：
 - 输入一批结构卡（≥5 张）；每张先经 case_contract 校验，跨域/资格不匹配即拒绝
-- 正向候选只聚合 qualified_viral 卡的技巧观察；observed_pending / research_only 的同类观察
-  只进 excluded_observations[]，不得计入频次
+- 正向候选分别聚合 qualified_viral 与 vendor_qualified 卡的技巧观察；observed_pending /
+  research_only 的同类观察只进 excluded_observations[]，不得计入正向频次
 - supporting_qualified_samples[] 每项含 sample_id、快照引用、表现档案引用
 - 输出候选 JSON：technique / technique_type / frequency / supporting_qualified_samples[] /
   performance_evidence_refs[] / excluded_observations[] / negative_cards[] / risk_note
@@ -61,13 +61,28 @@ def _card(
     card: dict[str, object] = {
         "sample_id": sample_id,
         "evidence_domain": evidence_domain,
+        "evidence_origin": "client",
+        "account_id": f"account-{sample_id}",
+        "subject_category": "电影",
         "snapshot_ref": snapshot_ref or f"sources/{sample_id}.clean.md#sha256=abc",
         "performance_evidence_ref": f"metrics/{sample_id}.api.json",
+        "metric_plan_version": "article-metric-v0",
+        "metric_plan_frozen_at": "2026-08-11T09:00:00+08:00",
+        "client_evidence": {
+            "evidence_ref": f"evidence/{sample_id}.png",
+            "original_display": "200000 views",
+            "observed_at": "2026-08-11T12:30:10+08:00",
+            "confirmer": "reviewer-1",
+            "sha256": "3" * 64,
+            "sanitized": True,
+        },
         "metric_plan": [
             {"metric": "view", "visible": True, "required": True}
         ],
         "metrics": metrics,
         "threshold_or_rank_rule": {
+            "version": "article-rule-v0",
+            "frozen_at": "2026-08-11T09:00:00+08:00",
             "platform": "bilibili",
             "baseline": "column",
             "window": "2026-08-11",
@@ -285,3 +300,70 @@ def test_distill_rejects_blank_technique_id() -> None:
     ]
     with pytest.raises(CaseContractError):
         distill_candidates(cards)
+
+
+def _vendor_card(sample_id: str, account_id: str, subject: str) -> dict[str, object]:
+    return {
+        "sample_id": sample_id,
+        "evidence_domain": RESEARCH_DOMAIN,
+        "evidence_origin": "vendor",
+        "account_id": account_id,
+        "subject_category": subject,
+        "snapshot_ref": f"sources/{sample_id}.clean.md#sha256={'b' * 64}",
+        "performance_evidence_ref": f"metrics/{sample_id}.json",
+        "publication_time": "2026-08-10T08:00:00+08:00",
+        "vendor_rule": {"version": "v0", "source_batch_rank_max": 5},
+        "vendor_observations": [
+            {
+                "observed_at": "2026-08-11T10:00:00+08:00",
+                "source_batch_rank": 1,
+                "metrics": {"readNum": 100001, "likeNum": 20},
+                "raw_batch_ref": f"raw/{sample_id}-1.json",
+                "raw_batch_sha256": "1" * 64,
+                "immutable": True,
+            },
+            {
+                "observed_at": "2026-08-12T10:00:00+08:00",
+                "source_batch_rank": 2,
+                "metrics": {"readNum": 100001, "judgeIndex": 20},
+                "raw_batch_ref": f"raw/{sample_id}-2.json",
+                "raw_batch_sha256": "2" * 64,
+                "immutable": True,
+            },
+        ],
+        "qualification_reason": "vendor v0 evidence",
+        "qualification_status": "vendor_qualified",
+        "technique_observations": [_obs("混合技巧", "title")],
+    }
+
+
+def test_distill_mixed_supports_expose_basis_and_vendor_refs() -> None:
+    cards = {
+        "client": _card("client", status="qualified_viral", observations=[_obs("混合技巧", "title")]),
+        "vendor-a": _vendor_card("vendor-a", "account-vendor-a", "剧集"),
+        "vendor-b": _vendor_card("vendor-b", "account-vendor-b", "人物"),
+        "client-extra": _card("client-extra", status="qualified_viral", observations=[_obs("另一技巧", "title")]),
+        "pending": _card("pending", status="observed_pending", observations=[_obs("混合技巧", "title")]),
+    }
+    candidates = distill_candidates(cards)
+    mixed = next(candidate for candidate in candidates if candidate["technique"] == "混合技巧")
+    assert mixed["frequency"] == 1
+    assert mixed["vendor_frequency"] == 2
+    assert mixed["evidence_basis"] == "mixed_client_vendor"
+    assert mixed["automatic_publication_authority"] is False
+    assert [item["sample_id"] for item in mixed["supporting_vendor_samples"]] == [
+        "vendor-a", "vendor-b",
+    ]
+    assert any(
+        item["sample_id"] == "pending"
+        and item["qualification_status"] == "observed_pending"
+        for item in mixed["excluded_observations"]
+    )
+
+
+def test_distill_client_only_path_keeps_client_basis() -> None:
+    candidates = distill_candidates(six_qualified())
+    (candidate,) = candidates
+    assert candidate["evidence_basis"] == "client_only"
+    assert candidate["vendor_frequency"] == 0
+    assert candidate["automatic_publication_authority"] is False

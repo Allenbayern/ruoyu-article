@@ -16,8 +16,21 @@ def qualified_case() -> dict:
     return {
         "sample_id": "wx-qualified-001",
         "evidence_domain": "competitive_research_evidence",
+        "evidence_origin": "client",
+        "account_id": "account-client",
+        "subject_category": "电影",
         "snapshot_ref": "runs/2026-08-12/viral-research/raw.html#sha256=abc",
         "performance_evidence_ref": "runs/2026-08-12/viral-research/metadata.json",
+        "metric_plan_version": "article-metric-v0",
+        "metric_plan_frozen_at": "2026-08-12T09:00:00+08:00",
+        "client_evidence": {
+            "evidence_ref": "screenshots/client.png",
+            "original_display": "150000 reads",
+            "observed_at": "2026-08-12T10:00:00+08:00",
+            "confirmer": "reviewer-1",
+            "sha256": "3" * 64,
+            "sanitized": True,
+        },
         "metric_plan": [
             {"metric": "read_count", "visible": True, "required": True},
             {"metric": "like_count", "visible": True, "required": True},
@@ -50,6 +63,8 @@ def qualified_case() -> dict:
             },
         ],
         "threshold_or_rank_rule": {
+            "version": "article-rule-v0",
+            "frozen_at": "2026-08-12T09:00:00+08:00",
             "platform": "weixin",
             "baseline": "film-account-2026q3",
             "window": "published_plus_7d",
@@ -99,6 +114,7 @@ def test_technique_requires_qualified_supporting_sample() -> None:
         "kind": "title",
         "name": "数字落差",
         "qualified_sample_refs": ["wx-qualified-001"],
+        "automatic_publication_authority": False,
     }
     validate_technique_candidate(technique, cases)
 

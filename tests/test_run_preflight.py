@@ -306,3 +306,26 @@ def test_cli_reports_malformed_batch_json_as_input_error(tmp_path: Path):
     assert result.stdout == ""
     assert result.stderr.startswith("INPUT_ERROR:")
     assert "Traceback" not in result.stderr
+
+
+@pytest.mark.parametrize("field", ["state", "candidate_id", "primary_atom"])
+def test_cli_rejects_duplicate_article_fields_as_input_error(tmp_path: Path, field: str):
+    batch = _controlled_batch()
+    batch_text = json.dumps(batch, ensure_ascii=True, indent=2)
+    article_start = batch_text.index('    {\n      "article_id"')
+    article_end = batch_text.index("\n    }", article_start)
+    article_text = batch_text[article_start:article_end]
+    value = json.dumps(batch["articles"][0][field], ensure_ascii=True)
+    field_text = f'"{field}": {value}'
+    assert field_text in article_text
+    duplicate_text = f'{field_text},\n      "{field}": {value}'
+    article_text = article_text.replace(field_text, duplicate_text, 1)
+    batch_text = batch_text[:article_start] + article_text + batch_text[article_end:]
+
+    batch_path = tmp_path / f"duplicate-{field}.json"
+    batch_path.write_text(batch_text, encoding="utf-8")
+    result = _run_cli(batch_path)
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert result.stderr == f"INPUT_ERROR:preflight.duplicate_field:art-001:{field}\n"

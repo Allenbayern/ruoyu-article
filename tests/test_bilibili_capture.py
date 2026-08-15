@@ -18,6 +18,8 @@ def _packet(tmp_path: Path) -> Path:
     (root / "sources").mkdir(parents=True)
     (root / "metrics").mkdir()
     plan = {
+        "metric_plan_version": "article-metric-v0",
+        "metric_plan_frozen_at": "2026-08-11T09:00:00+08:00",
         "metric_plan": [
             {
                 "metric": "view_count",
@@ -61,6 +63,8 @@ def _packet(tmp_path: Path) -> Path:
             },
         ],
         "threshold_or_rank_rule": {
+            "version": "article-rule-v0",
+            "frozen_at": "2026-08-11T09:00:00+08:00",
             "platform": "bilibili_column",
             "baseline": "test-batch",
             "window": "cumulative_count_at_capture",
@@ -101,6 +105,10 @@ def _packet(tmp_path: Path) -> Path:
                     "url": "https://www.bilibili.com/read/cv1",
                     "theme": "电影",
                     "observed_at": "2026-08-11T12:30:00+08:00",
+                    "client_evidence_ref": "evidence/sample.png",
+                    "client_original_display": "150000 views",
+                    "client_confirmer": "reviewer-1",
+                    "client_evidence_sha256": "3" * 64,
                     "api_evidence_ref": "metrics/sample.api.json",
                     "body_evidence_ref": "sources/sample.clean.md",
                     "metrics": {
