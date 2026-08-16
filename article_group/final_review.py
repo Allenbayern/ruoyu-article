@@ -149,7 +149,7 @@ def evaluate_batch(batch_dir: str | Path) -> dict:
                     "message": issue.get("message"),
                     "adjudicated_at": waiver.get("recorded_at"),
                     "adjudicator": waiver.get("adjudicator"),
-                    "verdict": waiver.get("verdict"),
+                    "verdict": waiver.get("result") or waiver.get("verdict"),
                 })
                 continue
             return _blocked("gate:cross_batch", candidate=issue.get("candidate"),

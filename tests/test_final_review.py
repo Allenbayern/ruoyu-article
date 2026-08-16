@@ -36,6 +36,7 @@ def _make_batch(root: Path, *, preflight_status: str = "PASS",
         "articles": [
             {
                 "article_id": "art-001",
+                "candidate_id": "cand-001",
                 "work": "《测试电影》的票房奇迹",
                 "reader_question": "为什么《测试电影》一夜爆红",
                 "publication_authorization": auth,
@@ -162,12 +163,94 @@ def test_prose_missing_blocks(tmp_path: Path) -> None:
 
 
 def test_char_count_divergence_pending(tmp_path: Path) -> None:
-    batch = _make_batch(tmp_path)
-    # 把 prose chars 改成与 style_gate 差 > 15%
-    p = batch / "review" / "prose-pilot-report.json"
-    data = json.loads(p.read_text(encoding="utf-8"))
-    data["batches"][0]["articles"][0]["chars"] = 2400  # 1800 vs 2400 = 25% 差
-    p.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    batch = _make_batch(tmp_path, with_style=True, with_prose=True)
+    # prose chars 与 style chars 差距超阈值 → PENDING
+    prose = json.loads((batch / "review" / "prose-pilot-report.json").read_text())
+    prose["batches"][0]["articles"][0]["chars"] = 2600
+    (batch / "review" / "prose-pilot-report.json").write_text(
+        json.dumps(prose, ensure_ascii=False), encoding="utf-8")
     report = evaluate_batch(batch)
     assert report["verdict"] == PENDING
-    assert any("style_gate=" in i for i in report["human_judgment_items"])
+    assert report["publication_authorization"] == "not_authorized"
+
+
+def _fake_history_with_duplicate(exclude_run: str = "") -> list[dict]:
+    """历史批次含《测试电影》旧文 → check_cross_batch 应报 same_work error。
+
+    签名与 collect_history 一致（接受 exclude_run），供 monkeypatch 替换。
+    """
+    assert exclude_run != "controlled-015"  # 排除本批时不命中（防御性）
+    return [{
+        "batch_dir": "controlled-015",
+        "path": "/fake/controlled-015/review/frozen/x.html",
+        "titles": ["《测试电影》的票房奇迹（旧角度）"],
+        "works": ["测试电影"],
+        "recent3": True,
+    }]
+
+
+def test_cross_batch_duplicate_without_waiver_blocks(tmp_path: Path, monkeypatch) -> None:
+    """跨批重复、无人工裁决注记 → BLOCKED（机器只拦未裁决重复）。"""
+    batch = _make_batch(tmp_path, with_style=True, with_prose=True)
+    monkeypatch.setattr("article_group.final_review.collect_history",
+                        _fake_history_with_duplicate)
+    report = evaluate_batch(batch)
+    assert report["verdict"] == BLOCKED
+    assert "cross_batch" in str(report.get("reason", ""))
+
+
+def test_cross_batch_duplicate_with_waiver_passes(tmp_path: Path, monkeypatch) -> None:
+    """跨批重复、但 portfolio-gate-report.json 已有人工裁决豁免注记 → 放行。
+
+    026 真实形态：controller_adjudication.result = 'cand-001 红灯确认豁免（confirmed_new_angle）'，
+    adjudicated=True，机器 respect 人工裁决、绝不自造豁免。
+    """
+    batch = _make_batch(tmp_path, with_style=True, with_prose=True)
+    _write_json(batch / "portfolio-gate-report.json", {
+        "pass": False,
+        "errors": [{"level": "error", "candidate": "cand-001",
+                     "id": "portfolio.cross_batch.same_work.recent"}],
+        "controller_adjudication": {
+            "recorded_at": "2026-08-16 22:40 CST",
+            "adjudicator": "controller",
+            "adjudicated": True,
+            "result": "cand-001 红灯确认豁免（confirmed_new_angle）",
+        },
+    })
+    monkeypatch.setattr("article_group.final_review.collect_history",
+                        _fake_history_with_duplicate)
+    report = evaluate_batch(batch)
+    assert report["verdict"] == PUBLISHABLE
+    assert report["adjudicated_waivers"], "豁免注记应进入结果"
+    assert report["adjudicated_waivers"][0]["candidate"] == "cand-001"
+    assert "confirmed_new_angle" in report["adjudicated_waivers"][0]["verdict"]
+
+
+def test_waiver_requires_candidate_match(tmp_path: Path, monkeypatch) -> None:
+    """裁决注记存在但 candidate 不匹配 → 不豁免（仍 BLOCKED）。"""
+    batch = _make_batch(tmp_path, with_style=True, with_prose=True)
+    _write_json(batch / "portfolio-gate-report.json", {
+        "controller_adjudication": {
+            "adjudicated": True,
+            "result": "cand-999 确认豁免",
+        },
+    })
+    monkeypatch.setattr("article_group.final_review.collect_history",
+                        _fake_history_with_duplicate)
+    report = evaluate_batch(batch)
+    assert report["verdict"] == BLOCKED
+
+
+def test_waiver_requires_adjudicated_flag(tmp_path: Path, monkeypatch) -> None:
+    """注记存在但 adjudicated 非 True → 不豁免（机器不自行解读）。"""
+    batch = _make_batch(tmp_path, with_style=True, with_prose=True)
+    _write_json(batch / "portfolio-gate-report.json", {
+        "controller_adjudication": {
+            "adjudicated": False,
+            "result": "cand-001 确认豁免",
+        },
+    })
+    monkeypatch.setattr("article_group.final_review.collect_history",
+                        _fake_history_with_duplicate)
+    report = evaluate_batch(batch)
+    assert report["verdict"] == BLOCKED
