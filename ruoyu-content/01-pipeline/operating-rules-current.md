@@ -30,7 +30,8 @@
 - 🟡 [SHOULD] 应急单篇：`controlled-<序号>-emergency`（见 §6）。
 - 🔴 [MUST] 目录：`runs/<YYYY-MM-DD>/<batch-id>/`；批次内 `batch.json` 的 `run_id` 与目录名逐字一致。
 - 🟡 [SHOULD] 素材同步：选题雷达/candidate 素材落入 `sources/`，并将 `sources/cand-*.md` 同步到 `evidence/`（021 教训：evidence/ 为空则 final_review 证据链观感缺失）。
-- 🟡 [SHOULD] 预览 URL：同日多批用 `-a`/`-b` 后缀区分（`ruoyu-art-001-2026-08-16-b.html`，022 教训）；**预览服务一律经 systemd 单元 `ruoyu-preview.service` 管理**（更新 ExecStart 指向最新批次 serve_preview.py 后 `daemon-reload && restart`），禁止手工 nohup 启动（端口抢占已复现 2 次）。
+- 🟡 [SHOULD] 预览 URL：同日多批用 `-a`/`-b` 后缀区分（`ruoyu-art-001-2026-08-16-b.html`，022 教训）；**预览服务一律经 systemd 单元 `ruoyu-preview.service` 管理**（更新 ExecStart 指向 serve_preview.py 后 `daemon-reload && restart`），禁止手工 nohup 启动（端口抢占已复现 2 次）。
+- 🔴 [MUST] **预览单元指向「全量映射控制面」**（026 教训升级 025 条目）：单元 ExecStart 必须指向**包含最近全部批次 + 单篇映射的全量 serve_preview.py**（当前 = `niulai-guo-shen/serve_preview.py`），不是「最新批次」自己的脚本——「指向当批」会让后续批次 / 单篇 / 历史批次 URL 404（025 批改指 controlled-025 后实测单篇/020/024 全 404）。映射变更后必须 **curl 全量回归**（本批 7 条 URL 全 200 才收口）；serve_preview.py 行内路径必须带日期段（`ROOT/"2026-08-16"/"<batch>"/"review"/"frozen"/…`，漏日期段即 404）。
 - 🔴 [MUST] 禁止：不同日期目录下出现同名批次（`controlled-020` 双目录为历史教训，见复盘 D6）。
 
 ## 2. 字数口径（H2 · 统一）
@@ -100,6 +101,6 @@
 | 2026-08-16 | L2 复核教训（首次 Gate，021–024 四批 8 篇）：① **style_gate/frozen 一致性铁律**——style-gate JSON 必须对**最终 frozen HTML** 重跑生成并覆盖落盘（021-art-002 曾锁定修复前旧版 1872 字/fact=warning、022 锁定清除自证前版本，均与最终稿不一致）；draft 修改后禁用手工复制旧报告。② 每批冻结后补一步：`style_gate.py <frozen.html>` 重跑并覆盖 `style-gate-art-00X.json`，再做 final_review（已在 §5.1 收尾链补入）。③ L2 独立复核子代理限时 420s 内读 8 篇全文易超时——拆 2 篇/代理或抽样核验。 | 流程+L2 实证 | 2026-08-16 L2 Gate：2 major findings + 1 minor，修复后 4 批复跑 PUBLISHABLE |
 | 2026-08-16 | 025 教训（date:release-claim 误报链）：① 正则 `(定档\|上映\|公映\|开画)+日期` 会把「重映名单列举」（1月30日《闪灵》…上映46年）和「票房口径句」误判为档期断言——**措辞规避首选「首映/放映/重映名单」词族**（不在正则词表、语义等价）；② 档期断言修复只改措辞不动数字；③ 系统级 `ruoyu-preview.service` 单元曾指向遗留目录 `niulai-guo-shen`——每批映射前 `systemctl cat` 校验 ExecStart 指向当批 | 流程 | 025 批 warning 3 处 → L0 拆分清零；单元指向旧批次 |
 | 2026-08-16 | 爆文视角复核候选观察（021–025 十篇，research_only 待发布数据验证，见 `docs/reviews/viral-lens-021-025.md`）：① 标题=情绪反转+具体画面（4 篇 A+ 标题模式：极端数字/情绪词/悬念问句）；② 首屏 150 字第二句前给出信息差；③ 人物主动性叙事 > 被动被讨论（王祖贤/王传君范式）；④ 金句须可独立转述（社交货币）；⑤ **数据源决定型题材（如「票房破30亿」）是传播盲区——单批唯一低爆款潜力篇，此类选题标题须挂具体影片/人物**；⑥ 中段每 3-4 段需场景/人物/金句呼吸点（2000+ 字易掉读）；⑦ 结尾可留互动问句提评论率。026 起执行候选建议，发布回填后按爆文实证标准升级/降级 | 流程（候选观察） | docs/reviews/viral-lens-021-025.md 十篇通读评估 |
-| 2026-08-16 | **三层语义分级落地（Allen 确认「以后也按这个来」）**：全文条目打标 🔴[MUST] 限制/🟡[SHOULD] 流程/🟢[MAY] 经验；头部新增分级机制声明；候选观察一律 🟢 起步，不得以 research_only 证据写 MUST；爆文候选观察 ①–⑦ 降级为 🟢 参考（不再「026 起执行」强制口气）；后续新增条目必须标注语义层 | 结构（Allen 确认） | Allen 指示：执行，以后也要按这个来 |
+|| 2026-08-16 | 026 单篇教训（niulai-guo-shen，牛来过审悬案）：① **预览单元指向全量映射控制面**（升级 025「指向当批」条目——本批实测 025 批改指 controlled-025 后单篇/020/024 全部 404；正确姿势：单元指向含最近全部批次 + 单篇映射的 niulai-guo-shen/serve_preview.py，映射后 curl 全量回归 7/7 200 收口，已入 §1 MUST）；② serve_preview.py 行内路径必须含日期段 `ROOT/"2026-08-16"/"<batch>"/…`（ROOT=runs/ 时漏日期段即 404，本批复现定位）；③ **票房口径时效**：素材采集口径（8/16 上午单日225万/累计330万）舆论发酵数小时即过时，发布前须重拉最新（同日 16:30 已 419万/492.8万、微博热搜 8 条），正文锚定时点写「截至X时X分」不写模糊「上午」；④ 交付前检查 `<div class="sources">` 可点击一手链接区存在（Allen 08-15 要求，本批初稿缺失、L2 复核补上）；⑤ 人物引语只放逐字原文，改写/转述内容移出引号（本批周圣崴段原为改写混引，L2 修复） | 流程 | 026 单篇交付实测：404 根因 + 口径过时 + sources 缺失 + 引语边界 |
 
 （后续 L0 微调在此追加，保留历史行，不覆盖。）
