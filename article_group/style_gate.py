@@ -49,6 +49,11 @@ _SOURCE_SELF_CONFESSION: list[tuple[str, str, str]] = [
     (r"公开简介", "source:公开简介", "来源自证：'公开简介'句式"),
     (r"据[^。！？]{0,12}报道", "source:据…报道", "来源自证：'据…报道'句式"),
     (r"资料：", "source:资料行", "来源自证：可见'资料：'来源行"),
+    # 泛化媒体名+报道转述句式（controlled-016 教训 B3：初稿 3 处违规全部人工发现）
+    (r"[一-龥]{2,8}(财经|商报|新闻|日报|晚报|周刊|快报|电视台)[^。！？]{0,4}在报道[中里]",
+     "source:媒体在报道中", "来源自证：点名媒体+在报道中转述（新浪财经在报道中评价/北京商报在报道里用了一个词）"),
+    (r"[一-龥]{2,8}(财经|商报|新闻|日报|晚报|周刊|快报|电视台)在(梳理|盘点|回顾)[^。！？]{0,12}(时|中)",
+     "source:媒体在梳理", "来源自证：点名媒体+在梳理…时转述（荔枝新闻在梳理这场风波时）"),
 ]
 
 # 2) 读后感 / 审稿腔 — reviewer self-talk in reader-facing prose.
@@ -110,6 +115,29 @@ _DATE_CLAIM = re.compile(
     r"\d{1,2}月\d{1,2}日[^。！？]{0,12}?(上映|定档|公映)"
 )
 
+# 5b) 无源断言启发式 — unsourced inference patterns (controlled-016 教训 B4:
+#     "周星驰当时四十一岁" 年份/年龄推算无源易错；"零大规模路演" 单源不支撑的
+#     修饰断言。warning (controller judgment) — machine cannot decide
+#     semantics; these are triage signals, not blockers.
+_UNSOURCED_CLAIM: list[tuple[str, str, str]] = [
+    (r"(当时|彼时|那年|时年|年方)[一二三四五六七八九十百千万零〇两]{1,6}岁",
+     "claim:age-inference", "警告：年龄/年份推算（'当时四十一岁'类）——推算无源易错，须核验或删除"),
+    (r"零[^。！？]{0,12}(宣发|路演|宣传|推广|营销)",
+     "claim:zero-modifier", "警告：'零…'修饰断言（'零大规模路演'类）——单源不支撑的修饰性断言宁可删"),
+]
+
+# 6) 中文数字锚点 — fact density / opening hook anchors in Chinese numerals
+#    (controlled-016 教训 A4: "三千六百五十万"/"八月六日"/"二〇二二年" 不锚定,
+#    初稿被迫改写阿拉伯数字，写作风格受工具限制).
+_CN_NUM = r"[一二三四五六七八九十百千万亿零〇两]"
+_CN_QUANTITY = re.compile(rf"{_CN_NUM}{{2,10}}[个部届人天年次座轮批月万]")
+_CN_DATE = re.compile(rf"{_CN_NUM}{{1,2}}月{_CN_NUM}{{1,3}}日")
+
+
+def _cn_anchored(text: str) -> bool:
+    """True if text carries a Chinese-numeral fact anchor (date or quantity)."""
+    return bool(_CN_DATE.search(text) or _CN_QUANTITY.search(text))
+
 
 def _compile(table: list[tuple[str, str, str]]) -> list[tuple[re.Pattern, str, str]]:
     return [(re.compile(p), label, reason) for p, label, reason in table]
@@ -119,6 +147,7 @@ _SOURCE_RULES = _compile(_SOURCE_SELF_CONFESSION)
 _TONE_RULES = _compile(_READING_REPORT_TONE + _SELF_REMINDER)
 _PIPELINE_RULES = _compile(_PIPELINE_MARKERS)
 _BOUNDARY_RULES = _compile(_COMMENT_AS_FACT)
+_UNSOURCED_RULES = _compile(_UNSOURCED_CLAIM)
 
 
 class _TextParser(HTMLParser):
@@ -177,6 +206,7 @@ def scan_style(text: str) -> list[dict[str, str]]:
     hits.extend(_scan_rules(text, _TONE_RULES, "error"))
     hits.extend(_scan_rules(text, _PIPELINE_RULES, "error"))
     hits.extend(_scan_rules(text, _BOUNDARY_RULES, "warning"))
+    hits.extend(_scan_rules(text, _UNSOURCED_RULES, "warning"))
     date_match = _DATE_CLAIM.search(text)
     if date_match:
         hits.append({
@@ -241,6 +271,7 @@ def opening_hook_check(paragraphs: list[str]) -> dict[str, Any]:
     anchor = (
         re.search(r"[《》]", first)                      # 专名（作品）
         or re.search(r"\d{1,2}月\d{1,2}日", first)       # 日期
+        or _cn_anchored(first)                           # 中文数字日期/数量锚点（016 A4）
         or re.search(r"(\d+[个部届人天年次座轮批月])", first)  # 数量断言/时间（非序号）
         or re.search(r"(国家电影局|商务部|文旅|联盟|协会|委员会|影院|片方)", first)  # 机构
         or re.search(r"[？?]", first)                    # 悬念：问句
@@ -299,6 +330,7 @@ def fact_density_check(paragraphs: list[str]) -> dict[str, Any]:
         if (
             re.search(r"[《》]", p)
             or re.search(r"\d{1,2}月\d{1,2}日", p)            # 具体日期
+            or _cn_anchored(p)                                # 中文数字日期/数量锚点（016 A4）
             or re.search(r"(\d+[个部届人天年次座轮批月])", p)  # 数量断言/时间（非序号）
             or re.search(r"(国家电影局|商务部|文旅|联盟|协会|委员会)", p)
             or re.search(r"监制|导演|编剧|主演", p)

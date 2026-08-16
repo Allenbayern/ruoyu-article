@@ -40,6 +40,10 @@ NEGATIVE_SAMPLES = [
     "还没上映的电影，不能提前写出它的票房，8月28日前出现的数字都只能是预测、愿望或讨论。",
     "这条边界不难写，却很容易在热搜和转发里被忘掉。",
     "我们绝不能提前写出这部电影的票房。",
+    # 来源自证变体（controlled-016 教训 B3：初稿 3 处违规全部人工发现）
+    "购票平台的 9.4 分，反映的正是这批真实观众的满意度，新浪财经在报道中评价这部电影说……",
+    "有媒体用了一个词来形容，北京商报在报道里用了一个词：'现象级'。",
+    "荔枝新闻在梳理这场风波时提到，观众的不满主要集中在排片。",
 ]
 
 POSITIVE_SAMPLES = [
@@ -53,6 +57,10 @@ POSITIVE_SAMPLES = [
     "消息在社交平台传开后，很快有了后续报道和讨论。",
     # 正常"入口"非"阅读入口"
     "电影由此成为连接一段生活经验的入口。",
+    # 合法媒体词邻接句（016 B3 修复防误伤：词尾命中但非来源自证转述）
+    "观众在报道画面里看到了当时的盛况。",
+    "平台在梳理用户反馈时发现，差评集中在票价。",
+    "有媒体用了一个词来形容这部影片。",
     # 合规口径：未上映影片的事实/边界描述（不是自我提醒句，不得误伤）
     "截至8月12日，《肖申克的救赎》4K修复版还没有产生实际内地票房，8月28日前出现的数字都只能是预测、愿望或讨论。",
     "豆瓣9.7是既有口碑，IMAX全球首度呈现是制式信息，4K修复是观看条件，三者都不能直接换算成售出的票数。",
@@ -265,3 +273,29 @@ def test_title_gap_extra_signals():
     assert title_gap_check("八仙居然把神仙写成了普通人")["status"] == "ok"
     assert title_gap_check("一张票根，意外改写了整座城市")["status"] == "ok"
     assert title_gap_check("最稀罕的，是八个不完美的人")["status"] == "ok"
+
+
+def test_unsourced_claim_warnings():
+    """controlled-016 B4: age inference & zero-modifier claims are flagged
+    as warning (triage signals, never blockers)."""
+    hits = scan_style("周星驰当时四十一岁，正值创作巅峰。")
+    assert any(h["rule"] == "claim:age-inference" for h in hits)
+    assert all(h["severity"] == "warning" for h in hits)
+    hits = scan_style("这部电影零大规模路演，全靠口碑发酵。")
+    assert any(h["rule"] == "claim:zero-modifier" for h in hits)
+    assert all(h["severity"] == "warning" for h in hits)
+
+
+def test_chinese_numeral_fact_anchors():
+    """controlled-016 A4: Chinese-numeral dates/quantities must anchor
+    fact density & opening hook (no forced Arabic rewrites)."""
+    zh_paras = ["该片票房三千六百五十万，位列暑期档第一。",
+                "八月六日开画，首日即破纪录。",
+                "二〇二二年立项，历时四年才走到观众面前。"]
+    assert fact_density_check(zh_paras)["status"] == "ok"
+    assert opening_hook_check(["八月六日开画，首日即破纪录，成为暑期档黑马。"])["status"] == "ok"
+    # 纯意境仍不锚定（修复未放宽标准）
+    thin = ["神仙这个词，常常自带一种距离感。", "这让人想起一些更朴素的标准。"]
+    assert fact_density_check(thin)["status"] == "warning"
+    assert opening_hook_check(["夏夜的风穿过放映厅，银幕亮起。",
+                               "一部电影的命运就此展开。"])["status"] == "warning"
