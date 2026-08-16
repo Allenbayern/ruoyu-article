@@ -23,6 +23,7 @@
 - 预演/演练批：`controlled-<序号>-dryrun`，绝不与正式批共用序号。
 - 应急单篇：`controlled-<序号>-emergency`（见 §6）。
 - 目录：`runs/<YYYY-MM-DD>/<batch-id>/`；批次内 `batch.json` 的 `run_id` 与目录名逐字一致。
+- 素材同步：选题雷达/candidate 素材落入 `sources/`，并将 `sources/cand-*.md` 同步到 `evidence/`（021 教训：evidence/ 为空则 final_review 证据链观感缺失）。
 - 禁止：不同日期目录下出现同名批次（`controlled-020` 双目录为历史教训，见复盘 D6）。
 
 ## 2. 字数口径（H2 · 统一）
@@ -84,5 +85,6 @@
 | 2026-08-16 | style_gate 扩展：来源自证变体（B3）、无源断言警告（B4）、中文数字锚点（A4） | L0 代码 | 复盘 H1/H5，测试 523 全绿 |
 | 2026-08-16 | final_review 总复核层 v1（H8，Allen 确认设计后开发）：§5.1 批次验收 | 代码 | 测试 533 全绿；回放 013–020 复现全部已知缺陷 |
 | 2026-08-16 | M2 节奏：§5.2 每 5 轮一个 checkpoint（025/030/035/040）；丢失文件批次无参考意义 | 流程 | Allen 指示（5 轮一修循环） |
+| 2026-08-16 | 021 教训：① cron 禁止中途收尾（收尾纪律已入 cron prompt）；② evidence/ 素材同步约定（见 §1）；③ 预览服务 systemd 单元（ruoyu-preview.service）指最新批次 serve_preview.py | 流程 | 021 批实际截断 + 服务占用 8765 |
 
 （后续 L0 微调在此追加，保留历史行，不覆盖。）
