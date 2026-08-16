@@ -22,6 +22,7 @@
 - Narrative Frame:
 - Skeleton:
 - ending_destination:
+- ending_interaction_question: `读者互动问句 | 结论性收尾（写明理由）`（爆文视角候选观察⑦：优先以「你会…吗/你还会…吗」类问句收尾提评论率；结论性收尾须注明依据——2026-08-16 入规则）
 
 ## Style Field
 
