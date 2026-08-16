@@ -60,6 +60,7 @@
 ### 5.1 批次验收（M2 起每批必跑）
 
 - 每批收尾执行：`python -m article_group.final_review --batch runs/<date>/controlled-NNN`
+- **收尾链路（L2 教训定）**：冻结后 → 对最终 frozen HTML 重跑 `style_gate.py <frozen.html>` 覆盖落盘 `style-gate-art-00X.json`（draft 有修改就必须重跑，禁用手工复制旧报告）→ 再跑 final_review。evidence 时间戳必须晚于冻结时间戳。
 - 验收标准：`PUBLISHABLE` 才允许进入交付预览映射；`BLOCKED` 记台账并回修复环节；`PENDING` 挂人工判定（每周六判定会）。
 - 参考基线（2026-08-16 定）：**丢失文件/证据链不完整的批次无参考意义**（001–012 缺 review/、013–018 无 batch.json、020 编号冲突），不作为对照基线；只有证据完整批次（019/020 少量 + 021 起全部新批）参与对照。
 
@@ -89,5 +90,7 @@
 | 2026-08-16 | 021 教训：① cron 禁止中途收尾（收尾纪律已入 cron prompt）；② evidence/ 素材同步约定（见 §1）；③ 预览服务 systemd 单元（ruoyu-preview.service）指最新批次 serve_preview.py | 流程 | 021 批实际截断 + 服务占用 8765 |
 | 2026-08-16 | 022 教训：① 预览 URL 同日多批 `-a/-b` 后缀（§1）；② 预览服务统一 systemd 管理、禁手工 nohup（§1，端口抢占 2 次）；③ daily-run-report.md 为当日双批汇总结构 | 流程 | 022 批端口抢占复现 + 021 报告被覆盖 |
 | 2026-08-16 | 023 教训：① §1 命名约定执行不彻底——cron 侧 HTML 文件名再次无后缀（与 021 撞名），预览映射统一用 `-a/-b/-c` URL + frozen hash 名兜底；② 闸门命令必须 `.venv/bin/python`（系统 python3 缺 jsonschema 等依赖）；③ portfolio_gate 自动窗口仅到 016（H6 盲区），批次内手工补查 017 起 | 流程 | 023 撞名实测 + 依赖报错 + 盲区复现 |
+|| 2026-08-16 | 024 教训：① 预览服务 systemd 单元缺失（021 规则落地后未持久化安装，8765 被手工进程占用）——本批安装 `/etc/systemd/system/ruoyu-preview.service`（enable），每批映射前先校验单元存在；② frozen 命名统一 `ruoyu-art-<NN>.<sha12>.html`（本批误生成 `ruoyu-art-art-001`，改名后必须重建 manifest 并重校验）；③ preflight 输入字段须逐字同源：batch.json `why_today` == candidate-pool `why_now`，任务卡 Primary Atom/Reader Intent/站队点 == batch.json 同名字段，生成本批即注入同一字符串 | 流程 | 024 批实测：单元缺失 + 命名失误 + 首轮 preflight FAIL |
+| 2026-08-16 | L2 复核教训（首次 Gate，021–024 四批 8 篇）：① **style_gate/frozen 一致性铁律**——style-gate JSON 必须对**最终 frozen HTML** 重跑生成并覆盖落盘（021-art-002 曾锁定修复前旧版 1872 字/fact=warning、022 锁定清除自证前版本，均与最终稿不一致）；draft 修改后禁用手工复制旧报告。② 每批冻结后补一步：`style_gate.py <frozen.html>` 重跑并覆盖 `style-gate-art-00X.json`，再做 final_review（已在 §5.1 收尾链补入）。③ L2 独立复核子代理限时 420s 内读 8 篇全文易超时——拆 2 篇/代理或抽样核验。 | 流程+L2 实证 | 2026-08-16 L2 Gate：2 major findings + 1 minor，修复后 4 批复跑 PUBLISHABLE |
 
 （后续 L0 微调在此追加，保留历史行，不覆盖。）
