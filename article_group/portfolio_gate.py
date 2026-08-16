@@ -265,7 +265,11 @@ RECENT3 = 3
 def collect_history(limit: int = CROSS_BATCH_WINDOW, exclude_run: str = "") -> list[dict]:
     """从 runs/*/controlled-*/ 收集历史交付标题指纹（近 limit 批，时间倒序）。
 
-    每批优先取根目录交付副本（ruoyu-articles-*.html），否则取 review/frozen 下最新一份。
+    每批优先取根目录交付副本（ruoyu-articles-*.html，016 及以前命名），
+    否则取 review/frozen 下所有交付 HTML：兼容两种命名——
+      - ruoyu-articles-*.html（旧：整批合并包，016 及以前）
+      - ruoyu-art-00*.html（新：单篇 frozen，021 起）
+    修复 026 发现的命名契约断裂：021 起批次因只收 ruoyu-articles-* 整段漏窗。
     """
     runs_root = Path(__file__).resolve().parent.parent / "runs"
     batches: list[dict] = []
@@ -276,10 +280,19 @@ def collect_history(limit: int = CROSS_BATCH_WINDOW, exclude_run: str = "") -> l
         if not htmls:
             frozen_dir = batch_dir / "review" / "frozen"
             if frozen_dir.exists():
-                htmls = sorted(frozen_dir.glob("ruoyu-articles-*.html"), key=lambda p: p.stat().st_mtime, reverse=True)
+                htmls = sorted(
+                    list(frozen_dir.glob("ruoyu-articles-*.html"))
+                    + list(frozen_dir.glob("ruoyu-art-00*.html")),
+                    key=lambda p: p.stat().st_mtime, reverse=True,
+                )
         if not htmls:
             continue
-        titles, works = _extract_titles(htmls[0])
+        titles: list[str] = []
+        works: list[str] = []
+        for h in htmls:  # 单篇命名（021+）下需聚合整批全部文章指纹
+            t, w = _extract_titles(h)
+            titles.extend(t)
+            works.extend(w)
         if not titles:
             continue
         batches.append(
@@ -308,8 +321,28 @@ def _extract_titles(path: str | Path) -> tuple[list[str], list[str]]:
         if not t or "目录" in t:
             continue
         titles.append(t)
-        works.extend(re.findall(r"《([^》]{1,20})》", t))
+        # 反衬提及排除：标题中「撞上/碰上/空降/同期/对比」等反衬句式里的《X》
+        # 只是被提及的作品（025/026 实证：015「撞上了空降的《欢迎来龙餐馆》」非专文），
+        # 不计入 works，避免跨批误报。仅保留主语位置的作品名。
+        for seg in _split_title_segments(t):
+            for w in re.findall(r"《([^》]{1,20})》", seg):
+                works.append(w)
     return titles, works
+
+
+def _split_title_segments(t: str) -> list[str]:
+    """把 h2 标题按反衬连接词切开，只保留主语段。
+
+    反衬句式示例：『上映前三天改档的《大唐妖探》，撞上了空降的《欢迎来龙餐馆》』
+    → 主语段『上映前三天改档的《大唐妖探》』保留，《欢迎来龙餐馆》被排除。
+    """
+    contrast_markers = ("撞上", "碰上", "遇上", "空降", "同期", "对比", "让位", "让路", "看好戏", "等来", "迎来")
+    for seg in re.split(r"[，,、；;：:——\-｜|·]", t):
+        if not seg:
+            continue
+        if any(m in seg for m in contrast_markers):
+            continue  # 反衬段整体排除（提及非专文）
+        yield seg
 
 
 def check_cross_batch(selected: list[dict], history: list[dict]) -> list[dict]:

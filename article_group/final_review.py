@@ -134,9 +134,24 @@ def evaluate_batch(batch_dir: str | Path) -> dict:
         issues = check_cross_batch(articles, history)
     except Exception as exc:  # noqa: BLE001 — 指纹检查失败不得放行
         return _blocked("gate:cross_batch_failed", error=str(exc))
+    waivers: list[dict] = []
     for issue in issues:
         level = str(issue.get("level", ""))
         if level == "error":
+            # 控制器豁免注记通道（人机一致）：portfolio-gate-report.json 中已有人工裁决
+            # （confirmed_new_angle / 确认豁免）且 candidate 匹配时，error 降级为已裁决
+            # 记录放行，不再 BLOCKED——机器只拦未裁决的重复。
+            waiver = _match_adjudication_waiver(root, str(issue.get("candidate", "")))
+            if waiver:
+                waivers.append({
+                    "candidate": issue.get("candidate"),
+                    "gate": "gate:cross_batch",
+                    "message": issue.get("message"),
+                    "adjudicated_at": waiver.get("recorded_at"),
+                    "adjudicator": waiver.get("adjudicator"),
+                    "verdict": waiver.get("verdict"),
+                })
+                continue
             return _blocked("gate:cross_batch", candidate=issue.get("candidate"),
                             message=issue.get("message"))
         if level == "warning":
@@ -195,6 +210,7 @@ def evaluate_batch(batch_dir: str | Path) -> dict:
         "reason": None,
         "evidence_gaps": gaps,
         "human_judgment_items": human_items,
+        "adjudicated_waivers": waivers,
         "publication_authorization": "not_authorized",
     }
     if human_items:
@@ -202,6 +218,32 @@ def evaluate_batch(batch_dir: str | Path) -> dict:
     else:
         result.update(_publishable())
     return result
+
+
+def _match_adjudication_waiver(root: Path, candidate: str) -> dict | None:
+    """读取本批 portfolio-gate-report.json 的控制器豁免注记，candidate 匹配即返回。
+
+    豁免条件（安全限制）：adjudicated=True 且 result 含 confirmed_new_angle / 确认豁免；
+    仅匹配同一 candidate。机器尊重人工裁决，但绝不自行创造豁免。
+    """
+    if not candidate:
+        return None
+    report_file = root / "portfolio-gate-report.json"
+    if not report_file.exists():
+        return None
+    try:
+        report = json.loads(report_file.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 — 读不到注记当作无豁免，走原 BLOCKED 路径
+        return None
+    adj = report.get("controller_adjudication") or {}
+    if not isinstance(adj, dict) or adj.get("adjudicated") is not True:
+        return None
+    result_text = str(adj.get("result", ""))
+    if "confirmed_new_angle" not in result_text and "确认豁免" not in result_text:
+        return None
+    if candidate not in result_text:
+        return None
+    return adj
 
 
 def _find_prose_chars(prose: dict | None, title: str) -> int:
