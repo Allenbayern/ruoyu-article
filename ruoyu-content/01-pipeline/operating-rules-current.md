@@ -7,44 +7,50 @@
 >
 > 规则基线：`docs/retrospective-013-020.md`（2026-08-16 复盘，M0 产出）
 > 契约模板：`ARTICLE_GROUP_OPERATING_CONTRACT_v1_DRAFT.md`、`v2_contract/`
+>
+> **语义分级（2026-08-16 定，所有条目必须标注，后续新增同规则）：**
+> - 🔴 **[MUST] 限制**——红线/闸门，违反即 BLOCKED，不可绕过
+> - 🟡 **[SHOULD] 流程**——确定性要求，可审计，违规记台账
+> - 🟢 **[MAY] 经验**——参考技法，不阻断不强制；发布回填按实证升级/降级
+> - 候选观察一律 🟢 起步，验证后可升 🟡；不得以 research_only 证据写 MUST
 
 ## 0. 硬约束（不可违反）
 
-1. 发布永远手动：`publication_authorization=not_authorized`，止步交付预览，预览 URL 用 `http://192.168.100.168:8765/`（LAN）。
-2. 每批目标 2 篇成品；选题失败走「应急单篇」路径（见 §6），不污染正式批次。
-3. 每环节重试 ≤1 次；重试仍失败则该环节 fail，记台账，不硬闯。
-4. kanban 派发 workspace 必须绝对路径 `dir:/home/allen/Projects/ruoyu-film-daily/runs/<date>/controlled-NNN`；`--skill ruoyu-controlled-production` 仅用于已注册该 skill 的 worker profile。
-5. 未修改 `v2_contract/` 与 `article_group/` 核心代码（本文件外的流程规则变更需 Allen 确认）。
-6. 成品禁：来源自证、审稿腔、流程标识、自我提醒句、无源断言；档期断言须做撤档史版本核验。
+1. 🔴 [MUST] 发布永远手动：`publication_authorization=not_authorized`，止步交付预览，预览 URL 用 `http://192.168.100.168:8765/`（LAN）。
+2. 🟡 [SHOULD] 每批目标 2 篇成品；选题失败走「应急单篇」路径（见 §6），不污染正式批次。
+3. 🟡 [SHOULD] 每环节重试 ≤1 次；重试仍失败则该环节 fail，记台账，不硬闯。
+4. 🟡 [SHOULD] kanban 派发 workspace 必须绝对路径 `dir:/home/allen/Projects/ruoyu-film-daily/runs/<date>/controlled-NNN`；`--skill ruoyu-controlled-production` 仅用于已注册该 skill 的 worker profile。
+5. 🔴 [MUST] 未修改 `v2_contract/` 与 `article_group/` 核心代码（本文件外的流程规则变更需 Allen 确认）。
+6. 🔴 [MUST] 成品禁：来源自证、审稿腔、流程标识、自我提醒句、无源断言；档期断言须做撤档史版本核验。
 
 ## 1. 批次命名（H4 · run_id 唯一化）
 
-- 格式：`controlled-<序号>`，序号全局递增、不得复用；同日多批用 `-a/-b` 后缀区分。
-- 预演/演练批：`controlled-<序号>-dryrun`，绝不与正式批共用序号。
-- 应急单篇：`controlled-<序号>-emergency`（见 §6）。
-- 目录：`runs/<YYYY-MM-DD>/<batch-id>/`；批次内 `batch.json` 的 `run_id` 与目录名逐字一致。
-- 素材同步：选题雷达/candidate 素材落入 `sources/`，并将 `sources/cand-*.md` 同步到 `evidence/`（021 教训：evidence/ 为空则 final_review 证据链观感缺失）。
-- 预览 URL：同日多批用 `-a`/`-b` 后缀区分（`ruoyu-art-001-2026-08-16-b.html`，022 教训）；**预览服务一律经 systemd 单元 `ruoyu-preview.service` 管理**（更新 ExecStart 指向最新批次 serve_preview.py 后 `daemon-reload && restart`），禁止手工 nohup 启动（端口抢占已复现 2 次）。
-- 禁止：不同日期目录下出现同名批次（`controlled-020` 双目录为历史教训，见复盘 D6）。
+- 🟡 [SHOULD] 格式：`controlled-<序号>`，序号全局递增、不得复用；同日多批用 `-a/-b` 后缀区分。
+- 🟡 [SHOULD] 预演/演练批：`controlled-<序号>-dryrun`，绝不与正式批共用序号。
+- 🟡 [SHOULD] 应急单篇：`controlled-<序号>-emergency`（见 §6）。
+- 🔴 [MUST] 目录：`runs/<YYYY-MM-DD>/<batch-id>/`；批次内 `batch.json` 的 `run_id` 与目录名逐字一致。
+- 🟡 [SHOULD] 素材同步：选题雷达/candidate 素材落入 `sources/`，并将 `sources/cand-*.md` 同步到 `evidence/`（021 教训：evidence/ 为空则 final_review 证据链观感缺失）。
+- 🟡 [SHOULD] 预览 URL：同日多批用 `-a`/`-b` 后缀区分（`ruoyu-art-001-2026-08-16-b.html`，022 教训）；**预览服务一律经 systemd 单元 `ruoyu-preview.service` 管理**（更新 ExecStart 指向最新批次 serve_preview.py 后 `daemon-reload && restart`），禁止手工 nohup 启动（端口抢占已复现 2 次）。
+- 🔴 [MUST] 禁止：不同日期目录下出现同名批次（`controlled-020` 双目录为历史教训，见复盘 D6）。
 
 ## 2. 字数口径（H2 · 统一）
 
-- **官方口径 = style_gate 的 CJK 计数**（`len(re.findall(r"[\u3400-\u4dbf\u4e00-\u9fff]", full))`），目标区间 1500–2200 字。
-- prose_pilot 输出仅 advisory：不改变任何 gate 状态、不阻断、不参与字数判定；report 中标注与 style_gate 的计数差异（如有）。
-- 任务卡、预检、台账中所有字数一律写 style_gate 口径并注明。
+- 🟡 [SHOULD] **官方口径 = style_gate 的 CJK 计数**（`len(re.findall(r"[\u3400-\u4dbf\u4e00-\u9fff]", full))`），目标区间 1500–2200 字。
+- 🟢 [MAY] prose_pilot 输出仅 advisory：不改变任何 gate 状态、不阻断、不参与字数判定；report 中标注与 style_gate 的计数差异（如有）。
+- 🟡 [SHOULD] 任务卡、预检、台账中所有字数一律写 style_gate 口径并注明。
 
 ## 3. 冻结规范（H3 · 只留最终版）
 
-- 冻结动作只发生在最终稿：`review/frozen/<name>.<sha256前12>.html` + `review/sha256-manifest.txt`。
-- 冻结前所有迭代副本移入 `review/work/`（不删、不进 frozen、不计入 manifest）。
-- frozen 目录每批最终 ≤3 个文件（2 篇成品 + 可选 bundle）；>3 即视为违规，记台账。
-- 冻结副本必须逐字节校验（sha256 重算 MATCH）后才可映射预览。
+- 🔴 [MUST] 冻结动作只发生在最终稿：`review/frozen/<name>.<sha256前12>.html` + `review/sha256-manifest.txt`。
+- 🟡 [SHOULD] 冻结前所有迭代副本移入 `review/work/`（不删、不进 frozen、不计入 manifest）。
+- 🟡 [SHOULD] frozen 目录每批最终 ≤3 个文件（2 篇成品 + 可选 bundle）；>3 即视为违规，记台账。
+- 🔴 [MUST] 冻结副本必须逐字节校验（sha256 重算 MATCH）后才可映射预览。
 
 ## 4. prose_pilot 版本管理（H7）
 
-- 批次配置固定文件名 `prose-pilot-batch.yaml`（同批覆盖，不产生 v4/v5/... 后缀）。
-- report 内 `revision` 字段记录本次运行序号；覆盖前的旧 report 内容并入 `review/work/`。
-- 单批 prose_pilot 运行 ≤3 次；>3 次须记台账说明原因（配置漂移视为缺陷）。
+- 🟡 [SHOULD] 批次配置固定文件名 `prose-pilot-batch.yaml`（同批覆盖，不产生 v4/v5/... 后缀）。
+- 🟡 [SHOULD] report 内 `revision` 字段记录本次运行序号；覆盖前的旧 report 内容并入 `review/work/`。
+- 🟡 [SHOULD] 单批 prose_pilot 运行 ≤3 次；>3 次须记台账说明原因（配置漂移视为缺陷）。
 
 ## 5. 机器闸门（随代码演进）
 
@@ -59,25 +65,25 @@
 
 ### 5.1 批次验收（M2 起每批必跑）
 
-- 每批收尾执行：`python -m article_group.final_review --batch runs/<date>/controlled-NNN`
-- **收尾链路（L2 教训定）**：冻结后 → 对最终 frozen HTML 重跑 `style_gate.py <frozen.html>` 覆盖落盘 `style-gate-art-00X.json`（draft 有修改就必须重跑，禁用手工复制旧报告）→ 再跑 final_review。evidence 时间戳必须晚于冻结时间戳。
-- 验收标准：`PUBLISHABLE` 才允许进入交付预览映射；`BLOCKED` 记台账并回修复环节；`PENDING` 挂人工判定（每周六判定会）。
-- 参考基线（2026-08-16 定）：**丢失文件/证据链不完整的批次无参考意义**（001–012 缺 review/、013–018 无 batch.json、020 编号冲突），不作为对照基线；只有证据完整批次（019/020 少量 + 021 起全部新批）参与对照。
+- 🔴 [MUST] 每批收尾执行：`python -m article_group.final_review --batch runs/<date>/controlled-NNN`
+- 🔴 [MUST] **收尾链路（L2 教训定）**：冻结后 → 对最终 frozen HTML 重跑 `style_gate.py <frozen.html>` 覆盖落盘 `style-gate-art-00X.json`（draft 有修改就必须重跑，禁用手工复制旧报告）→ 再跑 final_review。evidence 时间戳必须晚于冻结时间戳。
+- 🔴 [MUST] 验收标准：`PUBLISHABLE` 才允许进入交付预览映射；`BLOCKED` 记台账并回修复环节；`PENDING` 挂人工判定（每周六判定会）。
+- 🟢 [MAY] 参考基线（2026-08-16 定）：**丢失文件/证据链不完整的批次无参考意义**（001–012 缺 review/、013–018 无 batch.json、020 编号冲突），不作为对照基线；只有证据完整批次（019/020 少量 + 021 起全部新批）参与对照。
 
 ### 5.2 M2 修复节奏（每 5 轮一个 checkpoint）
 
-- 021–040 按「跑 5 轮 → 修复 → 再跑 5 轮 → 修复」循环推进，直至 021–040 结束。
-- checkpoint 批次：025、030、035、040（含该批自身）收尾后暂停下一轮启动前，执行：
+- 🟡 [SHOULD] 021–040 按「跑 5 轮 → 修复 → 再跑 5 轮 → 修复」循环推进，直至 021–040 结束。
+- 🟡 [SHOULD] checkpoint 批次：025、030、035、040（含该批自身）收尾后暂停下一轮启动前，执行：
   1. 汇总本 5 轮 final_review 判定分布（PUBLISHABLE/BLOCKED/PENDING 计数）；
   2. 新缺陷（台账/判定回退/成本超限）逐项定级：L0 直接修（落规则文件或代码+测试），结构性改动挂确认；
   3. 修复落定后更新规则文件变更日志，再进入下 5 轮。
-- checkpoint 内不发布任何内容；每 5 轮的成本、判定分布记入台账。
+- 🟡 [SHOULD] checkpoint 内不发布任何内容；每 5 轮的成本、判定分布记入台账。
 
 ## 6. 应急单篇路径（H9 · emergency-single）
 
-- 触发：自动选题当天候选池不足 2 篇可过 portfolio_gate，或预检 fail 且重试后仍不足。
-- 流程：批次标记 `-emergency`；单篇照常走 候选→preflight→写作→style_gate→prose_pilot→冻结→预览；台账注明触发原因与候选池实况。
-- 应急批不参与「日更 2 篇」达标统计，但计入复核闭环覆盖率（同样要有总复核判定记录）。
+- 🟡 [SHOULD] 触发：自动选题当天候选池不足 2 篇可过 portfolio_gate，或预检 fail 且重试后仍不足。
+- 🟡 [SHOULD] 流程：批次标记 `-emergency`；单篇照常走 候选→preflight→写作→style_gate→prose_pilot→冻结→预览；台账注明触发原因与候选池实况。
+- 🟡 [SHOULD] 应急批不参与「日更 2 篇」达标统计，但计入复核闭环覆盖率（同样要有总复核判定记录）。
 
 ## 7. 变更日志
 
@@ -94,5 +100,6 @@
 | 2026-08-16 | L2 复核教训（首次 Gate，021–024 四批 8 篇）：① **style_gate/frozen 一致性铁律**——style-gate JSON 必须对**最终 frozen HTML** 重跑生成并覆盖落盘（021-art-002 曾锁定修复前旧版 1872 字/fact=warning、022 锁定清除自证前版本，均与最终稿不一致）；draft 修改后禁用手工复制旧报告。② 每批冻结后补一步：`style_gate.py <frozen.html>` 重跑并覆盖 `style-gate-art-00X.json`，再做 final_review（已在 §5.1 收尾链补入）。③ L2 独立复核子代理限时 420s 内读 8 篇全文易超时——拆 2 篇/代理或抽样核验。 | 流程+L2 实证 | 2026-08-16 L2 Gate：2 major findings + 1 minor，修复后 4 批复跑 PUBLISHABLE |
 | 2026-08-16 | 025 教训（date:release-claim 误报链）：① 正则 `(定档\|上映\|公映\|开画)+日期` 会把「重映名单列举」（1月30日《闪灵》…上映46年）和「票房口径句」误判为档期断言——**措辞规避首选「首映/放映/重映名单」词族**（不在正则词表、语义等价）；② 档期断言修复只改措辞不动数字；③ 系统级 `ruoyu-preview.service` 单元曾指向遗留目录 `niulai-guo-shen`——每批映射前 `systemctl cat` 校验 ExecStart 指向当批 | 流程 | 025 批 warning 3 处 → L0 拆分清零；单元指向旧批次 |
 | 2026-08-16 | 爆文视角复核候选观察（021–025 十篇，research_only 待发布数据验证，见 `docs/reviews/viral-lens-021-025.md`）：① 标题=情绪反转+具体画面（4 篇 A+ 标题模式：极端数字/情绪词/悬念问句）；② 首屏 150 字第二句前给出信息差；③ 人物主动性叙事 > 被动被讨论（王祖贤/王传君范式）；④ 金句须可独立转述（社交货币）；⑤ **数据源决定型题材（如「票房破30亿」）是传播盲区——单批唯一低爆款潜力篇，此类选题标题须挂具体影片/人物**；⑥ 中段每 3-4 段需场景/人物/金句呼吸点（2000+ 字易掉读）；⑦ 结尾可留互动问句提评论率。026 起执行候选建议，发布回填后按爆文实证标准升级/降级 | 流程（候选观察） | docs/reviews/viral-lens-021-025.md 十篇通读评估 |
+| 2026-08-16 | **三层语义分级落地（Allen 确认「以后也按这个来」）**：全文条目打标 🔴[MUST] 限制/🟡[SHOULD] 流程/🟢[MAY] 经验；头部新增分级机制声明；候选观察一律 🟢 起步，不得以 research_only 证据写 MUST；爆文候选观察 ①–⑦ 降级为 🟢 参考（不再「026 起执行」强制口气）；后续新增条目必须标注语义层 | 结构（Allen 确认） | Allen 指示：执行，以后也要按这个来 |
 
 （后续 L0 微调在此追加，保留历史行，不覆盖。）
