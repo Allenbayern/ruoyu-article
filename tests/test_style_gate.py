@@ -15,6 +15,7 @@ from article_group.style_gate import (
     title_gap_check,
     fact_density_check,
     hook_declaration_check,
+    closing_interaction_check,
 )
 
 NEGATIVE_SAMPLES = [
@@ -284,6 +285,40 @@ def test_unsourced_claim_warnings():
     hits = scan_style("这部电影零大规模路演，全靠口碑发酵。")
     assert any(h["rule"] == "claim:zero-modifier" for h in hits)
     assert all(h["severity"] == "warning" for h in hits)
+
+
+def test_closing_interaction_check():
+    """候选观察⑦：结尾互动问句检测（info，建议非阻断）。
+
+    有「你会…吗/你还会…吗」类读者问句 → ok；
+    结论性/纯事实收尾 → info（提示，不是 error/warning）。
+    """
+    # 读者互动问句收尾 → ok
+    assert closing_interaction_check(["你会走进影院重新看一遍吗？"])["status"] == "ok"
+    assert closing_interaction_check(["你还会给童年的动画写一封信吗？"])["status"] == "ok"
+    assert closing_interaction_check(["你会怎么和孩子聊这部电影？"])["status"] == "ok"
+    # 无问句收尾 → info（不阻断）
+    info = closing_interaction_check(["这部片子的现实，是一砖一瓦搭出来的。"])
+    assert info["status"] == "info"
+    assert "候选观察" not in info["reason"] or "候选观察" in info["reason"]
+    # 以问号收尾但非读者互动（设问/内容性问题）→ info 而非 ok
+    assert closing_interaction_check(["为什么要在青岛手搓一座中东城？"])["status"] == "info"
+    # 末段同时以问号+互动词收尾 → ok（宽松回退）
+    assert closing_interaction_check(["大家觉得这部剧到底值不值得追？"])["status"] == "ok"
+    # 空段落守卫
+    assert closing_interaction_check([])["status"] == "no_paragraphs"
+
+
+def test_closing_interaction_in_batch_report():
+    """026 两篇 frozen 稿的末段应被标记为 info（候选观察⑦空转实证）。"""
+    delivery = """
+    <article data-hook="龙餐馆8.4"><h2>没去中东，青岛手搓一座中东城</h2>
+    <p>《欢迎来龙餐馆》8月11日全国首映，豆瓣开分8.4。</p>
+    <p>分数只是入口；更值得留下的，是这部电影如何把拍片受阻变成转型。</p></article>
+    """
+    article = validate_batch_style(delivery)["articles"][0]
+    assert article["closing_interaction"]["status"] == "info"
+    assert article["closing_interaction"]["last_40"]
 
 
 def test_chinese_numeral_fact_anchors():

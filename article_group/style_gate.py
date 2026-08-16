@@ -347,6 +347,52 @@ def fact_density_check(paragraphs: list[str]) -> dict[str, Any]:
     }
 
 
+# 结尾互动问句（爆文视角候选观察⑦，2026-08-16 入规则）：
+# 「结尾可留互动问句提评论率」——021–025 十篇 + 026 两篇连续空转，
+# 仅入规则日志不足驱动执行，故落为机械检查点。检测对象 = 文章末段
+# （不含 .sources 引用附录）。读者侧互动问句 = 以问号收尾 + 第二人称
+# 或祈使性互动词（你/你们/大家/来/愿意/会）。
+_CLOSING_QUESTION = re.compile(r"[？?]\s*$")
+_CLOSING_READER_WORD = re.compile(r"(你|你们|大家|愿意|会去|来聊聊|你会|你还会)")
+_CLOSING_ACCEPTABLE = re.compile(
+    r"(你|你们|大家|愿意|会去|来聊聊|你会|你还会)[^。！？]{0,24}[？?]"
+)
+
+
+def closing_interaction_check(paragraphs: list[str]) -> dict[str, Any]:
+    """Check the final paragraph for a reader-facing interaction question (⑦).
+
+    Candidate observation ⑦ (viral-lens, research_only): an ending question
+    addressed to the reader ("你会去看吗"/"你还会回信吗") is the strongest
+    comment-rate lever identified across 021–025 and consistently missing.
+    Severity: info — a suggestion, never a blocker (factual-boundary wording
+    must stay intact; articles whose ending is a definitive fact statement
+    may legitimately omit a question).
+    """
+    if not paragraphs:
+        return {"status": "no_paragraphs"}
+    last = paragraphs[-1]
+    ends_with_question = bool(_CLOSING_QUESTION.search(last))
+    has_reader_word = bool(_CLOSING_READER_WORD.search(last))
+    # 直接匹配 互动词+问号 组合；宽松回退：末段本身即以问号收尾且含互动词
+    acceptable = bool(_CLOSING_ACCEPTABLE.search(last)) or (
+        ends_with_question and has_reader_word
+    )
+    if acceptable:
+        return {
+            "status": "ok",
+            "reason": "末段含读者互动问句（候选观察⑦：结尾互动问句提评论率）",
+            "last_40": last[-40:],
+        }
+    return {
+        "status": "info",
+        "reason": ("末段无读者互动问句（候选观察⑦，research_only 建议）："
+                   "可考虑以'你会…吗''你还会…吗'类读者问句收尾提评论率——"
+                   "不违反事实边界时执行；结论性收尾可不改"),
+        "last_40": last[-40:],
+    }
+
+
 def validate_batch_style(html_text: str) -> dict[str, Any]:
     """Validate a full delivery HTML: per-article scan + global pipeline scan.
 
@@ -394,6 +440,7 @@ def validate_batch_style(html_text: str) -> dict[str, Any]:
             "opening_hook": hook,
             "title_gap": title_gap_check(title),
             "fact_density": fact_density_check(paras),
+            "closing_interaction": closing_interaction_check(paras),
             "hook_declaration": hook_declaration_check(
                 hook_match.group(1) if hook_match else "", full),
         })
