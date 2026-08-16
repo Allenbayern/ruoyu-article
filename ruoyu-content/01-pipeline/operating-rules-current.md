@@ -53,6 +53,13 @@
 | style_gate | 阻断(error)/警告 | 格式+红线；已含来源自证变体（B3）、无源断言（B4）、中文数字锚点（A4）——2026-08-16 扩展 |
 | prose_pilot | advisory | 材料清单+判断词密度，只提示 |
 | editorial_review 四阶段 | 记录 | 立项前/写作前/成稿后/发布前 人工+机械 attestation |
+| **final_review 总复核** | **阻断** | 批次验收最后一环：单命令汇总全部闸门证据 → PUBLISHABLE/BLOCKED/PENDING；证据链缺失即 BLOCKED；PENDING 项转人工判定；发布不变量恒检查 |
+
+### 5.1 批次验收（M2 起每批必跑）
+
+- 每批收尾执行：`python -m article_group.final_review --batch runs/<date>/controlled-NNN`
+- 验收标准：`PUBLISHABLE` 才允许进入交付预览映射；`BLOCKED` 记台账并回修复环节；`PENDING` 挂人工判定（每周六判定会）。
+- 回放基线（2026-08-16）：013–018 无 batch.json（历史 BLOCKED，M4 覆盖率基线 2/20）；019 PENDING（档期核验）；020 BLOCKED（缺 style-gate 产物）。
 
 ## 6. 应急单篇路径（H9 · emergency-single）
 
@@ -66,5 +73,6 @@
 |---|---|---|---|
 | 2026-08-16 | 本文件建立：批次命名/字数口径/冻结/prose_pilot/应急单篇 规则 | 流程 | 复盘 M0 + grill 计划 M1 |
 | 2026-08-16 | style_gate 扩展：来源自证变体（B3）、无源断言警告（B4）、中文数字锚点（A4） | L0 代码 | 复盘 H1/H5，测试 523 全绿 |
+| 2026-08-16 | final_review 总复核层 v1（H8，Allen 确认设计后开发）：§5.1 批次验收 | 代码 | 测试 533 全绿；回放 013–020 复现全部已知缺陷 |
 
 （后续 L0 微调在此追加，保留历史行，不覆盖。）
