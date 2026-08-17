@@ -114,11 +114,18 @@ def evaluate_batch(batch_dir: str | Path) -> dict:
             for hit in art.get("hits") or []:
                 if isinstance(hit, dict) and hit.get("severity") == "warning":
                     human_items.append(f"{sf.name}: {hit.get('rule')}")
-            fact_density = art.get("fact_density")
-            if isinstance(fact_density, dict) and fact_density.get("status") == "warning":
-                human_items.append(
-                    f"{sf.name}: fact_density: {fact_density.get('reason', 'status=warning')}"
-                )
+            for field in (
+                "opening_hook",
+                "title_gap",
+                "fact_density",
+                "hook_declaration",
+                "closing_interaction",
+            ):
+                structured_status = art.get(field)
+                if isinstance(structured_status, dict) and structured_status.get("status") == "warning":
+                    human_items.append(
+                        f"{sf.name}: {field}: {structured_status.get('reason', 'status=warning')}"
+                    )
 
     # ---- 3. 发布不变量 ---------------------------------------------------
     auth_fields = ("authorization_by", "authorized_at", "authorization_ref", "authorized_publication_scope")

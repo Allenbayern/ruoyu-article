@@ -155,6 +155,32 @@ def test_fact_density_warning_triggers_pending(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("field", "reason"),
+    [
+        ("opening_hook", "开头缺少事实锚点"),
+        ("title_gap", "标题缺少心理缺口"),
+        ("fact_density", "事实锚点段落仅 4/16"),
+        ("hook_declaration", "未声明最强钩子"),
+        ("closing_interaction", "结尾互动检查需要人工判断"),
+    ],
+)
+def test_structured_style_warning_triggers_pending(
+    tmp_path: Path, field: str, reason: str
+) -> None:
+    batch = _make_batch(tmp_path)
+    style_path = batch / "review" / "style-gate-art-001.json"
+    style = json.loads(style_path.read_text(encoding="utf-8"))
+    style["articles"][0][field] = {"status": "warning", "reason": reason}
+    style["articles"][0]["hits"] = []
+    style_path.write_text(json.dumps(style, ensure_ascii=False), encoding="utf-8")
+
+    report = evaluate_batch(batch)
+
+    assert report["verdict"] == PENDING
+    assert any(f"{field}: {reason}" in item for item in report["human_judgment_items"])
+
+
 def test_all_pass_publishable(tmp_path: Path) -> None:
     batch = _make_batch(tmp_path)
     report = evaluate_batch(batch)
