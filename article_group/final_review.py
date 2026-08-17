@@ -32,6 +32,17 @@ PENDING = "PENDING"
 
 CHAR_DIFF_TOLERANCE = 0.15  # style_gate 与 prose_pilot 字数口径差容限
 
+# style_gate 的结构化检查是 warning-level，除了 hook_declaration 的
+# producer-specific failure statuses（missing/mismatch）。closing_interaction
+# 的 info 状态是建议，不进入人工判定队列。
+_STRUCTURED_WARNING_STATUSES = {
+    "opening_hook": {"warning"},
+    "title_gap": {"warning"},
+    "fact_density": {"warning"},
+    "hook_declaration": {"missing", "mismatch", "warning"},
+    "closing_interaction": {"warning"},
+}
+
 
 def _load_json(path: Path) -> dict | None:
     try:
@@ -114,15 +125,12 @@ def evaluate_batch(batch_dir: str | Path) -> dict:
             for hit in art.get("hits") or []:
                 if isinstance(hit, dict) and hit.get("severity") == "warning":
                     human_items.append(f"{sf.name}: {hit.get('rule')}")
-            for field in (
-                "opening_hook",
-                "title_gap",
-                "fact_density",
-                "hook_declaration",
-                "closing_interaction",
-            ):
+            for field, warning_statuses in _STRUCTURED_WARNING_STATUSES.items():
                 structured_status = art.get(field)
-                if isinstance(structured_status, dict) and structured_status.get("status") == "warning":
+                if (
+                    isinstance(structured_status, dict)
+                    and structured_status.get("status") in warning_statuses
+                ):
                     human_items.append(
                         f"{sf.name}: {field}: {structured_status.get('reason', 'status=warning')}"
                     )

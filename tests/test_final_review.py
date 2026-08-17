@@ -24,6 +24,13 @@ def _write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
 
+def _real_hook_declaration(run_dir: str, style_file: str) -> dict:
+    repository_root = Path(__file__).resolve().parents[1]
+    style_path = repository_root / "runs" / run_dir / "review" / style_file
+    style = json.loads(style_path.read_text(encoding="utf-8"))
+    return style["articles"][0]["hook_declaration"]
+
+
 def _make_batch(root: Path, *, preflight_status: str = "PASS",
                 auth: str = "not_authorized",
                 style_error: int = 0, style_warning: bool = False,
@@ -151,6 +158,53 @@ def test_fact_density_warning_triggers_pending(tmp_path: Path) -> None:
     assert report["verdict"] == PENDING
     assert any(
         "fact_density" in item and "4/16" in item
+        for item in report["human_judgment_items"]
+    )
+
+
+@pytest.mark.parametrize(
+    ("run_dir", "style_file"),
+    [
+        ("2026-08-16/controlled-021", "style-gate-art-002.json"),
+        ("2026-08-16/controlled-024", "style-gate-art-002.json"),
+    ],
+)
+def test_real_hook_declaration_mismatch_triggers_pending(
+    tmp_path: Path, run_dir: str, style_file: str
+) -> None:
+    batch = _make_batch(tmp_path)
+    style_path = batch / "review" / "style-gate-art-001.json"
+    style = json.loads(style_path.read_text(encoding="utf-8"))
+    style["articles"][0]["hook_declaration"] = _real_hook_declaration(run_dir, style_file)
+    style["articles"][0]["hits"] = []
+    style_path.write_text(json.dumps(style, ensure_ascii=False), encoding="utf-8")
+
+    report = evaluate_batch(batch)
+
+    assert report["verdict"] == PENDING
+    assert any(
+        "hook_declaration" in item and "声明与正文不符" in item
+        for item in report["human_judgment_items"]
+    )
+
+
+def test_hook_declaration_missing_triggers_pending(tmp_path: Path) -> None:
+    batch = _make_batch(tmp_path)
+    style_path = batch / "review" / "style-gate-art-001.json"
+    style = json.loads(style_path.read_text(encoding="utf-8"))
+    style["articles"][0]["hook_declaration"] = {
+        "status": "missing",
+        "reason": "未声明最强钩子（data-hook）：审查无从核验。",
+        "hook": "",
+    }
+    style["articles"][0]["hits"] = []
+    style_path.write_text(json.dumps(style, ensure_ascii=False), encoding="utf-8")
+
+    report = evaluate_batch(batch)
+
+    assert report["verdict"] == PENDING
+    assert any(
+        "hook_declaration" in item and "未声明最强钩子" in item
         for item in report["human_judgment_items"]
     )
 
