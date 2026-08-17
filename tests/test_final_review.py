@@ -135,6 +135,26 @@ def test_style_warning_triggers_pending(tmp_path: Path) -> None:
     assert any("claim:age-inference" in i for i in report["human_judgment_items"])
 
 
+def test_fact_density_warning_triggers_pending(tmp_path: Path) -> None:
+    batch = _make_batch(tmp_path)
+    style_path = batch / "review" / "style-gate-art-001.json"
+    style = json.loads(style_path.read_text(encoding="utf-8"))
+    style["articles"][0]["fact_density"] = {
+        "status": "warning",
+        "reason": "事实锚点段落仅 4/16 (<1/3)",
+    }
+    style["articles"][0]["hits"] = []
+    style_path.write_text(json.dumps(style, ensure_ascii=False), encoding="utf-8")
+
+    report = evaluate_batch(batch)
+
+    assert report["verdict"] == PENDING
+    assert any(
+        "fact_density" in item and "4/16" in item
+        for item in report["human_judgment_items"]
+    )
+
+
 def test_all_pass_publishable(tmp_path: Path) -> None:
     batch = _make_batch(tmp_path)
     report = evaluate_batch(batch)
