@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from scripts.codex_viral_library_index import build_index, main
 
@@ -9,6 +11,14 @@ from scripts.codex_viral_library_index import build_index, main
 def _write_json(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _hashed_ref(path: Path, reference: str) -> str:
+    return f"{reference}#sha256={_sha256(path)}"
 
 
 def _write_card(
@@ -19,12 +29,24 @@ def _write_card(
     snapshot_ref: str,
     performance_ref: str,
 ) -> None:
+    snapshot_path = root / run / snapshot_ref
+    performance_path = root / run / performance_ref
+    snapshot_ref = (
+        _hashed_ref(snapshot_path, snapshot_ref)
+        if snapshot_path.is_file()
+        else snapshot_ref
+    )
+    performance_ref = (
+        _hashed_ref(performance_path, performance_ref)
+        if performance_path.is_file()
+        else performance_ref
+    )
     _write_json(
         root / run / "wechat-viral" / "cards" / f"{sample_id}.json",
         {
             "sample_id": sample_id,
             "qualification_status": status,
-            "snapshot_ref": f"`{snapshot_ref}#sha256={'a' * 64}`",
+            "snapshot_ref": f"`{snapshot_ref}`",
             "performance_evidence_ref": performance_ref,
             "technique_observations": [{"technique_id": "WX-O1"}],
         },
@@ -117,6 +139,83 @@ def test_qualified_card_with_missing_refs_is_unavailable(tmp_path: Path) -> None
     ]
 
 
+def test_hash_mismatch_is_not_usable(tmp_path: Path) -> None:
+    run = Path("runs/test-run/viral-research")
+    wrong_hash = hashlib.sha256(b"wrong evidence digest").hexdigest()
+
+    wechat_snapshot = tmp_path / run / "raw_articles/sample.md"
+    wechat_metric = tmp_path / run / "wechat-viral/metrics/qualified.json"
+    wechat_snapshot.parent.mkdir(parents=True)
+    wechat_metric.parent.mkdir(parents=True)
+    wechat_snapshot.write_text("# captured full text\n", encoding="utf-8")
+    wechat_metric.write_text("{}\n", encoding="utf-8")
+    _write_json(
+        tmp_path / run / "wechat-viral/cards/qualified.json",
+        {
+            "sample_id": "qualified",
+            "qualification_status": "qualified_viral",
+            "snapshot_ref": f"raw_articles/sample.md#sha256={wrong_hash}",
+            "performance_evidence_ref": f"wechat-viral/metrics/qualified.json#sha256={wrong_hash}",
+        },
+    )
+
+    bilibili_pack = tmp_path / run / "bilibili-public-metrics"
+    bilibili_snapshot = bilibili_pack / "sources/cv-one.clean.md"
+    bilibili_metric = bilibili_pack / "metrics/cv-one.api.json"
+    bilibili_snapshot.parent.mkdir(parents=True)
+    bilibili_metric.parent.mkdir(parents=True)
+    bilibili_snapshot.write_text("full text\n", encoding="utf-8")
+    bilibili_metric.write_text("{}\n", encoding="utf-8")
+    _write_json(
+        bilibili_pack / "case-manifest.json",
+        {
+            "samples": [
+                {
+                    "sample_id": "cv-one",
+                    "qualification_status": "qualified_viral",
+                    "snapshot_ref": f"sources/cv-one.clean.md#sha256={wrong_hash}",
+                    "performance_evidence_ref": f"metrics/cv-one.api.json#sha256={wrong_hash}",
+                }
+            ]
+        },
+    )
+
+    package_dir = tmp_path / run / "package"
+    package_snapshot = tmp_path / run / "clean/package.md"
+    package_metadata = tmp_path / run / "metadata/package.json"
+    package_snapshot.parent.mkdir(parents=True)
+    package_metadata.parent.mkdir(parents=True)
+    package_snapshot.write_text("# package sample\n", encoding="utf-8")
+    package_metadata.write_text("{}\n", encoding="utf-8")
+    package_sample = {
+        "sample_id": "package-sample",
+        "qualification_status": "qualified_viral",
+        "clean_ref": f"clean/package.md#sha256={wrong_hash}",
+        "metadata_ref": f"metadata/package.json#sha256={wrong_hash}",
+    }
+    _write_json(
+        package_dir / "manifest.json",
+        {"schema_version": "viral-research-package-v1", "samples": [package_sample]},
+    )
+    (package_dir / "samples.jsonl").write_text(
+        json.dumps(package_sample) + "\n", encoding="utf-8"
+    )
+
+    result = build_index(tmp_path, run)
+    packs = {pack["pack"]: pack for pack in result["evidence_library"]["packs"]}
+
+    assert packs["wechat-viral"]["qualified_usable_count"] == 0
+    assert packs["bilibili-public-metrics"]["qualified_usable_count"] == 0
+    assert packs["viral-research-package"]["qualified_usable_count"] == 0
+
+
+def test_outside_evidence_run_is_unavailable_without_reading_outside(tmp_path: Path) -> None:
+    with TemporaryDirectory(dir=tmp_path.parent) as outside:
+        result = build_index(tmp_path, outside)
+    assert result["evidence_library"]["status"] == "unavailable"
+    assert result["evidence_library"]["packs"][2]["status"] == "unavailable"
+
+
 def test_cli_does_not_inventory_sensitive_files(tmp_path: Path, capsys) -> None:
     (tmp_path / ".env").write_text("OPENAI_API_KEY=must-not-appear\n", encoding="utf-8")
     (tmp_path / "auth.json").write_text('{"token":"must-not-appear"}\n', encoding="utf-8")
@@ -147,8 +246,10 @@ def test_bilibili_manifest_is_indexed_as_observation_shape(tmp_path: Path) -> No
                     "sample_id": "cv-one",
                     "qualification_status": "qualified_viral",
                     "card_ref": "cards/cv-one.json",
-                    "snapshot_ref": "sources/cv-one.clean.md#sha256=abc",
-                    "performance_evidence_ref": "metrics/cv-one.api.json",
+                    "snapshot_ref": "sources/cv-one.clean.md#sha256="
+                    + hashlib.sha256(b"full text\n").hexdigest(),
+                    "performance_evidence_ref": "metrics/cv-one.api.json#sha256="
+                    + hashlib.sha256(b"{}\n").hexdigest(),
                 }
             ],
         },
@@ -177,14 +278,14 @@ def test_index_reports_research_package_layer(tmp_path: Path) -> None:
     sample = {
         "sample_id": "sample-a",
         "qualification_status": "qualified_viral",
-        "clean_ref": "clean/a.md#sha256=" + "a" * 64,
-        "metadata_ref": "metadata/a.json#sha256=" + "b" * 64,
+        "clean_ref": "clean/a.md#sha256=" + hashlib.sha256(b"# bounded sample\n").hexdigest(),
+        "metadata_ref": "metadata/a.json#sha256=" + hashlib.sha256(b"{}\n").hexdigest(),
     }
     pending = {
         "sample_id": "sample-p",
         "qualification_status": "observed_pending",
-        "clean_ref": "clean/missing.md#sha256=" + "c" * 64,
-        "metadata_ref": "metadata/missing.json#sha256=" + "d" * 64,
+        "clean_ref": "clean/missing.md",
+        "metadata_ref": "metadata/missing.json",
     }
     package.mkdir(parents=True)
     _write_json(
@@ -196,7 +297,8 @@ def test_index_reports_research_package_layer(tmp_path: Path) -> None:
             "created_at": "2026-08-25T10:00:00+08:00",
             "source_lanes": ["wechat_qualified"],
             "samples": [sample, pending],
-            "exclusions_ref": "package/exclusions.jsonl",
+            "exclusions_ref": "package/exclusions.jsonl#sha256="
+            + hashlib.sha256(b"").hexdigest(),
             "errors": [],
         },
     )
@@ -205,6 +307,18 @@ def test_index_reports_research_package_layer(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     (package / "exclusions.jsonl").write_text("", encoding="utf-8")
+    manifest_digest = hashlib.sha256((package / "manifest.json").read_bytes()).hexdigest()
+    samples_digest = hashlib.sha256((package / "samples.jsonl").read_bytes()).hexdigest()
+    exclusions_digest = hashlib.sha256((package / "exclusions.jsonl").read_bytes()).hexdigest()
+    _write_json(
+        package / "integrity.json",
+        {
+            "schema_version": "viral-research-package-integrity-v1",
+            "manifest_sha256": manifest_digest,
+            "samples_sha256": samples_digest,
+            "exclusions_sha256": exclusions_digest,
+        },
+    )
     _write_json(
         tmp_path / run / "review" / "viral-distill-review.json",
         {
@@ -226,6 +340,43 @@ def test_index_reports_research_package_layer(tmp_path: Path) -> None:
     assert package_inventory["blocked_count"] == 0
     assert package_inventory["distillation_report"]["present"] is True
     assert package_inventory["review_status"] == "promising"
+
+
+def test_package_inventory_rejects_tampered_core_file(tmp_path: Path) -> None:
+    run = Path("runs/test-run/viral-research")
+    package = tmp_path / run / "package"
+    package.mkdir(parents=True)
+    (package / "manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "viral-research-package-v1",
+                "run_id": "run-test",
+                "status": "research_only",
+                "created_at": "2026-08-25T10:00:00+08:00",
+                "source_lanes": ["wechat_qualified"],
+                "samples": [],
+                "exclusions_ref": "package/exclusions.jsonl#sha256="
+                + hashlib.sha256(b"").hexdigest(),
+                "errors": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (package / "samples.jsonl").write_text("", encoding="utf-8")
+    (package / "exclusions.jsonl").write_text("", encoding="utf-8")
+    _write_json(
+        package / "integrity.json",
+        {
+            "schema_version": "viral-research-package-integrity-v1",
+            "manifest_sha256": "0" * 64,
+            "samples_sha256": hashlib.sha256(b"").hexdigest(),
+            "exclusions_sha256": hashlib.sha256(b"").hexdigest(),
+        },
+    )
+
+    inventory = build_index(tmp_path, run)["evidence_library"]["packs"][2]
+    assert inventory["status"] == "unavailable"
+    assert inventory["parse_errors"][-1]["error"] == "package_integrity_mismatch"
 
 
 def test_package_inventory_does_not_read_raw_or_sensitive_paths(tmp_path: Path) -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 from pathlib import Path
 
@@ -201,13 +202,39 @@ def test_valid_sanitized_evidence_writes_new_revision_and_keeps_pending_package(
     assert json.loads((package_root / "manifest.json").read_text())["samples"][0]["qualification_status"] == "observed_pending"
 
 
+def test_output_revision_must_be_inside_package_revisions(tmp_path: Path):
+    package_root, sample_id = _build_package(tmp_path)
+    evidence = _write_evidence(tmp_path)
+    with pytest.raises(ViralResearchCardError, match="path_escape"):
+        attach_client_evidence(
+            package_root=package_root,
+            sample_id=sample_id,
+            evidence_file=evidence,
+            output_revision=tmp_path / "outside-revision",
+        )
+
+
+def test_attach_refuses_tampered_package(tmp_path: Path):
+    package_root, sample_id = _build_package(tmp_path)
+    integrity = package_root / "integrity.json"
+    integrity.unlink()
+    evidence = _write_evidence(tmp_path)
+    with pytest.raises(ViralResearchCardError, match="package_integrity"):
+        attach_client_evidence(
+            package_root=package_root,
+            sample_id=sample_id,
+            evidence_file=evidence,
+            output_revision=package_root / "revisions" / "tampered-package",
+        )
+
+
 def test_missing_confirmer_is_rejected_and_revision_is_not_created(tmp_path: Path):
     package_root, sample_id = _build_package(tmp_path)
     evidence = _write_evidence(tmp_path)
     data = json.loads(evidence.read_text())
     data.pop("confirmer")
     evidence.write_text(json.dumps(data), encoding="utf-8")
-    revision = tmp_path / "revision"
+    revision = tmp_path / "viral-research" / "package" / "revisions" / "missing-confirmer"
     try:
         attach_client_evidence(package_root=package_root, sample_id=sample_id, evidence_file=evidence, output_revision=revision)
     except ViralResearchCardError as error:
@@ -228,7 +255,7 @@ def test_missing_timestamp_is_rejected(tmp_path: Path):
             package_root=package_root,
             sample_id=sample_id,
             evidence_file=evidence,
-            output_revision=tmp_path / "revision",
+            output_revision=tmp_path / "viral-research" / "package" / "revisions" / "missing-timestamp",
         )
     except ViralResearchCardError as error:
         assert "client_evidence_observed_at_missing" in str(error)
@@ -244,7 +271,7 @@ def test_non_hex_sha256_is_rejected(tmp_path: Path):
             package_root=package_root,
             sample_id=sample_id,
             evidence_file=evidence,
-            output_revision=tmp_path / "revision",
+            output_revision=tmp_path / "viral-research" / "package" / "revisions" / "bad-sha",
         )
     except ViralResearchCardError as error:
         assert "client_evidence_sha256_missing" in str(error)
@@ -260,7 +287,7 @@ def test_unsanitized_evidence_is_rejected(tmp_path: Path):
             package_root=package_root,
             sample_id=sample_id,
             evidence_file=evidence,
-            output_revision=tmp_path / "revision",
+            output_revision=tmp_path / "viral-research" / "package" / "revisions" / "unsanitized",
         )
     except ViralResearchCardError as error:
         assert "client_evidence_not_sanitized" in str(error)
@@ -276,7 +303,7 @@ def test_evidence_ref_outside_run_root_is_rejected(tmp_path: Path):
             package_root=package_root,
             sample_id=sample_id,
             evidence_file=evidence,
-            output_revision=tmp_path / "revision",
+            output_revision=tmp_path / "viral-research" / "package" / "revisions" / "authority",
         )
     except ViralResearchCardError as error:
         assert "path_escape" in str(error)
@@ -292,12 +319,27 @@ def test_attachment_cannot_set_qualification_status(tmp_path: Path):
             package_root=package_root,
             sample_id=sample_id,
             evidence_file=evidence,
-            output_revision=tmp_path / "revision",
+            output_revision=tmp_path / "viral-research" / "package" / "revisions" / "metadata-marker",
         )
     except ViralResearchCardError as error:
         assert "qualification_status_forbidden" in str(error)
     else:
         raise AssertionError("expected forbidden authority field")
+
+
+def test_nested_authority_fields_are_rejected(tmp_path: Path):
+    package_root, sample_id = _build_package(tmp_path)
+    evidence = _write_evidence(
+        tmp_path,
+        authority={"qualification_status": "qualified_viral"},
+    )
+    with pytest.raises(ViralResearchCardError, match="authority_field_forbidden"):
+        attach_client_evidence(
+            package_root=package_root,
+            sample_id=sample_id,
+            evidence_file=evidence,
+            output_revision=package_root / "revisions" / "nested-authority",
+        )
 
 
 def test_credential_marker_is_rejected(tmp_path: Path):
@@ -308,7 +350,7 @@ def test_credential_marker_is_rejected(tmp_path: Path):
             package_root=package_root,
             sample_id=sample_id,
             evidence_file=evidence,
-            output_revision=tmp_path / "revision",
+            output_revision=package_root / "revisions" / "credential-marker",
         )
     except ViralResearchCardError as error:
         assert "credential_marker" in str(error)
@@ -316,10 +358,63 @@ def test_credential_marker_is_rejected(tmp_path: Path):
         raise AssertionError("expected credential marker rejection")
 
 
+def test_credential_marker_in_evidence_file_is_rejected(tmp_path: Path):
+    package_root, sample_id = _build_package(tmp_path)
+    evidence = _write_evidence(tmp_path)
+    display = tmp_path / "client-display.txt"
+    display.write_text("views=1000 cookie=should-not-enter", encoding="utf-8")
+    digest = hashlib.sha256(display.read_bytes()).hexdigest()
+    data = json.loads(evidence.read_text(encoding="utf-8"))
+    data["evidence_ref"] = f"client-display.txt#sha256={digest}"
+    data["sha256"] = digest
+    data["metrics"][0]["evidence_ref"] = data["evidence_ref"]
+    evidence.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(ViralResearchCardError, match="credential_marker"):
+        attach_client_evidence(
+            package_root=package_root,
+            sample_id=sample_id,
+            evidence_file=evidence,
+            output_revision=package_root / "revisions" / "file-marker",
+        )
+
+
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        ('{"token":"SECRET"}', "credential_marker"),
+        (base64.b64encode(b'{"token":"SECRET"}').decode("ascii"), "evidence_format_unsupported"),
+    ],
+)
+def test_encoded_evidence_content_is_not_allowed(tmp_path: Path, content: str, expected: str):
+    package_root, sample_id = _build_package(tmp_path)
+    evidence = _write_evidence(tmp_path)
+    display = tmp_path / "client-display.txt"
+    if expected == "credential_marker":
+        display.write_bytes(content.encode("utf-16"))
+    else:
+        display.write_text(content, encoding="utf-8")
+    digest = hashlib.sha256(display.read_bytes()).hexdigest()
+    data = json.loads(evidence.read_text(encoding="utf-8"))
+    data["evidence_ref"] = f"client-display.txt#sha256={digest}"
+    data["sha256"] = digest
+    data["metrics"][0]["evidence_ref"] = data["evidence_ref"]
+    evidence.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(ViralResearchCardError, match=expected):
+        attach_client_evidence(
+            package_root=package_root,
+            sample_id=sample_id,
+            evidence_file=evidence,
+            output_revision=package_root / "revisions" / "encoded-marker",
+        )
+
+
 def test_existing_revision_is_not_overwritten(tmp_path: Path):
     package_root, sample_id = _build_package(tmp_path)
     evidence = _write_evidence(tmp_path)
-    revision = tmp_path / "revision"
+    revision = tmp_path / "viral-research" / "package" / "revisions" / "existing"
+    revision.parent.mkdir(parents=True)
     revision.mkdir()
     (revision / "sentinel").write_text("keep", encoding="utf-8")
     try:

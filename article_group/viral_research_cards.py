@@ -17,6 +17,11 @@ from article_group.viral_research_contract import (
     ViralResearchContractError,
     validate_local_ref,
 )
+from article_group.viral_research_package import validate_package_root
+from article_group.viral_research_evidence import (
+    ViralResearchEvidenceError,
+    scan_evidence_file,
+)
 
 CARD_SCHEMA_VERSION = "viral-research-case-card-v1"
 _SAMPLE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -202,6 +207,16 @@ _CREDENTIAL_MARKERS = (
     "private_key",
 )
 _HEX64 = re.compile(r"^[0-9a-fA-F]{64}$")
+_AUTHORITY_KEYS = frozenset(
+    {
+        "qualification_status",
+        "proposed_qualification_status",
+        "derived_qualification_status",
+        "automatic_publication_authority",
+        "promotion_status",
+        "verification_state",
+    }
+)
 
 
 def _attachment_error(code: str, detail: str = "") -> ViralResearchCardError:
@@ -212,6 +227,10 @@ def _scan_attachment_value(value: Any, path: str = "$") -> None:
     if isinstance(value, Mapping):
         for key, child in value.items():
             key_text = str(key).lower().replace("-", "_")
+            if path == "$" and key_text == "qualification_status":
+                raise _attachment_error("qualification_status_forbidden", f"{path}.{key}")
+            if key_text in _AUTHORITY_KEYS:
+                raise _attachment_error("authority_field_forbidden", f"{path}.{key}")
             if any(marker in key_text for marker in _CREDENTIAL_MARKERS):
                 raise _attachment_error("credential_marker", f"{path}.{key}")
             _scan_attachment_value(child, f"{path}.{key}")
@@ -225,6 +244,13 @@ def _scan_attachment_value(value: Any, path: str = "$") -> None:
             for marker in ("bearer ", "cookie=", "set-cookie:", "session=")
         ):
             raise _attachment_error("credential_marker", path)
+
+
+def _scan_evidence_file(path: Path, *, expected_digest: str) -> None:
+    try:
+        scan_evidence_file(path, expected_digest=expected_digest)
+    except ViralResearchEvidenceError as exc:
+        raise _attachment_error(exc.code, str(exc).split(":", 1)[1] if ":" in str(exc) else "") from exc
 
 
 def _attachment_timestamp(value: Any, code: str) -> str:
@@ -340,6 +366,7 @@ def _validate_attachment(
         raise _attachment_error(str(exc).split(":", 1)[0], "evidence_ref") from exc
     if evidence_digest != digest.lower():
         raise _attachment_error("client_evidence_sha256_mismatch")
+    _scan_evidence_file(evidence_path, expected_digest=evidence_digest)
     return dict(evidence), evidence_path.relative_to(run_root).as_posix()
 
 
@@ -356,11 +383,12 @@ def attach_client_evidence(
     if revision.exists():
         raise _attachment_error("artifact_exists")
     try:
-        manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise _attachment_error("package_incomplete") from exc
-    if not isinstance(manifest, Mapping):
-        raise _attachment_error("package_incomplete")
+        manifest = validate_package_root(package)
+    except ViralResearchContractError as exc:
+        raise _attachment_error("package_integrity_failed", str(exc).split(":", 1)[0]) from exc
+    revisions_root = (package / "revisions").resolve()
+    if revision.parent != revisions_root:
+        raise _attachment_error("path_escape", "output_revision")
     run_root = package.parent.parent
     evidence_path = Path(evidence_file).expanduser().resolve(strict=False)
     if run_root not in evidence_path.parents or not evidence_path.is_file():

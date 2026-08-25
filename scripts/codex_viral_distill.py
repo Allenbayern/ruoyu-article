@@ -40,6 +40,11 @@ def _parser() -> argparse.ArgumentParser:
     prepare.add_argument("--output", type=Path, required=True)
     finalize = subparsers.add_parser("finalize")
     finalize.add_argument("--prepared", type=Path, required=True)
+    finalize.add_argument("--package-root", type=Path, required=True)
+    finalize.add_argument("--platform", required=True)
+    finalize.add_argument("--medium", required=True)
+    finalize.add_argument("--content-domain", required=True)
+    finalize.add_argument("--narrative-purpose", required=True)
     finalize.add_argument("--cards-root", type=Path, required=True)
     finalize.add_argument("--output", type=Path, required=True)
     return parser
@@ -66,7 +71,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             }
         else:
             result = finalize_distillation(
-                args.prepared, cards_root=args.cards_root, output_path=args.output
+                args.prepared,
+                package_root=args.package_root,
+                criteria=SelectionCriteria(
+                    platform=args.platform,
+                    medium=args.medium,
+                    content_domain=args.content_domain,
+                    narrative_purpose=args.narrative_purpose,
+                ),
+                cards_root=args.cards_root,
+                output_path=args.output,
             )
             summary = {
                 "status": "finalized",

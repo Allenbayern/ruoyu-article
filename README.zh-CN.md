@@ -97,45 +97,53 @@ uv run python -m article_group.tgmeng_radar_cli \
 爆款研究库按“抓爬证据 → package builder → inventory → prepare → 显式 Codex pass → finalize”的顺序运行。微信长文（`wechat` / `wechat_long_form`）是主通道；新榜/热榜、B 站、头条等其它来源统一按 `observation-only` 处理，不得据标题、排名或不完整证据认定为 `qualified_viral`，也不得计入正向技法频次。
 
 ```bash
-RUN_ROOT=runs/<run-id>/viral-research
+RUN_ROOT=runs/<run-id>
 
 # 1) package builder：把本地抓爬证据封装成不可覆盖的 package
 uv run python scripts/codex_viral_research_package.py \
   --capture-manifest "$RUN_ROOT/capture.json" \
   --run-root "$RUN_ROOT" \
-  --output-root "$RUN_ROOT/package"
+  --output-root "$RUN_ROOT/viral-research/package"
 
 # 2) inventory：盘点旧库、各证据通道和 package 状态
 uv run python scripts/codex_viral_library_index.py \
   --project-root . \
-  --evidence-run "$RUN_ROOT" \
-  --compact > "$RUN_ROOT/inventory.json"
+  --evidence-run "$RUN_ROOT/viral-research" \
+  --compact > "$RUN_ROOT/viral-research/inventory.json"
 
 # 3) prepare：按微信影视长文形态选择可蒸馏样本
 uv run python scripts/codex_viral_distill.py prepare \
-  --package-root "$RUN_ROOT/package" \
+  --package-root "$RUN_ROOT/viral-research/package" \
   --platform wechat \
   --medium long_form \
   --content-domain film \
   --narrative-purpose review_or_analysis \
-  --output "$RUN_ROOT/distillation/prepare.json"
+  --output "$RUN_ROOT/viral-research/distillation/prepare.json"
 
 # 4) 显式 Codex pass：由人工明确触发，只生成 cards/*.json
+# controller 必须先把 RUN_ROOT 作为本批次的隔离工作区；不要把项目根作为 -C 目录。
 codex exec \
   --sandbox workspace-write \
   --ephemeral \
   -m gpt-5.6-luna \
-  -C . \
-  "读取 ${RUN_ROOT}/distillation/prepare.json，严格遵循其中的 semantic_pass 和带 SHA-256 的证据引用，为每个 selected sample 按 schemas/viral-research-case-card.json 生成 ${RUN_ROOT}/cards/<sample_id>.json；只做结构观察和负向模式记录，不读取其它样本，不改变 qualification_status，不写入 Vault，不发布或推进状态。"
+  --skip-git-repo-check \
+  -C "$RUN_ROOT" \
+  "读取 ${RUN_ROOT}/viral-research/distillation/prepare.json，严格遵循其中的 semantic_pass 和带 SHA-256 的证据引用，为每个 selected sample 按 schemas/viral-research-case-card.json 生成 ${RUN_ROOT}/viral-research/cards/<sample_id>.json，并生成 cards/manifest.json（记录 prepare/package 两个摘要、criteria、selected_sample_ids 及每张 card 的 SHA-256）；只做结构观察和负向模式记录，不读取其它样本，不改变 qualification_status，不写入 Vault，不发布或推进状态。"
 
 # 5) finalize：校验 Codex 生成的 case cards，落 provisional review packet
 uv run python scripts/codex_viral_distill.py finalize \
-  --prepared "$RUN_ROOT/distillation/prepare.json" \
-  --cards-root "$RUN_ROOT/cards" \
-  --output "$RUN_ROOT/review/viral-distill-review.json"
+  --prepared "$RUN_ROOT/viral-research/distillation/prepare.json" \
+  --package-root "$RUN_ROOT/viral-research/package" \
+  --platform wechat \
+  --medium long_form \
+  --content-domain film \
+  --narrative-purpose review_or_analysis \
+  --cards-root "$RUN_ROOT/viral-research/cards" \
+  --output "$RUN_ROOT/viral-research/review/viral-distill-review.json"
 ```
 
 蒸馏报告和候选原则必须保持 `promotion_status: provisional_only`，且 `automatic_publication_authority: false`。这条链路不自动写入 Vault、不自动发布、不自动推进任何工作流状态；Codex 输出只是证据，采纳、晋级和发布仍由 controller/人工决定。
+`--sandbox workspace-write` 只约束 Codex 进程的写入范围；正式 controller 仍应在容器或操作系统层把可读范围收敛到本批次 `RUN_ROOT`，并把独立的凭据、Vault 和项目外状态目录设为不可见。
 
 ## 契约校验器
 

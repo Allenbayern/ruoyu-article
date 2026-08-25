@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any, Mapping
 from urllib.parse import urlsplit, urlunsplit
 
+from article_group.case_contract import CaseContractError, validate_case_card
+
 try:
     from jsonschema import Draft202012Validator, FormatChecker
 except ImportError:  # pragma: no cover
@@ -84,6 +86,21 @@ def normalize_sample_id(
     return "sample-" + hashlib.sha256(encoded).hexdigest()[:32]
 
 
+def evidence_cluster_id(sample: Mapping[str, Any]) -> str:
+    """Derive a conservative cluster key from the three captured evidence digests."""
+    digests: list[str] = []
+    for field in ("raw_ref", "clean_ref", "metadata_ref"):
+        reference = sample.get(field)
+        if not isinstance(reference, str):
+            return ""
+        match = _SHA256_RE.fullmatch(reference.strip())
+        if match is None:
+            return ""
+        digests.append(match.group("digest").lower())
+    payload = "|".join(digests).encode("ascii")
+    return "cluster-" + hashlib.sha256(payload).hexdigest()[:32]
+
+
 def validate_local_ref(reference: str, *, root: Path) -> tuple[Path, str]:
     """Resolve and hash-check an in-root relative snapshot reference."""
     if not isinstance(reference, str) or "\\0" in reference:
@@ -130,6 +147,54 @@ def _revision_marker(sample: Mapping[str, Any]) -> Any:
     return None
 
 
+def _platform_matches_case_contract(
+    platform: Any, card: Mapping[str, Any]
+) -> bool:
+    rule = card.get("threshold_or_rank_rule")
+    if not isinstance(rule, Mapping):
+        return False
+    if not isinstance(platform, str) or not isinstance(rule.get("platform"), str):
+        return False
+    return platform.strip().casefold() == rule["platform"].strip().casefold()
+
+
+def _validate_qualification_evidence(
+    sample: Mapping[str, Any], index: int, *, root: Path
+) -> None:
+    if sample.get("qualification_status") != "qualified_viral":
+        return
+    evidence = sample.get("qualification_evidence")
+    if not isinstance(evidence, Mapping):
+        raise _error("qualification_evidence_missing", str(index))
+    if evidence.get("sample_id") != sample.get("sample_id"):
+        raise _error("qualification_evidence_sample_id_mismatch", str(index))
+    if evidence.get("account_id") != sample.get("account_id"):
+        raise _error("qualification_evidence_account_id_mismatch", str(index))
+    if evidence.get("snapshot_ref") != sample.get("clean_ref"):
+        raise _error("qualification_evidence_snapshot_ref_mismatch", str(index))
+    if evidence.get("performance_evidence_ref") != sample.get("metadata_ref"):
+        raise _error("qualification_evidence_performance_ref_mismatch", str(index))
+    if not _platform_matches_case_contract(sample.get("platform"), evidence):
+        raise _error("qualification_evidence_platform_mismatch", str(index))
+    client_evidence = evidence.get("client_evidence")
+    if not isinstance(client_evidence, Mapping):
+        raise _error("qualification_evidence_client_evidence_missing", str(index))
+    try:
+        _, evidence_digest = validate_local_ref(
+            str(client_evidence.get("evidence_ref")), root=root
+        )
+    except ViralResearchContractError as exc:
+        raise _error("qualification_evidence_ref_invalid", f"{index}:{exc}") from exc
+    if client_evidence.get("sha256") != evidence_digest:
+        raise _error("qualification_evidence_sha256_mismatch", str(index))
+    try:
+        status = validate_case_card(dict(evidence))
+    except CaseContractError as exc:
+        raise _error("qualification_evidence_invalid", f"{index}:{exc}") from exc
+    if status != "qualified_viral":
+        raise _error("qualification_evidence_not_qualified", str(index))
+
+
 def assess_sample_state(sample: Mapping[str, Any]) -> str:
     """Return the conservative evidence state for one sample."""
     qualification = sample.get("qualification_status")
@@ -173,6 +238,10 @@ def validate_package_manifest(manifest: Mapping[str, Any], *, root: Path) -> str
     if manifest.get("schema_version") != PACKAGE_SCHEMA_VERSION:
         raise _error("schema_error", "schema_version")
     _validate_timestamp(manifest["created_at"], "created_at")
+    try:
+        validate_local_ref(manifest["exclusions_ref"], root=Path(root))
+    except ViralResearchContractError as exc:
+        raise _error("exclusions_ref_invalid", str(exc)) from exc
     samples = manifest["samples"]
     seen: dict[str, set[str]] = {}
     for index, sample in enumerate(samples):
@@ -197,7 +266,11 @@ def validate_package_manifest(manifest: Mapping[str, Any], *, root: Path) -> str
         seen[identity].add(marker_key)
         for field in ("raw_ref", "clean_ref", "metadata_ref"):
             validate_local_ref(sample[field], root=Path(root))
-    if manifest.get("status") == "blocked":
+        expected_cluster = evidence_cluster_id(sample)
+        if sample.get("evidence_cluster") != expected_cluster:
+            raise _error("evidence_cluster_mismatch", str(index))
+        _validate_qualification_evidence(sample, index, root=Path(root))
+    if manifest.get("errors"):
         return "blocked"
     states = [assess_sample_state(sample) for sample in samples]
     if any(state == "blocked" for state in states):

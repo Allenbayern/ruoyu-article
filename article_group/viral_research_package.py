@@ -7,8 +7,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from article_group.case_contract import CaseContractError, validate_case_card
+from article_group.viral_research_evidence import (
+    ViralResearchEvidenceError,
+    scan_evidence_file,
+)
 from article_group.viral_research_contract import (
     ViralResearchContractError,
+    _platform_matches_case_contract,
+    evidence_cluster_id,
     normalize_sample_id,
     validate_local_ref,
     validate_package_manifest,
@@ -17,6 +24,7 @@ from article_group.viral_research_contract import (
 PACKAGE_MANIFEST_NAME = "manifest.json"
 SAMPLES_NAME = "samples.jsonl"
 EXCLUSIONS_NAME = "exclusions.jsonl"
+INTEGRITY_NAME = "integrity.json"
 _FILM_DOMAINS = frozenset({"film", "film_tv", "film_and_tv", "cinema", "television"})
 
 
@@ -126,10 +134,102 @@ def _revision_marker(sample: Mapping[str, Any]) -> str | None:
     return None
 
 
+def _qualified_case_contract(
+    sample: Mapping[str, Any],
+    sample_id: str,
+    refs: Mapping[str, str],
+    *,
+    root: Path,
+) -> dict[str, Any] | None:
+    """Validate and bind capture qualification evidence to one normalized sample."""
+    card = sample.get("case_contract_card")
+    if not isinstance(card, Mapping):
+        return None
+    if card.get("sample_id") != sample_id or card.get("account_id") != sample.get("account_id"):
+        return None
+    for field, expected_field in (
+        ("snapshot_ref", "clean_ref"),
+        ("performance_evidence_ref", "metadata_ref"),
+    ):
+        try:
+            normalized = _resolve_capture_ref(
+                card.get(field), root=root, field=f"case_contract_{field}"
+            )
+        except ViralResearchPackageError:
+            return None
+        if normalized != refs[expected_field]:
+            return None
+    if not _platform_matches_case_contract(sample.get("platform"), card):
+        return None
+    try:
+        if validate_case_card(dict(card)) != "qualified_viral":
+            return None
+    except CaseContractError:
+        return None
+    client_evidence = card.get("client_evidence")
+    if not isinstance(client_evidence, Mapping):
+        return None
+    try:
+        evidence_path, evidence_digest = validate_local_ref(
+            str(client_evidence.get("evidence_ref")), root=root
+        )
+    except ViralResearchContractError:
+        return None
+    if client_evidence.get("sha256") != evidence_digest:
+        return None
+    try:
+        scan_evidence_file(evidence_path, expected_digest=evidence_digest)
+    except ViralResearchEvidenceError:
+        return None
+    metrics = card.get("metrics")
+    if not isinstance(metrics, list):
+        return None
+    bound_metrics: list[dict[str, Any]] = []
+    for metric in metrics:
+        if not isinstance(metric, Mapping):
+            return None
+        try:
+            metric_reference = _resolve_capture_ref(
+                metric.get("evidence_ref"),
+                root=root,
+                field="case_contract_metric_evidence",
+            )
+        except ViralResearchPackageError:
+            return None
+        metric_path = (root / metric_reference.split("#sha256=", 1)[0]).resolve()
+        metric_digest = hashlib.sha256(metric_path.read_bytes()).hexdigest()
+        try:
+            scan_evidence_file(metric_path, expected_digest=metric_digest)
+        except ViralResearchEvidenceError:
+            return None
+        bound_metric = dict(metric)
+        bound_metric["evidence_ref"] = (
+            f"{metric_path.relative_to(root).as_posix()}#sha256={metric_digest}"
+        )
+        bound_metrics.append(bound_metric)
+    bound = dict(card)
+    bound["sample_id"] = sample_id
+    bound["account_id"] = str(sample["account_id"]).strip()
+    bound["snapshot_ref"] = refs["clean_ref"]
+    bound["performance_evidence_ref"] = refs["metadata_ref"]
+    bound_evidence = dict(client_evidence)
+    bound_evidence["evidence_ref"] = (
+        f"{evidence_path.relative_to(root).as_posix()}#sha256={evidence_digest}"
+    )
+    bound_evidence["sha256"] = evidence_digest
+    bound["client_evidence"] = bound_evidence
+    bound["metrics"] = bound_metrics
+    return bound
+
+
 def _jsonl(path: Path, rows: list[Mapping[str, Any]]) -> None:
     with path.open("w", encoding="utf-8") as handle:
         for row in rows:
             handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def _sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _source_lanes(capture: Mapping[str, Any], samples: list[Mapping[str, Any]]) -> list[str]:
@@ -152,6 +252,8 @@ def build_package(
         raise _error("path_escape", "capture_manifest")
     capture = _load_object(capture_path)
     output = Path(output_root).expanduser().resolve()
+    if root not in output.parents:
+        raise _error("path_escape", "output_root")
     if output.exists():
         raise _error("artifact_exists")
     raw_samples = capture.get("samples")
@@ -228,7 +330,18 @@ def build_package(
         qualification = raw.get("qualification_status")
         if qualification not in {"qualified_viral", "observed_pending", "research_only", "blocked"}:
             qualification = "research_only"
-        if lane != "wechat_qualified" and qualification == "qualified_viral":
+        qualification_evidence: dict[str, Any] | None = None
+        if qualification == "qualified_viral":
+            qualification_evidence = _qualified_case_contract(
+                raw, sample_id, refs, root=root
+            )
+            if qualification_evidence is None:
+                qualification = "observed_pending" if capture_status == "complete" else "research_only"
+        platform_lane = _lane({"platform": raw.get("platform")})
+        if (
+            qualification == "qualified_viral"
+            and (lane != "wechat_qualified" or platform_lane != "wechat_qualified")
+        ):
             qualification = "observed_pending"
         if capture_status != "complete" and qualification == "qualified_viral":
             qualification = "research_only"
@@ -241,9 +354,12 @@ def build_package(
             "published_at": _text(raw.get("published_at"), "published_at_missing"),
             "capture_status": capture_status,
             **refs,
+            "evidence_cluster": evidence_cluster_id(refs),
             "shape": shape,
             "qualification_status": qualification,
         }
+        if qualification == "qualified_viral" and qualification_evidence is not None:
+            normalized["qualification_evidence"] = qualification_evidence
         for key in ("revision", "revision_id", "capture_revision"):
             if key in raw and raw[key] not in (None, ""):
                 normalized[key] = raw[key]
@@ -258,9 +374,16 @@ def build_package(
         "created_at": created_at,
         "source_lanes": _source_lanes(capture, raw_samples),
         "samples": samples,
-        "exclusions_ref": "package/exclusions.jsonl",
+        "exclusions_ref": "",
         "errors": sorted(errors),
     }
+    _jsonl(output / SAMPLES_NAME, samples)
+    _jsonl(output / EXCLUSIONS_NAME, exclusions)
+    output_relative = output.relative_to(root).as_posix()
+    exclusions_digest = _sha256_file(output / EXCLUSIONS_NAME)
+    manifest["exclusions_ref"] = (
+        f"{output_relative}/{EXCLUSIONS_NAME}#sha256={exclusions_digest}"
+    )
     if not errors:
         try:
             status = validate_package_manifest(manifest, root=root)
@@ -270,10 +393,18 @@ def build_package(
             status = "blocked"
         else:
             manifest["status"] = status
-    _jsonl(output / SAMPLES_NAME, samples)
-    _jsonl(output / EXCLUSIONS_NAME, exclusions)
     (output / PACKAGE_MANIFEST_NAME).write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    integrity = {
+        "schema_version": "viral-research-package-integrity-v1",
+        "manifest_sha256": _sha256_file(output / PACKAGE_MANIFEST_NAME),
+        "samples_sha256": _sha256_file(output / SAMPLES_NAME),
+        "exclusions_sha256": _sha256_file(output / EXCLUSIONS_NAME),
+    }
+    (output / INTEGRITY_NAME).write_text(
+        json.dumps(integrity, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     return manifest
@@ -287,7 +418,8 @@ def validate_package_root(package_root: str | Path) -> dict[str, Any]:
     manifest_path = package / PACKAGE_MANIFEST_NAME
     samples_path = package / SAMPLES_NAME
     exclusions_path = package / EXCLUSIONS_NAME
-    if not all(path.is_file() for path in (manifest_path, samples_path, exclusions_path)):
+    integrity_path = package / INTEGRITY_NAME
+    if not all(path.is_file() for path in (manifest_path, samples_path, exclusions_path, integrity_path)):
         raise _error("package_incomplete")
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -295,11 +427,41 @@ def validate_package_root(package_root: str | Path) -> dict[str, Any]:
         raise _error("package_incomplete") from exc
     if not isinstance(manifest, dict):
         raise _error("package_incomplete")
+    try:
+        integrity = json.loads(integrity_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise _error("package_integrity_missing") from exc
+    if not isinstance(integrity, dict) or integrity.get("schema_version") != "viral-research-package-integrity-v1":
+        raise _error("package_integrity_invalid")
+    expected_digests = {
+        "manifest_sha256": _sha256_file(manifest_path),
+        "samples_sha256": _sha256_file(samples_path),
+        "exclusions_sha256": _sha256_file(exclusions_path),
+    }
+    if any(integrity.get(field) != digest for field, digest in expected_digests.items()):
+        raise _error("package_integrity_mismatch")
     run_root = package.parent.parent
     try:
-        validate_package_manifest(manifest, root=run_root)
+        status = validate_package_manifest(manifest, root=run_root)
     except ViralResearchContractError as exc:
         raise _error("contract_failed", str(exc).split(":", 1)[0]) from exc
+    if manifest.get("status") != status:
+        raise _error("package_status_mismatch")
+    try:
+        exclusions_target, _ = validate_local_ref(
+            manifest["exclusions_ref"], root=run_root
+        )
+    except ViralResearchContractError as exc:
+        raise _error("contract_failed", "exclusions_ref_invalid") from exc
+    if exclusions_target != exclusions_path.resolve():
+        raise _error("exclusions_ref_mismatch")
+    if status == "blocked":
+        # A capture that produced no usable sample keeps the CLI's historical
+        # incomplete-package code; a blocked package with rows must stop
+        # downstream preparation with the explicit blocked code.
+        if not manifest.get("samples") and manifest.get("errors"):
+            raise _error("package_incomplete")
+        raise _error("package_blocked")
     try:
         sample_rows = [
             json.loads(line)

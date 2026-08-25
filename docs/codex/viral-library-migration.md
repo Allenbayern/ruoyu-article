@@ -89,7 +89,7 @@ Codex 的调用顺序由 `.agents/skills/ruoyu-viral-library/SKILL.md` 固定：
 
 ### 2. Immutable package
 
-- package 固定落在 `runs/<run-id>/viral-research/package/`，至少包含 `manifest.json`、`samples.jsonl` 和 `exclusions.jsonl`。package 只登记引用、身份、状态和排除原因，不把正文复制进新的 package。
+- package 固定落在 `runs/<run-id>/viral-research/package/`，至少包含 `manifest.json`、`samples.jsonl`、`exclusions.jsonl` 和 `integrity.json`。`exclusions_ref` 必须是指向包内排除清单的带 SHA-256 引用；`integrity.json` 封存三份核心文件的摘要。package 只登记引用、身份、状态和排除原因，不把正文复制进新的 package。
 - package 建立后不得覆盖；缺失/部分抓取、非影视内容、重复身份、路径错误和哈希错误进入 exclusions 或阻断状态。只有 manifest 通过校验并达到 `evidence_checked`，才可以进入 prepare；`observed_pending`、`research_only` 和 `blocked` 不得被改名为合格样本。
 - 客户端表现证据必须先脱敏再挂载：证据文件需标记 `sanitized: true`，保留可核查的 `evidence_ref#sha256=`、`original_display`、Asia/Shanghai `observed_at`、`confirmer` 和文件哈希；不得包含 token、cookie、session、authorization、密码、API key 或其他凭证值。脱敏失败即拒绝，不能把客户端原始页面、登录态或截图凭证交给 Codex。
 - 新的客户端证据写入 `revisions/<revision-id>/`，并在 `revision.json` 记录 `base_package_manifest_sha256`、样本身份和派生状态；不得回写或覆盖原 package。revision 仍是证据修订，不是自动晋级。
@@ -97,7 +97,7 @@ Codex 的调用顺序由 `.agents/skills/ruoyu-viral-library/SKILL.md` 固定：
 ### 3. Prepare allow-list
 
 - `prepare` 读取已校验的 package 和明确的 shape criteria，输出 `runs/<run-id>/viral-research/distillation/prepare.json`。它必须选择至少 `5` 个 `qualified_viral` 样本，并且来自至少 `2` 个不同账号；样本还必须形态匹配，不能用重复账号、`observed_pending` 或 `research_only` 凑数。
-- prepare 文件是唯一的语义读取清单：逐项列出 `selected_sample_ids`、`account_id`、`card_ref`、带哈希的 `snapshot_ref` 和 `performance_evidence_ref`，并声明 `semantic_pass.mode=explicit_codex_trigger_required`。allow-list 之外的文件、目录、Vault、Hermes 私有状态和未列出的外部页面不属于 pass 输入。
+- prepare 文件是唯一的语义读取清单：逐项列出 `selected_sample_ids`、`account_id`、`card_ref`、带哈希的 `snapshot_ref` 和 `performance_evidence_ref`，并绑定 package manifest/integrity 摘要，声明 `semantic_pass.mode=explicit_codex_trigger_required`。semantic pass 还必须写 `cards/manifest.json`，绑定 prepare/package 摘要和每张 card 的 SHA-256；allow-list 之外的文件、目录、Vault、Hermes 私有状态和未列出的外部页面不属于 pass 输入。
 - prepare 失败、样本数不足、账号数不足或任一引用无法解析时，不生成可供 Codex 使用的清单；不得用扩大读取范围的方式绕过门槛。
 
 ### 4. Explicit Codex pass
@@ -105,12 +105,13 @@ Codex 的调用顺序由 `.agents/skills/ruoyu-viral-library/SKILL.md` 固定：
 - prepare 不会隐式调用 Codex。必须由 controller/用户显式触发一次只读 pass，并把 prepare 的 allow-list 原样作为读取边界；Codex 只能读取列出的快照、性能证据和 card 引用，输出逐样本的语义观察卡。
 - 每张 card 必须保留 `sample_id`、`account_id`、`snapshot_ref` 和 `performance_evidence_ref`，且与 prepare 逐字匹配；不能在 pass 中改写资格、补造当前事实、把标题/摘要/热榜信号当表现证据，或把单一账号的观察推广为规则。
 - Codex pass、其日志和结果都是 evidence-only。pass 成功不等于资格晋级、规则采纳、冻结、发布、合并、部署或任何工作流状态推进。
+- controller 应把 pass 的当前目录设为本批次 `runs/<run-id>` 隔离目录，并使用 `--skip-git-repo-check`；项目根、Vault、认证目录和其它批次目录不得作为 pass 的可写工作区。`--sandbox workspace-write` 是进程级写入边界，不能替代 controller 在容器/操作系统层提供的目录可见性隔离。
 
 ### 5. Finalize review packet
 
-- `finalize` 只接受 `ready_for_distill=true` 的 prepare 文件和每个 selected sample 的可校验 card；它再次检查身份、路径/哈希引用、客户端证据和 case contract，然后写入不可覆盖的 `runs/<run-id>/viral-research/review/viral-distill-review.json`。
+- `finalize` 只接受 `ready_for_distill=true` 的 prepare 文件和每个 selected sample 的可校验 card；它再次检查身份、路径/哈希引用、客户端证据和 case contract，并在写出前校验 review-report schema，然后写入不可覆盖的 `runs/<run-id>/viral-research/review/viral-distill-review.json`。
 - 只有得到至少 `2` 个 `qualified_viral` 样本、且至少来自 `2` 个不同账号的同形态支持，候选技法才可进入 `positive_candidates`；其余内容必须留在 `excluded_observations`、`negative_patterns` 或 `coverage_gaps`，不能借频次升级。
-- review packet 必须明确写出 `promotion_status: provisional_only` 和 `automatic_publication_authority: false`。它是带路径、哈希、身份、修订和缺口的审查证据包，不是 canonical 规则、发布包或授权单。
+- review packet 必须明确写出 `promotion_status: provisional_only` 和 `automatic_publication_authority: false`。本地 `integrity.json` 和跨阶段摘要用于发现意外改写；它们不是外部不可伪造锚点，生产 controller 仍需把最终 manifest 摘要写入独立 append-only receipt。review packet 是带路径、哈希、身份、修订和缺口的审查证据包，不是 canonical 规则、发布包或授权单。
 
 ### 不自动发生的动作
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import shutil
 from pathlib import Path
 
@@ -12,6 +13,18 @@ from article_group.viral_research_package import build_package
 from article_group.viral_research_selection import SelectionCriteria
 
 FIXTURE_CAPTURE = Path(__file__).parent / "fixtures" / "viral_research" / "capture"
+
+
+def test_readme_documents_canonical_viral_research_run_root_layout():
+    readme = (Path(__file__).resolve().parents[1] / "README.zh-CN.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "RUN_ROOT=runs/<run-id>\n" in readme
+    assert "RUN_ROOT=runs/<run-id>/viral-research" not in readme
+    assert '--output-root "$RUN_ROOT/viral-research/package"' in readme
+    assert '--package-root "$RUN_ROOT/viral-research/package"' in readme
+    assert '--cards-root "$RUN_ROOT/viral-research/cards"' in readme
 
 
 def _run_root(tmp_path: Path) -> Path:
@@ -26,17 +39,20 @@ def _criteria() -> SelectionCriteria:
 
 def _card(selected: dict) -> dict:
     sample_id = selected["sample_id"]
+    evidence_ref = selected["performance_evidence_ref"]
+    evidence_digest = evidence_ref.rsplit("#sha256=", 1)[1]
     return {
-        "sample_id": sample_id, "evidence_domain": "competitive_research_evidence", "evidence_origin": "client",
+        "sample_id": sample_id, "platform": selected["platform"],
+        "evidence_domain": "competitive_research_evidence", "evidence_origin": "client",
         "account_id": selected["account_id"], "subject_category": "film",
         "snapshot_ref": selected["snapshot_ref"], "performance_evidence_ref": selected["performance_evidence_ref"],
         "metric_plan_version": "fixture-v1", "metric_plan_frozen_at": "2026-08-25T08:00:00+08:00",
-        "client_evidence": {"evidence_ref": f"evidence/{sample_id}.json", "original_display": "synthetic views",
+        "client_evidence": {"evidence_ref": evidence_ref, "original_display": "synthetic views",
                             "observed_at": "2026-08-25T10:00:00+08:00", "confirmer": "fixture-reviewer",
-                            "sha256": "3" * 64, "sanitized": True},
+                            "sha256": evidence_digest, "sanitized": True},
         "metric_plan": [{"metric": "view", "visible": True, "required": True}],
         "metrics": [{"metric": "view", "value": 200000, "status": "observed", "source": "fixture_client",
-                     "observed_at": "2026-08-25T10:00:00+08:00", "evidence_ref": f"metrics/{sample_id}.json"}],
+                     "observed_at": "2026-08-25T10:00:00+08:00", "evidence_ref": evidence_ref}],
         "threshold_or_rank_rule": {"version": "fixture-rule-v1", "frozen_at": "2026-08-25T08:00:00+08:00",
                                    "platform": "wechat", "baseline": "fixture", "window": "publication",
                                    "rule": "gte", "minimums": {"view": 100000}},
@@ -57,13 +73,48 @@ def _build_and_prepare(tmp_path: Path) -> tuple[Path, Path, Path]:
     cards_root.mkdir(parents=True)
     for selected in prepared["selected"]:
         (cards_root / selected["card_ref"]).write_text(json.dumps(_card(selected), ensure_ascii=False), encoding="utf-8")
+    (cards_root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "viral-research-card-batch-v1",
+                "prepare_sha256": hashlib.sha256(prepare_path.read_bytes()).hexdigest(),
+                "package_manifest_sha256": hashlib.sha256(
+                    (package_root / "manifest.json").read_bytes()
+                ).hexdigest(),
+                "package_integrity_sha256": hashlib.sha256(
+                    (package_root / "integrity.json").read_bytes()
+                ).hexdigest(),
+                "criteria": prepared["criteria"],
+                "selected_sample_ids": prepared["selected_sample_ids"],
+                "cards": [
+                    {
+                        "sample_id": item["sample_id"],
+                        "card_ref": item["card_ref"],
+                        "sha256": hashlib.sha256(
+                            (cards_root / item["card_ref"]).read_bytes()
+                        ).hexdigest(),
+                    }
+                    for item in prepared["selected"]
+                ],
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
     return run_root, prepare_path, cards_root
 
 
 def test_fixture_runs_package_prepare_finalize_with_provisional_boundary(tmp_path: Path):
     run_root, prepare_path, cards_root = _build_and_prepare(tmp_path)
     report_path = run_root / "viral-research" / "review" / "viral-distill-review.json"
-    report = finalize_distillation(prepare_path, cards_root=cards_root, output_path=report_path)
+    report = finalize_distillation(
+        prepare_path,
+        package_root=run_root / "viral-research" / "package",
+        criteria=_criteria(),
+        cards_root=cards_root,
+        output_path=report_path,
+    )
     assert report["promotion_status"] == "provisional_only"
     assert report["automatic_publication_authority"] is False
     assert report["coverage_gaps"] == []
@@ -122,9 +173,15 @@ def test_fewer_than_five_selected_samples_refuses_prepare(tmp_path: Path):
 
 def test_inflated_semantic_card_fails_finalize(tmp_path: Path):
     _, prepare_path, cards_root = _build_and_prepare(tmp_path)
-    card_path = next(cards_root.glob("*.json"))
+    card_path = next(path for path in cards_root.glob("*.json") if path.name != "manifest.json")
     card = json.loads(card_path.read_text())
     card["metrics"][0]["value"] = 1
     card_path.write_text(json.dumps(card), encoding="utf-8")
-    with pytest.raises(ViralResearchDistillError, match="case_contract_failed"):
-        finalize_distillation(prepare_path, cards_root=cards_root, output_path=cards_root.parent / "review" / "report.json")
+    with pytest.raises(ViralResearchDistillError, match="card_batch_manifest_mismatch"):
+        finalize_distillation(
+            prepare_path,
+            package_root=cards_root.parent / "package",
+            criteria=_criteria(),
+            cards_root=cards_root,
+            output_path=cards_root.parent / "review" / "report.json",
+        )

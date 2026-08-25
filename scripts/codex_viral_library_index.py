@@ -83,13 +83,19 @@ def _strip_ref(value: Any) -> str:
 
 
 def _resolve_ref(root: Path, reference: Any, bases: Iterable[Path]) -> Path | None:
-    ref = _strip_ref(reference)
-    if not ref:
+    if not isinstance(reference, str):
         return None
-    ref_path = Path(ref)
+    ref = reference.strip().strip("`")
+    match = re.fullmatch(
+        r"(?P<path>[^#]+)#sha256=(?P<digest>[0-9a-fA-F]{64})", ref
+    )
+    if match is None:
+        return None
+    ref_path = Path(match.group("path"))
+    declared = match.group("digest").lower()
     for base in bases:
         candidate = _safe_resolve(root, base / ref_path)
-        if candidate is not None and candidate.is_file():
+        if candidate is not None and candidate.is_file() and _sha256(candidate) == declared:
             return candidate
     return None
 
@@ -332,12 +338,33 @@ def _jsonl_records(path: Path) -> tuple[list[dict[str, Any]], list[dict[str, str
     return records, errors
 
 
+def _package_integrity_error(
+    manifest_path: Path, samples_path: Path, exclusions_path: Path, integrity_path: Path
+) -> str | None:
+    if not integrity_path.is_file():
+        return "package_integrity_missing"
+    integrity, error = _read_json(integrity_path)
+    if error or not isinstance(integrity, dict):
+        return "package_integrity_invalid"
+    if integrity.get("schema_version") != "viral-research-package-integrity-v1":
+        return "package_integrity_invalid"
+    expected = {
+        "manifest_sha256": _sha256(manifest_path),
+        "samples_sha256": _sha256(samples_path) if samples_path.is_file() else None,
+        "exclusions_sha256": _sha256(exclusions_path) if exclusions_path.is_file() else None,
+    }
+    if any(integrity.get(key) != value for key, value in expected.items()):
+        return "package_integrity_mismatch"
+    return None
+
+
 def _research_package_inventory(root: Path, run_root: Path) -> dict[str, Any]:
     """Read only the allow-listed package, card, and review artifacts."""
     package_dir = run_root / "package"
     manifest_path = package_dir / "manifest.json"
     samples_path = package_dir / "samples.jsonl"
     exclusions_path = package_dir / "exclusions.jsonl"
+    integrity_path = package_dir / "integrity.json"
     review_path = run_root / "review" / "viral-distill-review.json"
     base = {
         "pack": "viral-research-package",
@@ -362,6 +389,14 @@ def _research_package_inventory(root: Path, run_root: Path) -> dict[str, Any]:
         "parse_errors": [],
     }
     if not manifest_path.is_file():
+        return base
+    integrity_error = _package_integrity_error(
+        manifest_path, samples_path, exclusions_path, integrity_path
+    )
+    if integrity_error:
+        base["parse_errors"].append(
+            {"path": _relative(root, integrity_path), "error": integrity_error}
+        )
         return base
     manifest, error = _read_json(manifest_path)
     if error or not isinstance(manifest, dict):
@@ -416,22 +451,22 @@ def _research_package_inventory(root: Path, run_root: Path) -> dict[str, Any]:
 def build_index(project_root: str | Path = ".", evidence_run: str | Path = DEFAULT_EVIDENCE_RUN) -> dict[str, Any]:
     root = Path(project_root).resolve()
     run_root = _safe_resolve(root, Path(evidence_run))
-    if run_root is None:
-        run_root = root / Path(evidence_run)
 
-    evidence_available = run_root.is_dir()
+    evidence_available = run_root is not None and run_root.is_dir()
     evidence_packs = []
     if evidence_available:
+        assert run_root is not None
         evidence_packs = [
             _wechat_cards(root, run_root),
             _bilibili_pack(root, run_root),
             _research_package_inventory(root, run_root),
         ]
     else:
+        evidence_path = Path(evidence_run)
         evidence_packs = [
             {
                 "pack": "wechat-viral",
-                "path": Path(evidence_run, "wechat-viral").as_posix(),
+                "path": (evidence_path / "wechat-viral").as_posix(),
                 "status": "unavailable",
                 "samples": [],
                 "qualified_usable_count": 0,
@@ -440,13 +475,34 @@ def build_index(project_root: str | Path = ".", evidence_run: str | Path = DEFAU
             },
             {
                 "pack": "bilibili-public-metrics",
-                "path": Path(evidence_run, "bilibili-public-metrics").as_posix(),
+                "path": (evidence_path / "bilibili-public-metrics").as_posix(),
                 "status": "unavailable",
                 "samples": [],
                 "qualified_usable_count": 0,
                 "parse_errors": [],
             },
-            _research_package_inventory(root, run_root),
+            {
+                "pack": "viral-research-package",
+                "path": (evidence_path / "package").as_posix(),
+                "status": "unavailable",
+                "package_schema_version": None,
+                "package_status": None,
+                "sample_state_counts": {},
+                "qualified_usable_count": 0,
+                "pending_count": 0,
+                "blocked_count": 0,
+                "sample_count": 0,
+                "exclusion_count": 0,
+                "cards_present": False,
+                "distillation_report": {
+                    "path": (evidence_path / "review" / "viral-distill-review.json").as_posix(),
+                    "present": False,
+                    "promotion_status": None,
+                    "verification_state": None,
+                },
+                "review_status": "unavailable",
+                "parse_errors": [{"error": "evidence_run_outside_project_root"}],
+            },
         ]
 
     return {

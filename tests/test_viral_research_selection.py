@@ -83,3 +83,63 @@ def test_bilibili_qualified_signal_does_not_enter_wechat_qualified_selection():
     )
     assert not result.selected
     assert result.excluded[0]["exclusion_reason"] == "not_qualified"
+
+
+def test_named_revisions_are_selected_deterministically():
+    first = _sample("same", "acct-a")
+    first["revision_id"] = "a"
+    second = _sample("same", "acct-a")
+    second["revision_id"] = "b"
+    result_forward = select_shape_matched_samples(
+        [first, second], target_shape={"content_domain": "film"}, min_samples=1, min_accounts=1
+    )
+    result_reverse = select_shape_matched_samples(
+        [second, first], target_shape={"content_domain": "film"}, min_samples=1, min_accounts=1
+    )
+    assert result_forward.selected[0]["revision_id"] == "b"
+    assert result_reverse.selected[0]["revision_id"] == "b"
+
+
+def test_mixed_numeric_and_named_revisions_are_order_independent():
+    numeric = _sample("same", "acct-a")
+    numeric["revision_id"] = 2
+    named = _sample("same", "acct-a")
+    named["revision_id"] = "b"
+
+    result_forward = select_shape_matched_samples(
+        [named, numeric], target_shape={"content_domain": "film"}, min_samples=1, min_accounts=1
+    )
+    result_reverse = select_shape_matched_samples(
+        [numeric, named], target_shape={"content_domain": "film"}, min_samples=1, min_accounts=1
+    )
+
+    assert result_forward.selected[0]["revision_id"] == 2
+    assert result_reverse.selected[0]["revision_id"] == 2
+
+
+def test_duplicate_evidence_cluster_cannot_supply_independent_sample_count():
+    first = _sample("s-1", "acct-a")
+    second = _sample("s-2", "acct-b")
+    for sample in (first, second):
+        sample.update(
+            {
+                "raw_ref": "raw/shared.html#sha256=" + "1" * 64,
+                "clean_ref": "clean/shared.md#sha256=" + "2" * 64,
+                "metadata_ref": "metadata/shared.json#sha256=" + "3" * 64,
+                "evidence_cluster": "cluster-" + "4" * 32,
+            }
+        )
+
+    result = select_shape_matched_samples(
+        [first, second],
+        target_shape={"content_domain": "film"},
+        min_samples=2,
+        min_accounts=2,
+    )
+
+    assert len(result.selected) == 1
+    assert not result.ready
+    assert any(
+        item.get("exclusion_reason") == "duplicate_evidence_cluster"
+        for item in result.excluded
+    )

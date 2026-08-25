@@ -19,7 +19,7 @@
   "$defs": {
     "sample": {
       "type":"object","additionalProperties":false,
-      "required":["sample_id","platform","account_id","title","canonical_url","published_at","capture_status","raw_ref","clean_ref","metadata_ref","shape","qualification_status"],
+      "required":["sample_id","platform","account_id","title","canonical_url","published_at","capture_status","raw_ref","clean_ref","metadata_ref","evidence_cluster","shape","qualification_status"],
       "properties": {
         "sample_id":{"type":"string","minLength":1},
         "platform":{"type":"string","minLength":1},
@@ -31,9 +31,13 @@
         "raw_ref":{"type":"string","minLength":1},
         "clean_ref":{"type":"string","minLength":1},
         "metadata_ref":{"type":"string","minLength":1},
+        "evidence_cluster":{"type":"string","pattern":"^cluster-[0-9a-f]{32}$"},
         "shape":{"type":"object"},
         "qualification_status":{"type":"string","enum":["qualified_viral","observed_pending","research_only","blocked"]},
-        "revision":{"type":"integer","minimum":1}
+        "qualification_evidence":{"type":"object"},
+        "revision":{"type":"integer","minimum":1},
+        "revision_id":{"type":["integer","string"],"minLength":1},
+        "capture_revision":{"type":["integer","string"],"minLength":1}
       }
     }
   }

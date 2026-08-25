@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from typing import Any, Iterable, Mapping
 
 
@@ -133,6 +134,22 @@ def _sort_cross_account(samples: Iterable[Mapping[str, Any]]) -> list[dict[str, 
     return first_by_account + remainder
 
 
+def _evidence_cluster_key(sample: Mapping[str, Any]) -> str:
+    declared = sample.get("evidence_cluster")
+    if isinstance(declared, str) and declared.strip():
+        return declared.strip()
+    digests: list[str] = []
+    for field in ("raw_ref", "clean_ref", "metadata_ref"):
+        reference = sample.get(field)
+        if not isinstance(reference, str) or "#sha256=" not in reference:
+            return ""
+        digest = reference.rsplit("#sha256=", 1)[1].strip().lower()
+        if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+            return ""
+        digests.append(digest)
+    return "|".join(digests)
+
+
 def select_shape_matched_samples(
     samples: Iterable[Mapping[str, Any]],
     *,
@@ -166,23 +183,26 @@ def select_shape_matched_samples(
     selected_by_id: dict[str, dict[str, Any]] = {}
     selected_without_id: list[dict[str, Any]] = []
 
-    def _numeric_revision(sample: Mapping[str, Any]) -> int | float | None:
-        values: list[int | float] = []
+    def _revision_key(sample: Mapping[str, Any]) -> tuple[int, Decimal, str]:
+        """Return a deterministic ordering for numeric and named revisions."""
         for field in ("revision", "capture_revision", "revision_id"):
             value = sample.get(field)
             if isinstance(value, bool):
                 continue
             if isinstance(value, (int, float)):
-                values.append(value)
-            elif isinstance(value, str):
                 try:
-                    values.append(int(value.strip()))
-                except ValueError:
-                    try:
-                        values.append(float(value.strip()))
-                    except ValueError:
-                        continue
-        return max(values) if values else None
+                    return (2, Decimal(str(value)), str(value))
+                except InvalidOperation:
+                    continue
+            elif isinstance(value, str):
+                marker = value.strip()
+                if not marker:
+                    continue
+                try:
+                    return (2, Decimal(marker), marker)
+                except InvalidOperation:
+                    return (1, Decimal(0), marker)
+        return (0, Decimal(0), "")
 
     for sample in ordered_candidates:
         sample_id = sample.get("sample_id")
@@ -194,14 +214,21 @@ def select_shape_matched_samples(
         if current is None:
             selected_by_id[key] = sample
             continue
-        current_revision = _numeric_revision(current)
-        sample_revision = _numeric_revision(sample)
-        if sample_revision is not None and (
-            current_revision is None or sample_revision > current_revision
-        ):
+        if _revision_key(sample) > _revision_key(current):
             selected_by_id[key] = sample
 
     ordered = _sort_cross_account([*selected_by_id.values(), *selected_without_id])
+    unique: list[dict[str, Any]] = []
+    seen_clusters: set[str] = set()
+    for sample in ordered:
+        cluster = _evidence_cluster_key(sample)
+        if cluster and cluster in seen_clusters:
+            excluded.append({**dict(sample), "exclusion_reason": "duplicate_evidence_cluster"})
+            continue
+        if cluster:
+            seen_clusters.add(cluster)
+        unique.append(sample)
+    ordered = unique
     selected = tuple(ordered)
     account_count = len({_text(item.get("account_id")) for item in selected})
     if len(selected) < min_samples:

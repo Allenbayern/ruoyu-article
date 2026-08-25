@@ -13,6 +13,7 @@ from article_group.viral_research_contract import (
     assess_sample_state,
     normalize_sample_id,
     validate_local_ref,
+    evidence_cluster_id,
     validate_package_manifest,
 )
 
@@ -29,7 +30,7 @@ def valid_package_fixture(root: Path) -> dict:
     raw_ref = _write_ref(root, "raw/sample.html", "<html>raw</html>")
     clean_ref = _write_ref(root, "clean/sample.md", "# Clean")
     metadata_ref = _write_ref(root, "metadata/sample.json", '{"views": 10}')
-    _write_ref(root, "exclusions.jsonl", "")
+    exclusions_ref = _write_ref(root, "exclusions.jsonl", "")
     published_at = "2026-08-25T10:00:00+08:00"
     sample = {
         "sample_id": normalize_sample_id(
@@ -47,11 +48,46 @@ def valid_package_fixture(root: Path) -> dict:
         "raw_ref": raw_ref,
         "clean_ref": clean_ref,
         "metadata_ref": metadata_ref,
+        "evidence_cluster": evidence_cluster_id(
+            {"raw_ref": raw_ref, "clean_ref": clean_ref, "metadata_ref": metadata_ref}
+        ),
         "shape": {
             "medium": "long_form",
             "content_domain": "film",
             "narrative_purpose": "review",
         },
+        "qualification_status": "qualified_viral",
+    }
+    sample["qualification_evidence"] = {
+        "sample_id": sample["sample_id"],
+        "evidence_domain": "competitive_research_evidence",
+        "evidence_origin": "client",
+        "account_id": sample["account_id"],
+        "subject_category": "film",
+        "snapshot_ref": clean_ref,
+        "performance_evidence_ref": metadata_ref,
+        "metric_plan_version": "fixture-v1",
+        "metric_plan_frozen_at": "2026-08-25T09:00:00+08:00",
+        "client_evidence": {
+            "evidence_ref": metadata_ref,
+            "original_display": "100000 views",
+            "observed_at": "2026-08-25T10:00:00+08:00",
+            "confirmer": "fixture-reviewer",
+            "sha256": metadata_ref.split("#sha256=", 1)[1],
+            "sanitized": True,
+        },
+        "metric_plan": [{"metric": "view", "visible": True, "required": True}],
+        "metrics": [{
+            "metric": "view", "value": 100000, "status": "observed",
+            "source": "fixture_client", "observed_at": "2026-08-25T10:00:00+08:00",
+            "evidence_ref": metadata_ref,
+        }],
+        "threshold_or_rank_rule": {
+            "version": "fixture-rule-v1", "frozen_at": "2026-08-25T09:00:00+08:00",
+            "platform": "wechat", "baseline": "fixture", "window": "publication",
+            "rule": "gte", "minimums": {"view": 100000},
+        },
+        "qualification_reason": "Synthetic fixture evidence meets the frozen rule.",
         "qualification_status": "qualified_viral",
     }
     return {
@@ -61,7 +97,7 @@ def valid_package_fixture(root: Path) -> dict:
         "created_at": "2026-08-25T10:05:00+08:00",
         "source_lanes": ["wechat_long_form"],
         "samples": [sample],
-        "exclusions_ref": "exclusions.jsonl",
+        "exclusions_ref": exclusions_ref,
         "errors": [],
     }
 
@@ -150,6 +186,20 @@ def test_pending_and_blocked_states_fail_closed(tmp_path: Path):
     assert assess_sample_state(pending) == "blocked"
 
 
+def test_manifest_errors_are_blocked_even_if_status_is_rewritten(tmp_path: Path):
+    package = valid_package_fixture(tmp_path)
+    package["status"] = "research_only"
+    package["errors"] = ["capture_ref_missing"]
+    assert validate_package_manifest(package, root=tmp_path) == "blocked"
+
+
+def test_exclusions_ref_must_bind_to_local_hashed_file(tmp_path: Path):
+    package = valid_package_fixture(tmp_path)
+    package["exclusions_ref"] = "other.jsonl#sha256=" + "a" * 64
+    with pytest.raises(ViralResearchContractError, match="exclusions_ref_invalid|missing_ref"):
+        validate_package_manifest(package, root=tmp_path)
+
+
 def test_schema_exposes_required_manifest_and_sample_fields():
     schema = json.loads(
         (Path(__file__).parents[1] / "schemas" / "viral-research-package.json").read_text(
@@ -171,6 +221,7 @@ def test_schema_exposes_required_manifest_and_sample_fields():
             "raw_ref",
             "clean_ref",
             "metadata_ref",
+            "evidence_cluster",
             "shape",
             "qualification_status",
         ]
