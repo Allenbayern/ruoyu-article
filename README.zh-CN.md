@@ -92,6 +92,51 @@ uv run python -m article_group.tgmeng_radar_cli \
 
 所有请求走服务端缓存路径（零 AI 消耗）；冷缓存窗口表现为稳定的 `source_empty` 错误码，绝不产生伪造数据。
 
+## 爆款研究库：抓爬与蒸馏
+
+爆款研究库按“抓爬证据 → package builder → inventory → prepare → 显式 Codex pass → finalize”的顺序运行。微信长文（`wechat` / `wechat_long_form`）是主通道；新榜/热榜、B 站、头条等其它来源统一按 `observation-only` 处理，不得据标题、排名或不完整证据认定为 `qualified_viral`，也不得计入正向技法频次。
+
+```bash
+RUN_ROOT=runs/<run-id>/viral-research
+
+# 1) package builder：把本地抓爬证据封装成不可覆盖的 package
+uv run python scripts/codex_viral_research_package.py \
+  --capture-manifest "$RUN_ROOT/capture.json" \
+  --run-root "$RUN_ROOT" \
+  --output-root "$RUN_ROOT/package"
+
+# 2) inventory：盘点旧库、各证据通道和 package 状态
+uv run python scripts/codex_viral_library_index.py \
+  --project-root . \
+  --evidence-run "$RUN_ROOT" \
+  --compact > "$RUN_ROOT/inventory.json"
+
+# 3) prepare：按微信影视长文形态选择可蒸馏样本
+uv run python scripts/codex_viral_distill.py prepare \
+  --package-root "$RUN_ROOT/package" \
+  --platform wechat \
+  --medium long_form \
+  --content-domain film \
+  --narrative-purpose review_or_analysis \
+  --output "$RUN_ROOT/distillation/prepare.json"
+
+# 4) 显式 Codex pass：由人工明确触发，只生成 cards/*.json
+codex exec \
+  --sandbox workspace-write \
+  --ephemeral \
+  -m gpt-5.6-luna \
+  -C . \
+  "读取 ${RUN_ROOT}/distillation/prepare.json，严格遵循其中的 semantic_pass 和带 SHA-256 的证据引用，为每个 selected sample 按 schemas/viral-research-case-card.json 生成 ${RUN_ROOT}/cards/<sample_id>.json；只做结构观察和负向模式记录，不读取其它样本，不改变 qualification_status，不写入 Vault，不发布或推进状态。"
+
+# 5) finalize：校验 Codex 生成的 case cards，落 provisional review packet
+uv run python scripts/codex_viral_distill.py finalize \
+  --prepared "$RUN_ROOT/distillation/prepare.json" \
+  --cards-root "$RUN_ROOT/cards" \
+  --output "$RUN_ROOT/review/viral-distill-review.json"
+```
+
+蒸馏报告和候选原则必须保持 `promotion_status: provisional_only`，且 `automatic_publication_authority: false`。这条链路不自动写入 Vault、不自动发布、不自动推进任何工作流状态；Codex 输出只是证据，采纳、晋级和发布仍由 controller/人工决定。
+
 ## 契约校验器
 
 ```bash
@@ -125,9 +170,43 @@ uv run python -m article_group.sync_compliance \
 
 ## 交付纪律
 
+- 新批次必须显式声明 `run_profile`：默认日更使用 `two_article_daily`（A/B 两篇），历史三槽对照使用 `three_slot_controlled`（A/B/C）；不得用旧三槽校验器临时绕过 profile。
 - Markdown 为规范稿；`article-plain.txt` 是面向不解析 Markdown 平台的复制粘贴交付物。
 - 可发布级批次冻结单文件 HTML 交付物（内嵌 CSS），并记录绑定冻结件 `sha256:<digest>` 的来源封条；验收前校验绑定。
-- 批次验收要求控制器审查新证据；终审由独立方（Sol 路由）在对抗性审查 Gate 下执行，控制器做出每项验收决定。仓库内任何内容都不授权对外发布。
+- 批次验收要求控制器审查新证据；M2 还要求独立人工编辑 attestation、动态事实 publication-time revalidation 和 controller acceptance 分层落盘。终审由独立方（Sol 路由）在对抗性审查 Gate 下执行，控制器做出每项验收决定。仓库内任何内容都不授权对外发布。
+
+## Codex 旁路审查
+
+Codex 审查是证据旁路，不替换本仓库的确定性门禁、`final_review` 或人工发布授权。
+
+```bash
+# 普通审查：Codex 原生 review，走 Luna 路由
+uv run python -m article_group.codex_review \
+  --mode normal \
+  --repo . \
+  --run-root runs/<date>/<run-id> \
+  --output runs/<date>/<run-id>/review/codex-normal.json \
+  --request '说明本次变更和验收目标' \
+  --acceptance '逐条列出必须满足的验收条件' \
+  --risk L1
+
+# L2 对抗审查：只读、Sol high、结构化 review contract
+uv run python -m article_group.codex_review \
+  --mode l2 \
+  --repo . \
+  --run-root runs/<date>/<run-id> \
+  --output runs/<date>/<run-id>/review/codex-l2.json \
+  --request '原始任务请求' \
+  --acceptance '逐条列出验收条件' \
+  --focus '指定需要独立挑战的边界和负向路径' \
+  --risk L2
+```
+
+命令只写 JSON 记录和 `.log` 原始输出，记录输出哈希，并固定
+`publication_authorization: not_authorized`。L2 结果必须是
+`approve`、`needs_changes` 或 `evidence_insufficient`；任何修复、复审、发布或状态推进仍由控制器决定。
+
+在完成三次代表性批次试点并核对旧链结果一致前，不删除旧的 Hermes/Kanban 审查记录。
 
 ## 边界
 
