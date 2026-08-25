@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ruoyu.local/schemas/viral-research-package.json",
+  "title": "Viral Research Package",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version","run_id","status","created_at","source_lanes","samples","exclusions_ref","errors"],
+  "properties": {
+    "schema_version": {"const":"viral-research-package-v1"},
+    "run_id": {"type":"string","minLength":1},
+    "status": {"type":"string","enum":["captured","normalized","evidence_checked","qualified","observed_pending","research_only","blocked","selected","distilled","reviewed"]},
+    "created_at": {"type":"string","format":"date-time"},
+    "source_lanes": {"type":"array","items":{"type":"string"},"minItems":1},
+    "samples": {"type":"array","items":{"$ref":"#/$defs/sample"}},
+    "exclusions_ref": {"type":"string","minLength":1},
+    "errors": {"type":"array","items":{"type":"string"}},
+    "revision": {"type":"integer","minimum":1}
+  },
+  "$defs": {
+    "sample": {
+      "type":"object","additionalProperties":false,
+      "required":["sample_id","platform","account_id","title","canonical_url","published_at","capture_status","raw_ref","clean_ref","metadata_ref","shape","qualification_status"],
+      "properties": {
+        "sample_id":{"type":"string","minLength":1},
+        "platform":{"type":"string","minLength":1},
+        "account_id":{"type":"string","minLength":1},
+        "title":{"type":"string","minLength":1},
+        "canonical_url":{"type":"string","format":"uri","minLength":1},
+        "published_at":{"type":"string","format":"date-time"},
+        "capture_status":{"type":"string","enum":["complete","partial","missing","blocked"]},
+        "raw_ref":{"type":"string","minLength":1},
+        "clean_ref":{"type":"string","minLength":1},
+        "metadata_ref":{"type":"string","minLength":1},
+        "shape":{"type":"object"},
+        "qualification_status":{"type":"string","enum":["qualified_viral","observed_pending","research_only","blocked"]},
+        "revision":{"type":"integer","minimum":1}
+      }
+    }
+  }
+}
