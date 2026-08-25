@@ -162,7 +162,46 @@ def select_shape_matched_samples(
             excluded.append({**dict(sample), "exclusion_reason": "shape_mismatch"})
             continue
         selected_candidates.append(sample)
-    ordered = _sort_cross_account(selected_candidates)
+    ordered_candidates = _sort_cross_account(selected_candidates)
+    selected_by_id: dict[str, dict[str, Any]] = {}
+    selected_without_id: list[dict[str, Any]] = []
+
+    def _numeric_revision(sample: Mapping[str, Any]) -> int | float | None:
+        values: list[int | float] = []
+        for field in ("revision", "capture_revision", "revision_id"):
+            value = sample.get(field)
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, (int, float)):
+                values.append(value)
+            elif isinstance(value, str):
+                try:
+                    values.append(int(value.strip()))
+                except ValueError:
+                    try:
+                        values.append(float(value.strip()))
+                    except ValueError:
+                        continue
+        return max(values) if values else None
+
+    for sample in ordered_candidates:
+        sample_id = sample.get("sample_id")
+        if sample_id in (None, ""):
+            selected_without_id.append(sample)
+            continue
+        key = str(sample_id)
+        current = selected_by_id.get(key)
+        if current is None:
+            selected_by_id[key] = sample
+            continue
+        current_revision = _numeric_revision(current)
+        sample_revision = _numeric_revision(sample)
+        if sample_revision is not None and (
+            current_revision is None or sample_revision > current_revision
+        ):
+            selected_by_id[key] = sample
+
+    ordered = _sort_cross_account([*selected_by_id.values(), *selected_without_id])
     selected = tuple(ordered)
     account_count = len({_text(item.get("account_id")) for item in selected})
     if len(selected) < min_samples:
