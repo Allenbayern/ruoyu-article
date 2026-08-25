@@ -92,3 +92,245 @@ def test_case_contract_delegation_is_recorded(tmp_path: Path, monkeypatch):
     assert called["sample_id"] == sample["sample_id"]
     assert card["case_contract"]["status"] == "validated"
     assert card["case_contract"]["qualification_status"] == "research_only"
+
+
+import copy
+import json
+
+from article_group.viral_research_cards import attach_client_evidence
+from article_group.viral_research_package import build_package
+
+
+def _build_package(tmp_path: Path) -> tuple[Path, str]:
+    (tmp_path / "raw").mkdir()
+    (tmp_path / "clean").mkdir()
+    (tmp_path / "metadata").mkdir()
+    (tmp_path / "raw" / "a.html").write_text("<html>a</html>", encoding="utf-8")
+    (tmp_path / "clean" / "a.md").write_text("# a", encoding="utf-8")
+    (tmp_path / "metadata" / "a.json").write_text("{}", encoding="utf-8")
+    capture = {
+        "run_id": "run-attach-001",
+        "created_at": "2026-08-25T09:05:00+08:00",
+        "source_lanes": ["wechat_long_form"],
+        "samples": [
+            {
+                "platform": "wechat",
+                "account_id": "acct-1",
+                "title": "Film case",
+                "canonical_url": "https://example.com/article/1",
+                "published_at": "2026-08-25T09:00:00+08:00",
+                "capture_status": "full",
+                "raw_ref": "raw/a.html",
+                "clean_ref": "clean/a.md",
+                "metadata_ref": "metadata/a.json",
+                "shape": {"medium": "long_form", "content_domain": "film"},
+                "qualification_status": "observed_pending",
+                "source_lane": "wechat_long_form",
+            }
+        ],
+    }
+    capture_path = tmp_path / "capture.json"
+    capture_path.write_text(json.dumps(capture), encoding="utf-8")
+    package_root = tmp_path / "viral-research" / "package"
+    manifest = build_package(capture_path, run_root=tmp_path, output_root=package_root)
+    return package_root, manifest["samples"][0]["sample_id"]
+
+
+def _write_evidence(tmp_path: Path, **overrides) -> Path:
+    display = tmp_path / "client-display.txt"
+    display.write_text("views=1000 likes=100", encoding="utf-8")
+    digest = hashlib.sha256(display.read_bytes()).hexdigest()
+    evidence = {
+        "evidence_domain": "competitive_research_evidence",
+        "evidence_ref": f"client-display.txt#sha256={digest}",
+        "original_display": "views=1000 likes=100",
+        "observed_at": "2026-08-25T10:00:00+08:00",
+        "confirmer": "reviewer-1",
+        "sha256": digest,
+        "sanitized": True,
+        "metric_plan_version": "wechat-metrics-v1",
+        "metric_plan_frozen_at": "2026-08-25T08:00:00+08:00",
+        "metric_plan": [
+            {"metric": "view_count", "visible": True, "required": True},
+        ],
+        "threshold_or_rank_rule": {
+            "version": "wechat-rule-v1",
+            "frozen_at": "2026-08-25T08:00:00+08:00",
+            "platform": "wechat",
+            "baseline": "research",
+            "window": "publication",
+            "rule": "view_count minimum",
+            "minimums": {"view_count": 100},
+            "rank_maximums": {},
+        },
+        "metrics": [
+            {
+                "metric": "view_count",
+                "value": 1000,
+                "status": "observed",
+                "source": "client_dashboard",
+                "observed_at": "2026-08-25T10:00:00+08:00",
+                "evidence_ref": f"client-display.txt#sha256={digest}",
+            }
+        ],
+    }
+    evidence.update(overrides)
+    path = tmp_path / "sanitized-evidence.json"
+    path.write_text(json.dumps(evidence, ensure_ascii=False, indent=2), encoding="utf-8")
+    return path
+
+
+def test_valid_sanitized_evidence_writes_new_revision_and_keeps_pending_package(tmp_path: Path):
+    package_root, sample_id = _build_package(tmp_path)
+    before = (package_root / "manifest.json").read_bytes()
+    evidence = _write_evidence(tmp_path)
+    revision = tmp_path / "viral-research" / "package" / "revisions" / "rev-001"
+
+    result = attach_client_evidence(
+        package_root=package_root,
+        sample_id=sample_id,
+        evidence_file=evidence,
+        output_revision=revision,
+    )
+
+    assert result["derived_qualification_status"] == "qualified_viral"
+    assert result["automatic_publication_authority"] is False
+    assert (revision / "revision.json").is_file()
+    assert (revision / "evidence.json").is_file()
+    assert (package_root / "manifest.json").read_bytes() == before
+    assert json.loads((package_root / "manifest.json").read_text())["samples"][0]["qualification_status"] == "observed_pending"
+
+
+def test_missing_confirmer_is_rejected_and_revision_is_not_created(tmp_path: Path):
+    package_root, sample_id = _build_package(tmp_path)
+    evidence = _write_evidence(tmp_path)
+    data = json.loads(evidence.read_text())
+    data.pop("confirmer")
+    evidence.write_text(json.dumps(data), encoding="utf-8")
+    revision = tmp_path / "revision"
+    try:
+        attach_client_evidence(package_root=package_root, sample_id=sample_id, evidence_file=evidence, output_revision=revision)
+    except ViralResearchCardError as error:
+        assert "client_evidence_confirmer_missing" in str(error)
+    else:
+        raise AssertionError("expected missing confirmer")
+    assert not revision.exists()
+
+
+def test_missing_timestamp_is_rejected(tmp_path: Path):
+    package_root, sample_id = _build_package(tmp_path)
+    evidence = _write_evidence(tmp_path)
+    data = json.loads(evidence.read_text())
+    data.pop("observed_at")
+    evidence.write_text(json.dumps(data), encoding="utf-8")
+    try:
+        attach_client_evidence(
+            package_root=package_root,
+            sample_id=sample_id,
+            evidence_file=evidence,
+            output_revision=tmp_path / "revision",
+        )
+    except ViralResearchCardError as error:
+        assert "client_evidence_observed_at_missing" in str(error)
+    else:
+        raise AssertionError("expected missing timestamp")
+
+
+def test_non_hex_sha256_is_rejected(tmp_path: Path):
+    package_root, sample_id = _build_package(tmp_path)
+    evidence = _write_evidence(tmp_path, sha256="not-a-digest")
+    try:
+        attach_client_evidence(
+            package_root=package_root,
+            sample_id=sample_id,
+            evidence_file=evidence,
+            output_revision=tmp_path / "revision",
+        )
+    except ViralResearchCardError as error:
+        assert "client_evidence_sha256_missing" in str(error)
+    else:
+        raise AssertionError("expected invalid digest")
+
+
+def test_unsanitized_evidence_is_rejected(tmp_path: Path):
+    package_root, sample_id = _build_package(tmp_path)
+    evidence = _write_evidence(tmp_path, sanitized=False)
+    try:
+        attach_client_evidence(
+            package_root=package_root,
+            sample_id=sample_id,
+            evidence_file=evidence,
+            output_revision=tmp_path / "revision",
+        )
+    except ViralResearchCardError as error:
+        assert "client_evidence_not_sanitized" in str(error)
+    else:
+        raise AssertionError("expected unsanitized evidence")
+
+
+def test_evidence_ref_outside_run_root_is_rejected(tmp_path: Path):
+    package_root, sample_id = _build_package(tmp_path)
+    evidence = _write_evidence(tmp_path, evidence_ref="../outside.txt#sha256=" + "a" * 64)
+    try:
+        attach_client_evidence(
+            package_root=package_root,
+            sample_id=sample_id,
+            evidence_file=evidence,
+            output_revision=tmp_path / "revision",
+        )
+    except ViralResearchCardError as error:
+        assert "path_escape" in str(error)
+    else:
+        raise AssertionError("expected path escape")
+
+
+def test_attachment_cannot_set_qualification_status(tmp_path: Path):
+    package_root, sample_id = _build_package(tmp_path)
+    evidence = _write_evidence(tmp_path, qualification_status="qualified_viral")
+    try:
+        attach_client_evidence(
+            package_root=package_root,
+            sample_id=sample_id,
+            evidence_file=evidence,
+            output_revision=tmp_path / "revision",
+        )
+    except ViralResearchCardError as error:
+        assert "qualification_status_forbidden" in str(error)
+    else:
+        raise AssertionError("expected forbidden authority field")
+
+
+def test_credential_marker_is_rejected(tmp_path: Path):
+    package_root, sample_id = _build_package(tmp_path)
+    evidence = _write_evidence(tmp_path, session="should-not-enter-evidence")
+    try:
+        attach_client_evidence(
+            package_root=package_root,
+            sample_id=sample_id,
+            evidence_file=evidence,
+            output_revision=tmp_path / "revision",
+        )
+    except ViralResearchCardError as error:
+        assert "credential_marker" in str(error)
+    else:
+        raise AssertionError("expected credential marker rejection")
+
+
+def test_existing_revision_is_not_overwritten(tmp_path: Path):
+    package_root, sample_id = _build_package(tmp_path)
+    evidence = _write_evidence(tmp_path)
+    revision = tmp_path / "revision"
+    revision.mkdir()
+    (revision / "sentinel").write_text("keep", encoding="utf-8")
+    try:
+        attach_client_evidence(
+            package_root=package_root,
+            sample_id=sample_id,
+            evidence_file=evidence,
+            output_revision=revision,
+        )
+    except ViralResearchCardError as error:
+        assert "artifact_exists" in str(error)
+    else:
+        raise AssertionError("expected artifact exists")
+    assert (revision / "sentinel").read_text() == "keep"
