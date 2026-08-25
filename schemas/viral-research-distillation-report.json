@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ruoyu.local/schemas/viral-research-distillation-report.json",
+  "title": "Viral Research Distillation Report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version","package_run_id","criteria","selected_sample_ids","positive_candidates","negative_patterns","excluded_observations","coverage_gaps","promotion_status","verification_state","automatic_publication_authority"],
+  "properties": {
+    "schema_version": {"const": "viral-research-distillation-report-v1"},
+    "package_run_id": {"type": "string", "minLength": 1},
+    "criteria": {"type": "object"},
+    "selected_sample_ids": {"type": "array", "items": {"type": "string"}},
+    "positive_candidates": {"type": "array", "items": {"$ref": "#/$defs/candidate"}},
+    "negative_patterns": {"type": "array", "items": {"type": "object"}},
+    "excluded_observations": {"type": "array", "items": {"type": "object"}},
+    "coverage_gaps": {"type": "array", "items": {"type": "string"}},
+    "promotion_status": {"const": "provisional_only"},
+    "verification_state": {"type": "string", "enum": ["promising", "observation_only"]},
+    "automatic_publication_authority": {"const": false}
+  },
+  "$defs": {
+    "candidate": {
+      "type": "object",
+      "required": ["technique","technique_type","frequency","supporting_qualified_samples","performance_evidence_refs","excluded_observations","negative_cards","risk_note","verification_state","automatic_publication_authority","promotion_status"],
+      "properties": {
+        "technique": {"type": "string", "minLength": 1},
+        "technique_type": {"type": "string", "enum": ["title", "opening", "structure", "interaction"]},
+        "frequency": {"type": "integer", "minimum": 1},
+        "supporting_qualified_samples": {"type": "array", "items": {"type": "object"}},
+        "performance_evidence_refs": {"type": "array", "items": {"type": "string"}},
+        "excluded_observations": {"type": "array", "items": {"type": "object"}},
+        "negative_cards": {"type": "array", "items": {"type": "string"}},
+        "risk_note": {"type": "string"},
+        "verification_state": {"const": "promising"},
+        "automatic_publication_authority": {"const": false},
+        "promotion_status": {"const": "provisional_only"}
+      }
+    }
+  }
+}

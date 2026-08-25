@@ -3,6 +3,36 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
+
+@dataclass(frozen=True)
+class SelectionCriteria:
+    platform: str
+    medium: str
+    content_domain: str
+    narrative_purpose: str
+    account_type: str | None = None
+    topic: str | None = None
+    work_relation: str | None = None
+
+    def as_shape(self) -> dict[str, str]:
+        values = {
+            "platform": self.platform,
+            "medium": self.medium,
+            "content_domain": self.content_domain,
+            "narrative_purpose": self.narrative_purpose,
+            "account_type": self.account_type,
+            "topic": self.topic,
+            "work_relation": self.work_relation,
+        }
+        return {key: value for key, value in values.items() if value is not None}
+
+
+def _criteria_mapping(criteria: Mapping[str, Any] | SelectionCriteria) -> Mapping[str, Any]:
+    if isinstance(criteria, SelectionCriteria):
+        return criteria.as_shape()
+    return criteria
+
+
 MIN_QUALIFIED_SAMPLES = 5
 MIN_DISTINCT_ACCOUNTS = 2
 QUALIFIED_LANES = frozenset({"wechat", "wechat_long_form", "wechat_qualified"})
@@ -60,8 +90,12 @@ def _shape_value(sample: Mapping[str, Any], field: str) -> str:
     return _text(shape.get(field))
 
 
-def shape_matches(sample: Mapping[str, Any], target_shape: Mapping[str, Any]) -> bool:
+def shape_matches(
+    sample: Mapping[str, Any],
+    target_shape: Mapping[str, Any] | SelectionCriteria,
+) -> bool:
     """Return true when every specified shape dimension matches exactly."""
+    target_shape = _criteria_mapping(target_shape)
     if not isinstance(target_shape, Mapping):
         raise ViralResearchSelectionError("target_shape_invalid")
     for field in SHAPE_FIELDS:
@@ -102,13 +136,14 @@ def _sort_cross_account(samples: Iterable[Mapping[str, Any]]) -> list[dict[str, 
 def select_shape_matched_samples(
     samples: Iterable[Mapping[str, Any]],
     *,
-    target_shape: Mapping[str, Any],
+    target_shape: Mapping[str, Any] | SelectionCriteria,
     min_samples: int = MIN_QUALIFIED_SAMPLES,
     min_accounts: int = MIN_DISTINCT_ACCOUNTS,
 ) -> SelectionResult:
     """Select an explicit, cross-account, shape-matched qualified batch."""
     if min_samples < 1 or min_accounts < 1:
         raise ViralResearchSelectionError("minimum_invalid")
+    target_shape = _criteria_mapping(target_shape)
     selected_candidates: list[Mapping[str, Any]] = []
     pending: list[dict[str, Any]] = []
     excluded: list[dict[str, Any]] = []
