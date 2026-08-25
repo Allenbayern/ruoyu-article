@@ -197,6 +197,8 @@ def validate_package_manifest(manifest: Mapping[str, Any], *, root: Path) -> str
         seen[identity].add(marker_key)
         for field in ("raw_ref", "clean_ref", "metadata_ref"):
             validate_local_ref(sample[field], root=Path(root))
+    if manifest.get("status") == "blocked":
+        return "blocked"
     states = [assess_sample_state(sample) for sample in samples]
     if any(state == "blocked" for state in states):
         return "blocked"
