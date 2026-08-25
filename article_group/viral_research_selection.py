@@ -1,0 +1,162 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Iterable, Mapping
+
+MIN_QUALIFIED_SAMPLES = 5
+MIN_DISTINCT_ACCOUNTS = 2
+QUALIFIED_LANES = frozenset({"wechat", "wechat_long_form", "wechat_qualified"})
+SHAPE_FIELDS = (
+    "platform",
+    "medium",
+    "content_domain",
+    "account_type",
+    "narrative_purpose",
+    "topic",
+    "work_relation",
+)
+
+
+class ViralResearchSelectionError(ValueError):
+    """Raised when an explicit research selection request is invalid."""
+
+
+@dataclass(frozen=True)
+class SelectionResult:
+    selected: tuple[dict[str, Any], ...]
+    pending: tuple[dict[str, Any], ...]
+    excluded: tuple[dict[str, Any], ...]
+    reason: str | None
+    min_samples: int
+    min_accounts: int
+
+    @property
+    def ready(self) -> bool:
+        accounts = {str(item.get("account_id")) for item in self.selected}
+        return len(self.selected) >= self.min_samples and len(accounts) >= self.min_accounts
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "selected": [dict(item) for item in self.selected],
+            "pending": [dict(item) for item in self.pending],
+            "excluded": [dict(item) for item in self.excluded],
+            "reason": self.reason,
+            "ready": self.ready,
+            "min_samples": self.min_samples,
+            "min_accounts": self.min_accounts,
+        }
+
+
+def _text(value: Any) -> str:
+    return value.strip().lower() if isinstance(value, str) else ""
+
+
+def _shape_value(sample: Mapping[str, Any], field: str) -> str:
+    shape = sample.get("shape")
+    if not isinstance(shape, Mapping):
+        shape = {}
+    if field == "platform":
+        return _text(sample.get("platform"))
+    return _text(shape.get(field))
+
+
+def shape_matches(sample: Mapping[str, Any], target_shape: Mapping[str, Any]) -> bool:
+    """Return true when every specified shape dimension matches exactly."""
+    if not isinstance(target_shape, Mapping):
+        raise ViralResearchSelectionError("target_shape_invalid")
+    for field in SHAPE_FIELDS:
+        target = _text(target_shape.get(field))
+        if target and _shape_value(sample, field) != target:
+            return False
+    return True
+
+
+def _qualified(sample: Mapping[str, Any]) -> bool:
+    return (
+        sample.get("qualification_status") == "qualified_viral"
+        and _text(sample.get("platform")) in QUALIFIED_LANES
+    )
+
+
+def _sort_cross_account(samples: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    rows = [dict(sample) for sample in samples]
+    rows.sort(
+        key=lambda sample: (
+            _text(sample.get("account_id")),
+            _text(sample.get("sample_id")),
+        )
+    )
+    first_by_account: list[dict[str, Any]] = []
+    remainder: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for sample in rows:
+        account = _text(sample.get("account_id"))
+        if account not in seen:
+            first_by_account.append(sample)
+            seen.add(account)
+        else:
+            remainder.append(sample)
+    return first_by_account + remainder
+
+
+def select_shape_matched_samples(
+    samples: Iterable[Mapping[str, Any]],
+    *,
+    target_shape: Mapping[str, Any],
+    min_samples: int = MIN_QUALIFIED_SAMPLES,
+    min_accounts: int = MIN_DISTINCT_ACCOUNTS,
+) -> SelectionResult:
+    """Select an explicit, cross-account, shape-matched qualified batch."""
+    if min_samples < 1 or min_accounts < 1:
+        raise ViralResearchSelectionError("minimum_invalid")
+    selected_candidates: list[Mapping[str, Any]] = []
+    pending: list[dict[str, Any]] = []
+    excluded: list[dict[str, Any]] = []
+    for sample in samples:
+        if not isinstance(sample, Mapping):
+            excluded.append({"exclusion_reason": "sample_invalid"})
+            continue
+        if not _qualified(sample):
+            status = sample.get("qualification_status")
+            if status in {"observed_pending", "research_only"}:
+                pending.append(dict(sample))
+            else:
+                excluded.append({**dict(sample), "exclusion_reason": "not_qualified"})
+            continue
+        if not shape_matches(sample, target_shape):
+            excluded.append({**dict(sample), "exclusion_reason": "shape_mismatch"})
+            continue
+        selected_candidates.append(sample)
+    ordered = _sort_cross_account(selected_candidates)
+    selected = tuple(ordered)
+    account_count = len({_text(item.get("account_id")) for item in selected})
+    if len(selected) < min_samples:
+        reason = "insufficient_qualified_samples"
+    elif account_count < min_accounts:
+        reason = "insufficient_distinct_accounts"
+    else:
+        reason = None
+    return SelectionResult(
+        selected=selected,
+        pending=tuple(pending),
+        excluded=tuple(excluded),
+        reason=reason,
+        min_samples=min_samples,
+        min_accounts=min_accounts,
+    )
+
+
+def select_samples(
+    samples: Iterable[Mapping[str, Any]],
+    *,
+    target_shape: Mapping[str, Any],
+    min_samples: int = MIN_QUALIFIED_SAMPLES,
+    min_accounts: int = MIN_DISTINCT_ACCOUNTS,
+) -> SelectionResult:
+    """Compatibility alias for the explicit shape-matched selector."""
+    return select_shape_matched_samples(
+        samples,
+        target_shape=target_shape,
+        min_samples=min_samples,
+        min_accounts=min_accounts,
+    )
