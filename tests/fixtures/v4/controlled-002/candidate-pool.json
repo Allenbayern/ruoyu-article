@@ -1,0 +1,34 @@
+{
+  "candidates": [
+    {
+      "candidate_id": "art-001",
+      "status": "approved",
+      "publication_authorization": "not_authorized",
+      "content_map": "flow",
+      "topic_mode": "release_event",
+      "event_cluster_id": "event-001",
+      "work_or_person": "work-001",
+      "traffic_class": "flow",
+      "selection_reason": "当日入口来自已确认的文章组题目",
+      "reader_gap": "读者需要知道这部作品的具体协作事实",
+      "content_value_score": 4,
+      "evidence_readiness": "high",
+      "freshness_window": "same-day"
+    },
+    {
+      "candidate_id": "art-002",
+      "status": "approved",
+      "publication_authorization": "not_authorized",
+      "content_map": "depth",
+      "topic_mode": "revisit",
+      "event_cluster_id": "event-002",
+      "work_or_person": "work-002",
+      "traffic_class": "depth",
+      "selection_reason": "经典重读提供与入口题不同的长期价值",
+      "reader_gap": "读者需要理解方言如何进入作品表达",
+      "content_value_score": 4,
+      "evidence_readiness": "high",
+      "freshness_window": "revival"
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "card_type": "fact_card",
+  "run_id": "controlled-002",
+  "article_id": "art-002",
+  "claims": [
+    {
+      "claim_id": "K001",
+      "claim": "《远岸来信》围绕一封旧信和方言生活展开。",
+      "claim_type": "fact",
+      "source_ids": ["src-002-body"],
+      "locator": "事实卡:claims[K001]"
+    }
+  ]
+}

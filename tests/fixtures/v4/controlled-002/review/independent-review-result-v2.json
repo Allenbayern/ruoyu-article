@@ -1,0 +1,6 @@
+{
+  "run_id": "controlled-002",
+  "status": "approve",
+  "articles": ["art-001", "art-002"],
+  "publication_authorization": "not_authorized"
+}

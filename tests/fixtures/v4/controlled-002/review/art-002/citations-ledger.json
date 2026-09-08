@@ -1,0 +1,18 @@
+{
+  "schema_version": "claim-citations-v1",
+  "run_id": "controlled-002",
+  "article_id": "art-002",
+  "draft_path": "drafts/art-002.md",
+  "claims": [
+    {
+      "claim_id": "K001",
+      "draft_locator": "p1-s1; p2-s1",
+      "claim_text": "《远岸来信》围绕一封旧信和方言生活展开。",
+      "source_ids": ["src-002-body"],
+      "source_locator": "资料页:剧情摘要",
+      "status": "supported"
+    }
+  ],
+  "unmapped_factual_claims": [],
+  "coverage_result": "PASS"
+}

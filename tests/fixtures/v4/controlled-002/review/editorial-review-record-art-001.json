@@ -1,0 +1,9 @@
+{
+  "review_id": "review-001",
+  "run_id": "controlled-002",
+  "article_id": "art-001",
+  "status": "pass",
+  "independent_review": "approve",
+  "controller_acceptance": "accepted",
+  "publication_authorization": "not_authorized"
+}

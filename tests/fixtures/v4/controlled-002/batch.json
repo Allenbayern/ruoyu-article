@@ -1,0 +1,47 @@
+{
+  "run_id": "v4-fixture-002",
+  "generated_at": "2026-09-09T09:00:00+08:00",
+  "content_status": "CONTENT_READY",
+  "review_surface": "markdown_codex",
+  "source_manifest_path": "source-manifest.json",
+  "articles": [
+    {
+      "article_id": "art-001",
+      "topic_id": "top-001",
+      "topic_card_path": "topic-cards/art-001.json",
+      "fact_card_path": "fact-cards/art-001.json",
+      "citation_ledger_path": "ledgers/art-001.json",
+      "draft_path": "drafts/art-001.md",
+      "material_pack_path": "material-packs/art-001.json",
+      "review_path": "reviews/art-001.json",
+      "title": "一部电影的协作",
+      "title_claim_ids": ["claim-001"],
+      "claims": [
+        {
+          "claim_id": "claim-001",
+          "claim_type": "fact",
+          "source_ids": ["src-001"]
+        }
+      ]
+    },
+    {
+      "article_id": "art-002",
+      "topic_id": "top-002",
+      "topic_card_path": "topic-cards/art-002.json",
+      "fact_card_path": "fact-cards/art-002.json",
+      "citation_ledger_path": "ledgers/art-002.json",
+      "draft_path": "drafts/art-002.md",
+      "material_pack_path": "material-packs/art-002.json",
+      "review_path": "reviews/art-002.json",
+      "title": "一部电影的方言",
+      "title_claim_ids": ["claim-002"],
+      "claims": [
+        {
+          "claim_id": "claim-002",
+          "claim_type": "fact",
+          "source_ids": ["src-002"]
+        }
+      ]
+    }
+  ]
+}

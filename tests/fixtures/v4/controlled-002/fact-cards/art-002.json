@@ -1,0 +1,10 @@
+{
+  "claims": [
+    {
+      "claim_id": "claim-002",
+      "claim_type": "fact",
+      "source_ids": ["src-002"],
+      "locator": "fact-card:claim-002"
+    }
+  ]
+}

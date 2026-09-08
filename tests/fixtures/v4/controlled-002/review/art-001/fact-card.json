@@ -1,0 +1,14 @@
+{
+  "card_type": "fact_card",
+  "run_id": "controlled-002",
+  "article_id": "art-001",
+  "claims": [
+    {
+      "claim_id": "K001",
+      "claim": "《潮汐档案》围绕一段旧录音和一座小城展开。",
+      "claim_type": "fact",
+      "source_ids": ["src-001-body"],
+      "locator": "事实卡:claims[K001]"
+    }
+  ]
+}

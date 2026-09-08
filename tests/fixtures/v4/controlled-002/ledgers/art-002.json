@@ -1,0 +1,10 @@
+{
+  "claims": [
+    {
+      "claim_id": "claim-002",
+      "source_ids": ["src-002"],
+      "draft_locator": "p1-s1;p2-s1",
+      "source_locator": "行业材料·创作背景"
+    }
+  ]
+}

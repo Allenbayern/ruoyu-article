@@ -1,0 +1,15 @@
+{
+  "run_id": "v4-fixture-002",
+  "created_at": "2026-09-09T09:00:00+08:00",
+  "content_status": "CONTENT_READY",
+  "outputs": {
+    "topic_cards": {
+      "art-001": "topic-cards/art-001.json",
+      "art-002": "topic-cards/art-002.json"
+    }
+  },
+  "selected_articles": [
+    {"article_id": "art-001", "topic_id": "top-001"},
+    {"article_id": "art-002", "topic_id": "top-002"}
+  ]
+}

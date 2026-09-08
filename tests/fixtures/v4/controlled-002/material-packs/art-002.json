@@ -1,0 +1,13 @@
+{
+  "materials": {
+    "body_facts": [
+      {"material_id":"m-002-body","source_id":"src-001","locator":"正文事实·段2"}
+    ],
+    "industry_context": [
+      {"material_id":"m-002-industry","source_id":"src-002","locator":"行业背景·段2"}
+    ],
+    "audience_reactions": [
+      {"material_id":"m-002-audience","source_id":"src-003","locator":"观众反应·样本2","sample_scope":"公开短评样本","generalization_allowed":false}
+    ]
+  }
+}

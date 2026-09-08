@@ -1,0 +1,9 @@
+{
+  "card_type": "topic_card",
+  "run_id": "controlled-002",
+  "article_id": "art-001",
+  "topic_id": "topic-001",
+  "core_question": "一段旧录音如何让小城故事有了回声？",
+  "title_claim_ids": ["K001"],
+  "decision": "proceed"
+}

@@ -1,0 +1,31 @@
+{
+  "schema_version": "material-pack-v1",
+  "run_id": "controlled-002",
+  "article_id": "art-002",
+  "materials": {
+    "body_facts": [
+      {
+        "material_id": "m-002-body",
+        "source_ids": ["src-002-body"],
+        "locator": "材料包:body_facts[0]",
+        "summary": "旧信与方言生活的基本设定。"
+      }
+    ],
+    "industry_context": [
+      {
+        "material_id": "m-002-industry",
+        "source_ids": ["src-002-industry"],
+        "locator": "材料包:industry_context[0]",
+        "summary": "方言表达的制作背景。"
+      }
+    ],
+    "audience_reaction": [
+      {
+        "material_id": "m-002-audience",
+        "source_ids": ["src-002-audience"],
+        "locator": "材料包:audience_reaction[0]",
+        "summary": "限定范围的观众反馈。"
+      }
+    ]
+  }
+}

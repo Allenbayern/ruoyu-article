@@ -1,0 +1,10 @@
+{
+  "schema_version": "content-delivery-v1",
+  "run_id": "controlled-002",
+  "content_status": "CONTENT_READY",
+  "review_surface": "markdown_codex",
+  "publication_authorization": "not_authorized",
+  "delivery_state": "content_ready_not_published",
+  "content_blockers": [],
+  "governance_items": []
+}

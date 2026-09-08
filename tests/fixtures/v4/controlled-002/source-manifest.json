@@ -1,0 +1,22 @@
+{
+  "sources": [
+    {
+      "source_id": "src-001",
+      "relative_path": "sources/src-001.md",
+      "role": "official_film_page",
+      "url": "https://fixture.invalid/official-001"
+    },
+    {
+      "source_id": "src-002",
+      "relative_path": "sources/src-002.md",
+      "role": "industry_context",
+      "url": "https://fixture.invalid/industry-002"
+    },
+    {
+      "source_id": "src-003",
+      "relative_path": "sources/src-003.md",
+      "role": "audience_reaction",
+      "url": "https://fixture.invalid/audience-003"
+    }
+  ]
+}

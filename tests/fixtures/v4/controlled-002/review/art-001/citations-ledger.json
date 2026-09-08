@@ -1,0 +1,18 @@
+{
+  "schema_version": "claim-citations-v1",
+  "run_id": "controlled-002",
+  "article_id": "art-001",
+  "draft_path": "drafts/art-001.md",
+  "claims": [
+    {
+      "claim_id": "K001",
+      "draft_locator": "p1-s1; p2-s1",
+      "claim_text": "《潮汐档案》围绕一段旧录音和一座小城展开。",
+      "source_ids": ["src-001-body"],
+      "source_locator": "资料页:剧情摘要",
+      "status": "supported"
+    }
+  ],
+  "unmapped_factual_claims": [],
+  "coverage_result": "PASS"
+}
