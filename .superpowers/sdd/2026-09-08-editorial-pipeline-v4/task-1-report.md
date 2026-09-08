@@ -69,3 +69,41 @@ Self-review: only Task 1 contract implementation, schema, tests, and this
 report were changed; V3 behavior, Vault, network, credentials, and unrelated
 working-tree changes were untouched. Concern: the checkout remains dirty with
 pre-existing user changes and untracked files outside this task.
+
+## Fix round 2 report
+
+Status: PASS. Addressed scoped re-review items F-1/NB-1 and F-2:
+
+- F-1/NB-1: Python and JSON Schema now use the same explicit non-leap-second
+  RFC3339 subset: uppercase `T`, two-digit date/time fields, seconds `00-59`,
+  optional fractional seconds, and either `Z` or a timezone offset in
+  `±HH:MM` form. Timezone is mandatory; space separators, lowercase `t`,
+  compact offsets, and leap seconds are rejected by both paths.
+- F-2: Schema omission regression now covers all five required fields:
+  `schema_version`, `run_id`, `generated_at`, `input_hashes`, and `payload`.
+
+Tests and verification:
+
+- `uv run pytest -q tests/test_v4_contracts.py` after adding regressions —
+  expected RED, 1 failed and 12 passed; failure exposed Python accepting the
+  space separator.
+- `uv run pytest -q tests/test_v4_contracts.py` after implementation — PASS,
+  13 passed.
+- `uv run pytest -q` — PASS, 745 passed.
+- Direct Python/`Draft202012Validator(..., format_checker=FormatChecker())`
+  parity matrix for valid fractional/Z/offset timestamps, space separator,
+  missing timezone, leap second, lowercase `t`, compact offset, all five
+  required-field omissions, and unknown/publication fields — PASS:
+  `round 2 parity checks: PASS`.
+- `git diff --check` — PASS.
+
+Note: an initial parity shell probe failed because its extra-field assertion
+was accidentally inverted; the implementation was unchanged and the corrected
+probe passed immediately with the same cases.
+
+Self-review: only `article_group/v4/contracts.py`,
+`schemas/editorial-pipeline-v4/v4-artifact.schema.json`,
+`tests/test_v4_contracts.py`, and this report were changed in this round.
+V3 behavior, Vault, network, credentials, and unrelated working-tree changes
+were untouched. Concern: the checkout remains dirty with pre-existing user
+changes and untracked files outside this task.

@@ -92,6 +92,39 @@ def test_v4_envelope_rejects_unknown_top_level_fields_and_bad_timestamp():
     )
 
 
+def test_v4_generated_at_python_and_schema_have_matching_rfc3339_subset():
+    schema = json.loads(
+        Path("schemas/editorial-pipeline-v4/v4-artifact.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    validator = Draft202012Validator(schema, format_checker=FormatChecker())
+    envelope = new_artifact_envelope(
+        "v4-portfolio-plan-v1",
+        "controlled-002",
+        {},
+        generated_at="2026-09-08T10:00:00+08:00",
+    )
+    cases = {
+        "2026-09-08T10:00:00+08:00": True,
+        "2026-09-08T10:00:00.123Z": True,
+        "2026-09-08 10:00:00+08:00": False,
+        "2026-09-08T10:00:00": False,
+        "2026-09-08T10:00:60Z": False,
+        "2026-09-08t10:00:00Z": False,
+        "2026-09-08T10:00:00+0800": False,
+    }
+
+    for generated_at, accepted in cases.items():
+        candidate = {**envelope, "generated_at": generated_at}
+        python_accepted = not validate_artifact_envelope(
+            candidate, "v4-portfolio-plan-v1", run_id="controlled-002"
+        )
+        schema_accepted = not list(validator.iter_errors(candidate))
+        assert python_accepted is accepted, generated_at
+        assert schema_accepted is accepted, generated_at
+
+
 def test_v4_hash_entries_must_be_sha256():
     envelope = new_artifact_envelope(
         "v4-portfolio-plan-v1",
@@ -189,7 +222,13 @@ def test_v4_schema_enforces_closed_envelope():
 
     assert list(validator.iter_errors(valid)) == []
     assert any(error.validator == "type" for error in validator.iter_errors([]))
-    for field in ("schema_version", "run_id", "payload"):
+    for field in (
+        "schema_version",
+        "run_id",
+        "generated_at",
+        "input_hashes",
+        "payload",
+    ):
         missing = {key: value for key, value in valid.items() if key != field}
         assert any(
             error.validator == "required" for error in validator.iter_errors(missing)
