@@ -20,6 +20,7 @@ def _minimal_batch(root: Path) -> dict:
         "draft": "drafts/art-001.md",
         "material": "materials/src-1.md",
         "material_pack": "inputs/task-results/crawl-1/material-pack.json",
+        "material_pack_two": "inputs/task-results/crawl-2/material-pack.json",
         "review": "review/art-001/independent-review.json",
         "source_manifest": "source-manifest.json",
     }
@@ -31,6 +32,7 @@ def _minimal_batch(root: Path) -> dict:
         files["material"]: "Captured source material.\n",
         files["review"]: '{"review_id":"rev-1","article_id":"art-001"}',
         files["material_pack"]: '{"materials":{"body_facts":[{"material_id":"m-1","source_id":"src-1","locator":"material locator"}]}}',
+        files["material_pack_two"]: '{"materials":{"body_facts":[{"material_id":"m-2","source_id":"src-1","locator":"material locator two"}]}}',
         files["source_manifest"]: '{"sources":[{"source_id":"src-1","path":"sources/src-1.md","source_role":"primary"}]}',
         "sources/src-1.md": "Primary source.\n",
     }.items():
@@ -49,13 +51,25 @@ def _minimal_batch(root: Path) -> dict:
             "topic_card_path": files["topic"],
             "draft_path": files["draft"],
             "material_path": files["material"],
-            "material_pack_path": files["material_pack"],
+            "material_pack_path": files["material_pack_two"],
             "review_path": files["review"],
             "claims": [{"claim_id": "cl-1", "claim_type": "release", "source_ids": ["src-1"]}],
             "title_claim_ids": ["cl-1"],
             "title": "A title",
             "opening": "Opening.",
             "paragraphs": [{"id": "p1-s1", "text": "Paragraph one.", "claim_ids": ["cl-1"]}],
+        }, {
+            "article_id": "art-002",
+            "topic_id": "top-2",
+            "fact_card_path": files["fact"],
+            "citation_ledger_path": files["ledger"],
+            "topic_card_path": files["topic"],
+            "draft_path": files["draft"],
+            "material_pack_path": files["material_pack"],
+            "review_path": files["review"],
+            "claims": [{"claim_id": "cl-1", "claim_type": "release", "source_ids": ["src-1"]}],
+            "title_claim_ids": ["cl-1"],
+            "title": "A title two",
         }],
         "source_manifest_path": files["source_manifest"],
     }
@@ -120,6 +134,10 @@ def test_build_is_stable_without_timestamp_and_malformed_graph_returns_errors(tm
 def test_real_controlled_002_uses_run_manifest_material_packs_and_locators():
     root = Path("runs/2026-09-07/controlled-002")
     batch = json.loads((root / "batch.json").read_text(encoding="utf-8"))
+    batch["articles"] = [
+        {**article, "topic_card_path": f"review/{article['article_id']}/topic-card.json"}
+        for article in batch["articles"]
+    ]
     graph = build_evidence_graph(root, batch)
     nodes = graph["payload"]["nodes"]
     edges = graph["payload"]["edges"]
@@ -193,6 +211,24 @@ def test_manifest_mapping_missing_does_not_fall_back_to_conventional_paths(tmp_p
     graph = build_evidence_graph(tmp_path, broken)
     assert any("fact:art-001" in error or "ledger:art-001" in error for error in graph["payload"]["build_errors"])
     assert validate_evidence_graph(graph, tmp_path)
+
+
+def test_existing_conventional_topic_path_without_mapping_fails_closed(tmp_path: Path):
+    batch = _minimal_batch(tmp_path)
+    batch["articles"] = [{key: value for key, value in batch["articles"][0].items() if key != "topic_card_path"}]
+    graph = build_evidence_graph(tmp_path, batch)
+    assert any("topic:art-001" in error for error in graph["payload"]["build_errors"])
+    assert validate_evidence_graph(graph, tmp_path)
+
+
+def test_no_manifest_empty_or_single_article_fails_closed(tmp_path: Path):
+    valid = _minimal_batch(tmp_path)
+    for articles in ([], valid["articles"][:1]):
+        broken = {key: value for key, value in valid.items() if key != "articles"}
+        broken["articles"] = articles
+        graph = build_evidence_graph(tmp_path, broken)
+        assert any("article_count" in error or "articles" in error for error in graph["payload"]["build_errors"])
+        assert validate_evidence_graph(graph, tmp_path)
 
 
 def test_validation_requires_node_and_edge_contract_fields(tmp_path: Path):

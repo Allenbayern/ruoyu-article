@@ -77,9 +77,7 @@ def _merge_article(manifest: Mapping[str, Any], article: Mapping[str, Any]) -> d
     inputs = manifest.get("inputs", {}) if isinstance(manifest.get("inputs"), Mapping) else {}
     aid = _text(merged.get("article_id"))
     if not merged.get("topic_card_path"):
-        mapped = _find_output(outputs, "topic_cards", aid)
-        conventional = f"review/{aid}/topic-card.json"
-        merged["topic_card_path"] = mapped or (conventional if Path(manifest.get("_run_root", "."), conventional).is_file() else "")
+        merged["topic_card_path"] = _find_output(outputs, "topic_cards", aid)
     for field, output_key in (("fact_card_path", "fact_cards"), ("citation_ledger_path", "citation_ledgers"), ("draft_path", "drafts"), ("review_path", "review_records")):
         if not merged.get(field): merged[field] = _find_output(outputs, output_key, aid)
     if not merged.get("material_pack_path"):
@@ -167,7 +165,7 @@ def build_evidence_graph(run_root: Path, batch: Mapping[str, Any]) -> dict[str, 
         if len(selected) != 2: build_errors.append("invalid:article_count")
     raw_articles = explicit_articles if explicit_articles is not None else selected
     if not raw_articles: build_errors.append("missing:selected_articles")
-    if manifest and len(raw_articles) != 2: build_errors.append("invalid:article_count")
+    if len(raw_articles) != 2: build_errors.append("invalid:article_count")
     manifest = dict(manifest); manifest["_run_root"] = root
     nodes: dict[str, dict[str, Any]] = {}; edges: list[dict[str, Any]] = []
     for raw in raw_articles:
