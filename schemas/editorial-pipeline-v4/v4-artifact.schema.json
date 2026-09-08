@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "v4-artifact.schema.json",
+  "title": "Editorial Pipeline V4 artifact envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "generated_at", "input_hashes", "payload"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": [
+        "v4-portfolio-plan-v1",
+        "v4-evidence-graph-v1",
+        "v4-gap-priority-v1",
+        "v4-template-signals-v1",
+        "v4-effect-feedback-v1",
+        "v4-recovery-actions-v1",
+        "v4-verification-v1"
+      ]
+    },
+    "run_id": {"type": "string", "minLength": 1},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "input_hashes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[a-fA-F0-9]{64}$"
+      }
+    },
+    "payload": {"type": "object"}
+  }
+}
