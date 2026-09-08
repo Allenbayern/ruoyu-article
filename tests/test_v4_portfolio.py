@@ -121,7 +121,9 @@ def test_same_content_map_blocks_even_when_roles_differ():
 
 def test_flow_and_evergreen_without_depth_is_selectable():
     candidates = _flow_and_depth_candidates()
-    candidates[1]["content_map"] = "evergreen"
+    candidates[1]["content_map"] = "culture"
+    candidates[1]["topic_mode"] = "culture"
+    candidates[1]["traffic_class"] = "evergreen"
     plan = build_daily_portfolio(candidates, [], run_id="r1", planned_at="2026-09-08T10:00:00+08:00")
     assert plan["payload"]["decision"] == "selected"
     assert "missing:depth_or_evergreen" not in validate_portfolio(plan)
@@ -175,3 +177,33 @@ def test_controlled_candidate_aliases_normalize_to_v4_fields():
     assert selected[0]["reader_gap"] == "current reader gap"
     assert selected[0]["content_value_score"] == 5
     assert selected[1]["evidence_readiness"] == "high"
+
+
+def test_validate_portfolio_rejects_invalid_task1_envelope():
+    plan = build_daily_portfolio(
+        _flow_and_depth_candidates(), [], run_id="r1", planned_at="2026-09-08T10:00:00+08:00"
+    )
+    invalid = {**plan, "schema_version": "wrong-version"}
+    assert "unknown:schema_version" in validate_portfolio(invalid)
+
+
+def test_selected_article_ids_must_match_selected_articles():
+    plan = build_daily_portfolio(
+        _flow_and_depth_candidates(), [], run_id="r1", planned_at="2026-09-08T10:00:00+08:00"
+    )
+    plan["payload"]["selected_article_ids"] = ["forged-id", "depth-1"]
+    assert "selected:article_ids_mismatch" in validate_portfolio(plan)
+
+
+def test_selected_candidates_require_identity_and_quality_fields():
+    for field, expected in (
+        ("candidate_id", "missing:candidate_id"),
+        ("content_map", "missing:content_map"),
+        ("event_cluster_id", "missing:event_cluster_id"),
+        ("work_or_person", "missing:work_or_person"),
+    ):
+        candidates = _flow_and_depth_candidates()
+        candidates[0][field] = ""
+        plan = build_daily_portfolio(candidates, [], run_id="r1", planned_at="2026-09-08T10:00:00+08:00")
+        assert plan["payload"]["decision"] == "needs_controller"
+        assert expected in validate_portfolio(plan)

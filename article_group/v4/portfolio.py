@@ -5,7 +5,7 @@ from __future__ import annotations
 from itertools import combinations
 from typing import Any, Mapping
 
-from .contracts import new_artifact_envelope
+from .contracts import new_artifact_envelope, validate_artifact_envelope
 
 _READINESS_PRIORITY = {"high": 2, "medium": 1, "low": 0}
 
@@ -19,6 +19,7 @@ def _role(candidate: Mapping[str, Any]) -> set[str]:
         _text(candidate.get("content_map")).lower(),
         _text(candidate.get("traffic_class")).lower(),
         _text(candidate.get("topic_mode")).lower(),
+        _text(candidate.get("freshness_window")).lower(),
     }
     roles: set[str] = set()
     if values & {"flow", "current", "same-day", "release_event", "a"}:
@@ -59,7 +60,12 @@ def _normalize(candidate: Mapping[str, Any]) -> dict[str, Any]:
         result["content_value_score"] = candidate.get("editorial_value_score")
     if not result["traffic_class"]:
         result["traffic_class"] = candidate.get("freshness_window")
-    for field in ("content_map", "topic_mode", "event_cluster_id", "work_or_person", "traffic_class"):
+    result["work_or_person"] = _text(
+        candidate.get("work_or_person")
+        or candidate.get("work")
+        or candidate.get("core_person_or_event")
+    )
+    for field in ("content_map", "topic_mode", "event_cluster_id", "traffic_class"):
         result[field] = _text(result[field])
     result["evidence_readiness"] = _text(result["evidence_readiness"]).lower()
     return result
@@ -106,6 +112,9 @@ def _pair_errors(
 
 def _quality_errors(candidate: Mapping[str, Any]) -> list[str]:
     errors: list[str] = []
+    for field in ("candidate_id", "content_map", "event_cluster_id", "work_or_person"):
+        if not _text(candidate.get(field)):
+            errors.append(f"missing:{field}")
     if not _text(candidate.get("selection_reason")):
         errors.append("missing:selection_reason")
     if not _text(candidate.get("reader_gap")):
@@ -164,8 +173,9 @@ def build_daily_portfolio(
     valid: list[tuple[int, tuple[Mapping[str, Any], Mapping[str, Any]]]] = []
     rejected: list[str] = []
     for index, pair in enumerate(combinations(normalized, 2)):
-        pair_roles = _role(pair[0]) | _role(pair[1])
-        if not ({"flow", "depth"} <= pair_roles):
+        if not any("flow" in _role(item) for item in pair):
+            continue
+        if not any({"depth", "evergreen"} & _role(item) for item in pair):
             continue
         errors = _pair_errors(pair, history_works)
         if errors:
@@ -224,7 +234,9 @@ def validate_portfolio(plan: object) -> list[str]:
             errors.append("selected:requires_two_articles")
         else:
             errors.extend(_pair_errors((articles[0], articles[1]), set()))
-            errors.extend(error for article in articles for error in _quality_errors(article))
+            errors.extend(
+                error for article in articles for error in _quality_errors(article)
+            )
             roles = [_role(article) if isinstance(article, Mapping) else set() for article in articles]
             if not any("flow" in role for role in roles):
                 errors.append("missing:flow")
@@ -242,6 +254,25 @@ def validate_portfolio(plan: object) -> list[str]:
         )
     else:
         errors.append("invalid:missing_constraints")
+    errors.extend(
+        error
+        for error in validate_artifact_envelope(
+            plan,
+            "v4-portfolio-plan-v1",
+            run_id=plan.get("run_id", ""),
+        )
+        if error not in errors
+    )
+    selected_ids = payload.get("selected_article_ids")
+    selected_articles = payload.get("selected_articles")
+    if isinstance(selected_ids, list) and isinstance(selected_articles, list):
+        article_ids = [
+            article.get("candidate_id")
+            for article in selected_articles
+            if isinstance(article, Mapping)
+        ]
+        if selected_ids != article_ids:
+            errors.append("selected:article_ids_mismatch")
     return list(dict.fromkeys(errors))
 
 
