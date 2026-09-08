@@ -45,7 +45,21 @@ def _normalize(candidate: Mapping[str, Any]) -> dict[str, Any]:
     )
     result = {field: candidate.get(field) for field in fields}
     result["candidate_id"] = _text(result["candidate_id"])
-    for field in fields[1:8]:
+    result["selection_reason"] = _text(
+        candidate.get("selection_reason")
+        or candidate.get("reason")
+        or candidate.get("why_now")
+    )
+    result["reader_gap"] = _text(
+        candidate.get("reader_gap")
+        or candidate.get("reader_question")
+        or candidate.get("reader_intent")
+    )
+    if result["content_value_score"] is None:
+        result["content_value_score"] = candidate.get("editorial_value_score")
+    if not result["traffic_class"]:
+        result["traffic_class"] = candidate.get("freshness_window")
+    for field in ("content_map", "topic_mode", "event_cluster_id", "work_or_person", "traffic_class"):
         result[field] = _text(result[field])
     result["evidence_readiness"] = _text(result["evidence_readiness"]).lower()
     return result
@@ -80,11 +94,27 @@ def _pair_errors(
         errors.append("duplicate:event_cluster_id")
     if _text(left.get("work_or_person")) and left.get("work_or_person") == right.get("work_or_person"):
         errors.append("duplicate:work_or_person")
+    if _text(left.get("content_map")) and left.get("content_map") == right.get("content_map"):
+        errors.append("duplicate:content_map")
     if (
         _text(left.get("work_or_person")) in history_works
         or _text(right.get("work_or_person")) in history_works
     ):
         errors.append("history:work_or_person")
+    return errors
+
+
+def _quality_errors(candidate: Mapping[str, Any]) -> list[str]:
+    errors: list[str] = []
+    if not _text(candidate.get("selection_reason")):
+        errors.append("missing:selection_reason")
+    if not _text(candidate.get("reader_gap")):
+        errors.append("missing:reader_gap")
+    score = candidate.get("content_value_score")
+    if isinstance(score, bool) or not isinstance(score, (int, float)):
+        errors.append("invalid:content_value_score")
+    if _text(candidate.get("evidence_readiness")).lower() not in {"high", "medium", "low"}:
+        errors.append("invalid:evidence_readiness")
     return errors
 
 
@@ -127,10 +157,8 @@ def build_daily_portfolio(
     roles = [_role(candidate) for candidate in normalized]
     if not any("flow" in item for item in roles):
         missing.append("missing:flow")
-    if not any("depth" in item for item in roles):
-        missing.append("missing:depth")
-    if not any("evergreen" in item for item in roles):
-        missing.append("missing:evergreen")
+    if not any("depth" in item or "evergreen" in item for item in roles):
+        missing.append("missing:depth_or_evergreen")
 
     history_works = _history_works(history)
     valid: list[tuple[int, tuple[Mapping[str, Any], Mapping[str, Any]]]] = []
@@ -144,10 +172,13 @@ def build_daily_portfolio(
             rejected.extend(errors)
             continue
         if not any("flow" in _role(item) for item in pair) or not any(
-            "depth" in _role(item) and "evergreen" in _role(item)
-            for item in pair
+            {"depth", "evergreen"} & _role(item) for item in pair
         ):
-            rejected.extend(["missing:evergreen", "missing:depth"])
+            rejected.append("missing:depth_or_evergreen")
+            continue
+        quality_errors = [error for item in pair for error in _quality_errors(item)]
+        if quality_errors:
+            rejected.extend(quality_errors)
             continue
         valid.append((index, pair))
 
@@ -162,13 +193,7 @@ def build_daily_portfolio(
     else:
         selected_articles = [dict(item) for item in selected]
     constraint_errors = list(dict.fromkeys([*missing, *rejected]))
-    plan = {
-        **new_artifact_envelope(
-            "v4-portfolio-plan-v1",
-            run_id,
-            {},
-            generated_at=planned_at,
-        ),
+    payload = {
         "profile": profile,
         "decision": "selected" if selected is not None else "needs_controller",
         "selected_article_ids": [item["candidate_id"] for item in selected_articles],
@@ -177,34 +202,42 @@ def build_daily_portfolio(
         "missing_constraints": constraint_errors,
         "publication_authorization": "not_authorized",
     }
-    return plan
+    return new_artifact_envelope(
+        "v4-portfolio-plan-v1", run_id, payload, generated_at=planned_at
+    )
 
 
 def validate_portfolio(plan: object) -> list[str]:
-    if not isinstance(plan, Mapping):
+    if not isinstance(plan, Mapping) or set(plan) != {
+        "schema_version", "run_id", "generated_at", "input_hashes", "payload"
+    }:
         return ["invalid:portfolio"]
+    payload = plan.get("payload")
+    if not isinstance(payload, Mapping):
+        return ["invalid:payload"]
     errors: list[str] = []
-    if plan.get("publication_authorization", "not_authorized") != "not_authorized":
+    if payload.get("publication_authorization", "not_authorized") != "not_authorized":
         errors.append("publication_authorization_must_be_not_authorized")
-    if plan.get("decision") == "selected":
-        articles = plan.get("selected_articles")
+    if payload.get("decision") == "selected":
+        articles = payload.get("selected_articles")
         if not isinstance(articles, list) or len(articles) != 2:
             errors.append("selected:requires_two_articles")
         else:
             errors.extend(_pair_errors((articles[0], articles[1]), set()))
+            errors.extend(error for article in articles for error in _quality_errors(article))
             roles = [_role(article) if isinstance(article, Mapping) else set() for article in articles]
             if not any("flow" in role for role in roles):
                 errors.append("missing:flow")
-            if not any("depth" in role and "evergreen" in role for role in roles):
-                errors.append("missing:evergreen")
-    elif plan.get("decision") != "needs_controller":
+            if not any({"depth", "evergreen"} & role for role in roles):
+                errors.append("missing:depth_or_evergreen")
+    elif payload.get("decision") != "needs_controller":
         errors.append("invalid:decision")
-    if plan.get("decision") == "needs_controller" and plan.get("selected_article_ids"):
+    if payload.get("decision") == "needs_controller" and payload.get("selected_article_ids"):
         errors.append("needs_controller:must_not_select_articles")
-    if isinstance(plan.get("missing_constraints"), list):
+    if isinstance(payload.get("missing_constraints"), list):
         errors.extend(
             item
-            for item in plan["missing_constraints"]
+            for item in payload["missing_constraints"]
             if item not in errors
         )
     else:
@@ -216,8 +249,9 @@ def portfolio_gate_for_transition(plan: object, article_ids: object) -> list[str
     """Return blockers for a caller's transition proposal; never changes V3 states."""
 
     errors = validate_portfolio(plan)
-    if not isinstance(plan, Mapping) or plan.get("decision") != "selected":
+    payload = plan.get("payload") if isinstance(plan, Mapping) else None
+    if not isinstance(payload, Mapping) or payload.get("decision") != "selected":
         errors.append("portfolio:not_selected")
-    if isinstance(plan, Mapping) and plan.get("selected_article_ids") != article_ids:
+    if isinstance(payload, Mapping) and payload.get("selected_article_ids") != article_ids:
         errors.append("portfolio:article_ids_mismatch")
     return list(dict.fromkeys(errors))
