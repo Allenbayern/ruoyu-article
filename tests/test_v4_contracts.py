@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+from jsonschema import Draft202012Validator, FormatChecker
+
 from article_group.v4.contracts import (
     ARTIFACT_SCHEMA_VERSIONS,
     EDGE_TYPES,
@@ -63,6 +65,31 @@ def test_v4_envelope_rejects_unknown_schema_and_run_mismatch():
 
     assert "unknown:schema_version" in errors
     assert "mismatch:run_id" in errors
+
+
+def test_v4_envelope_rejects_unknown_top_level_fields_and_bad_timestamp():
+    envelope = new_artifact_envelope(
+        "v4-portfolio-plan-v1",
+        "controlled-002",
+        {},
+        generated_at="2026-09-08T10:00:00+08:00",
+    )
+
+    assert "invalid:top_level" in validate_artifact_envelope(
+        {**envelope, "publication_authorization": "not_authorized"},
+        "v4-portfolio-plan-v1",
+        run_id="controlled-002",
+    )
+    assert "invalid:top_level" in validate_artifact_envelope(
+        {**envelope, "unknown": True},
+        "v4-portfolio-plan-v1",
+        run_id="controlled-002",
+    )
+    assert "invalid:generated_at" in validate_artifact_envelope(
+        {**envelope, "generated_at": "not-a-date"},
+        "v4-portfolio-plan-v1",
+        run_id="controlled-002",
+    )
 
 
 def test_v4_hash_entries_must_be_sha256():
@@ -149,7 +176,33 @@ def test_v4_vocabularies_are_frozen_and_publication_agnostic():
     )
 
 
-def test_v4_schema_rejects_publication_field(tmp_path):
+def test_v4_schema_enforces_closed_envelope():
     schema_path = Path("schemas/editorial-pipeline-v4/v4-artifact.schema.json")
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
-    assert "publication_authorization" not in schema["properties"]
+    validator = Draft202012Validator(schema, format_checker=FormatChecker())
+    valid = new_artifact_envelope(
+        "v4-portfolio-plan-v1",
+        "controlled-002",
+        {},
+        generated_at="2026-09-08T10:00:00+08:00",
+    )
+
+    assert list(validator.iter_errors(valid)) == []
+    assert any(error.validator == "type" for error in validator.iter_errors([]))
+    for field in ("schema_version", "run_id", "payload"):
+        missing = {key: value for key, value in valid.items() if key != field}
+        assert any(
+            error.validator == "required" for error in validator.iter_errors(missing)
+        )
+    for extra in (
+        {"publication_authorization": "not_authorized"},
+        {"unknown": True},
+    ):
+        assert any(
+            error.validator == "additionalProperties"
+            for error in validator.iter_errors({**valid, **extra})
+        )
+    for bad_timestamp in (None, "not-a-date"):
+        assert list(
+            validator.iter_errors({**valid, "generated_at": bad_timestamp})
+        )

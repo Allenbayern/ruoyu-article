@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -56,6 +57,9 @@ EFFECT_STATES = (
 )
 
 _SHA256_LENGTH = 64
+_ENVELOPE_KEYS = frozenset(
+    {"schema_version", "run_id", "generated_at", "input_hashes", "payload"}
+)
 
 
 def parse_json_object(value: str | bytes | Path) -> dict[str, Any] | None:
@@ -126,6 +130,8 @@ def validate_artifact_envelope(
     errors: list[str] = []
     if not isinstance(value, Mapping):
         return ["invalid:artifact"]
+    if set(value) - _ENVELOPE_KEYS:
+        errors.append("invalid:top_level")
 
     schema = value.get("schema_version")
     if schema is None:
@@ -140,8 +146,17 @@ def validate_artifact_envelope(
     elif value["run_id"] != run_id:
         errors.append("mismatch:run_id")
 
-    if "generated_at" not in value:
+    generated_at = value.get("generated_at")
+    if not isinstance(generated_at, str) or not generated_at.strip():
         errors.append("missing:generated_at")
+    else:
+        try:
+            timestamp = datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+        except ValueError:
+            errors.append("invalid:generated_at")
+        else:
+            if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+                errors.append("invalid:generated_at")
     if "payload" not in value:
         errors.append("missing:payload")
     elif not isinstance(value["payload"], Mapping):
