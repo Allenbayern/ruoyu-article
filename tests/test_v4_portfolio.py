@@ -15,6 +15,7 @@ def _candidate(
     traffic_class="flow",
     value=4,
     readiness="high",
+    freshness_window="same-day",
 ):
     return {
         "candidate_id": candidate_id,
@@ -27,6 +28,7 @@ def _candidate(
         "reader_gap": f"gap-{candidate_id}",
         "content_value_score": value,
         "evidence_readiness": readiness,
+        "freshness_window": freshness_window,
     }
 
 
@@ -167,7 +169,7 @@ def test_controlled_candidate_aliases_normalize_to_v4_fields():
             **_candidate("depth-1", content_map="depth", topic_mode="revisit", traffic_class="depth"),
             "reader_gap": None,
             "reader_question": "what readers need explained",
-            "freshness_window": "evergreen",
+            "freshness_window": "revival",
         },
     ]
     plan = build_daily_portfolio(candidates, [], run_id="r1", planned_at="2026-09-08T10:00:00+08:00")
@@ -207,3 +209,115 @@ def test_selected_candidates_require_identity_and_quality_fields():
         plan = build_daily_portfolio(candidates, [], run_id="r1", planned_at="2026-09-08T10:00:00+08:00")
         assert plan["payload"]["decision"] == "needs_controller"
         assert expected in validate_portfolio(plan)
+
+
+def test_freshness_only_inputs_supply_flow_and_evergreen_roles():
+    for freshness_window, expected_role in (
+        ("same-day", "flow"),
+        ("fermenting-1-3d", "flow"),
+        ("revival", "evergreen"),
+    ):
+        candidates = [
+            _candidate(
+                "current",
+                content_map="C 文化现象",
+                traffic_class="",
+                topic_mode="culture",
+                freshness_window=freshness_window,
+            ),
+            _candidate(
+                "other",
+                content_map="B 作品深度",
+                traffic_class="depth",
+                topic_mode="culture",
+            ),
+        ]
+        if expected_role == "evergreen":
+            candidates[0]["content_map"] = "C 文化现象"
+            candidates[1]["content_map"] = "flow"
+        plan = build_daily_portfolio(
+            candidates, [], run_id="r1", planned_at="2026-09-08T10:00:00+08:00"
+        )
+        assert plan["payload"]["decision"] == "selected"
+        assert plan["payload"]["selected_articles"][0]["freshness_window"]
+
+
+def test_malformed_selected_articles_and_ids_are_stable_errors():
+    plan = build_daily_portfolio(
+        _flow_and_depth_candidates(), [], run_id="r1", planned_at="2026-09-08T10:00:00+08:00"
+    )
+    for malformed in (None, [None, {}], [1, "x"], "articles"):
+        candidate = {**plan, "payload": {**plan["payload"], "selected_articles": malformed}}
+        first = validate_portfolio(candidate)
+        assert first == validate_portfolio(candidate)
+        assert first and all(isinstance(item, str) for item in first)
+    for malformed in (None, "flow-1", ["flow-1"], ["flow-1", "flow-1"]):
+        candidate = {**plan, "payload": {**plan["payload"], "selected_article_ids": malformed}}
+        assert validate_portfolio(candidate)
+        assert portfolio_gate_for_transition(candidate, malformed)
+
+
+def test_payload_boundary_and_missing_constraints_items_fail_closed():
+    plan = build_daily_portfolio(
+        _flow_and_depth_candidates(), [], run_id="r1", planned_at="2026-09-08T10:00:00+08:00"
+    )
+    for payload_change, expected in (
+        ({"profile": "unknown"}, "invalid:profile"),
+        ({"profile": None}, "invalid:profile"),
+        ({"publication_authorization": None}, "publication_authorization_must_be_not_authorized"),
+        ({"publication_authorization": "granted"}, "publication_authorization_must_be_not_authorized"),
+        ({"missing_constraints": [{}]}, "invalid:missing_constraints_item"),
+        ({"missing_constraints": [[]]}, "invalid:missing_constraints_item"),
+        ({"missing_constraints": [None]}, "invalid:missing_constraints_item"),
+    ):
+        payload = {**plan["payload"], **payload_change}
+        errors = validate_portfolio({**plan, "payload": payload})
+        assert expected in errors
+
+
+def test_sequence_inputs_and_invalid_items_are_explicit():
+    candidates = tuple(_flow_and_depth_candidates())
+    plan = build_daily_portfolio(
+        candidates, tuple(), run_id="r1", planned_at="2026-09-08T10:00:00+08:00"
+    )
+    assert plan["payload"]["decision"] == "selected"
+    for bad in ("not candidates", b"bytes", {"candidate": "mapping"}):
+        rejected = build_daily_portfolio(
+            bad, [], run_id="r1", planned_at="2026-09-08T10:00:00+08:00"
+        )
+        assert rejected["payload"]["decision"] == "needs_controller"
+        assert "invalid:candidates" in rejected["payload"]["missing_constraints"]
+    rejected = build_daily_portfolio(
+        [*candidates, None], [], run_id="r1", planned_at="2026-09-08T10:00:00+08:00"
+    )
+    assert rejected["payload"]["decision"] == "needs_controller"
+    assert "invalid:candidate" in rejected["payload"]["missing_constraints"]
+
+
+def test_content_map_aliases_and_unknown_maps_fail_closed():
+    for left_map, right_map in (("A", "A 新片事件"), ("b", "B 作品深度"), (" C 文化现象 ", "C") , ("D 人物争议", "d")):
+        candidates = _flow_and_depth_candidates()
+        candidates[0]["content_map"] = left_map
+        candidates[1]["content_map"] = right_map
+        plan = build_daily_portfolio(candidates, [], run_id="r1", planned_at="2026-09-08T10:00:00+08:00")
+        assert plan["payload"]["decision"] == "needs_controller"
+        assert "duplicate:content_map" in validate_portfolio(plan)
+    candidates = _flow_and_depth_candidates()
+    candidates[0]["content_map"] = "unknown-map"
+    plan = build_daily_portfolio(candidates, [], run_id="r1", planned_at="2026-09-08T10:00:00+08:00")
+    assert plan["payload"]["decision"] == "needs_controller"
+    assert "missing:content_map" in validate_portfolio(plan)
+
+
+def test_score_must_be_finite_and_between_one_and_five():
+    for value in (True, "4", 0, 6, float("nan"), float("inf"), float("-inf")):
+        candidates = _flow_and_depth_candidates()
+        candidates[0]["content_value_score"] = value
+        plan = build_daily_portfolio(candidates, [], run_id="r1", planned_at="2026-09-08T10:00:00+08:00")
+        assert plan["payload"]["decision"] == "needs_controller"
+        assert "invalid:content_value_score" in validate_portfolio(plan)
+    for value in (1, 5):
+        candidates = _flow_and_depth_candidates()
+        candidates[0]["content_value_score"] = value
+        plan = build_daily_portfolio(candidates, [], run_id="r1", planned_at="2026-09-08T10:00:00+08:00")
+        assert plan["payload"]["decision"] == "selected"
