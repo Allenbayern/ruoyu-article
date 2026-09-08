@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime
 from pathlib import Path
 import re
 from typing import Any, Mapping
@@ -61,8 +62,8 @@ _ENVELOPE_KEYS = frozenset(
     {"schema_version", "run_id", "generated_at", "input_hashes", "payload"}
 )
 _RFC3339_SUBSET = re.compile(
-    r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-5][0-9]"
-    r"(?:\.[0-9]+)?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+    r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]"
+    r"(?:\.[0-9]+)?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])"
 )
 
 
@@ -155,6 +156,11 @@ def validate_artifact_envelope(
         errors.append("missing:generated_at")
     elif _RFC3339_SUBSET.fullmatch(generated_at) is None:
         errors.append("invalid:generated_at")
+    else:
+        try:
+            datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+        except ValueError:
+            errors.append("invalid:generated_at")
     if "payload" not in value:
         errors.append("missing:payload")
     elif not isinstance(value["payload"], Mapping):

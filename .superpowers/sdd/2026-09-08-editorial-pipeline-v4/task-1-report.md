@@ -107,3 +107,38 @@ Self-review: only `article_group/v4/contracts.py`,
 V3 behavior, Vault, network, credentials, and unrelated working-tree changes
 were untouched. Concern: the checkout remains dirty with pre-existing user
 changes and untracked files outside this task.
+
+## Fix round 3 report
+
+Status: PASS. Addressed round-2 re-review F-1 and NB-2:
+
+- F-1: Schema timestamp patterns now use an absolute-end `(?![\\s\\S])`
+  assertion, matching Python `fullmatch` and rejecting both LF and CRLF.
+- NB-2: Python retains `datetime.fromisoformat` semantic validation after the
+  strict lexical check. The Schema now deterministically constrains legal
+  Gregorian month/day combinations, including only leap-year February 29,
+  and legal hour/minute/second ranges. Both paths reject February 30, minute
+  60, hour 24, non-leap February 29, and leap second 60.
+- The parity regression retains valid fractional/Z/offset cases and now
+  covers leap-year dates, invalid calendar/time values, LF, and CRLF.
+
+Tests and verification:
+
+- `uv run pytest -q tests/test_v4_contracts.py` after adding regressions —
+  expected RED, 1 failed and 12 passed; failure exposed Python accepting
+  `2026-02-30T10:00:00Z`.
+- `uv run pytest -q tests/test_v4_contracts.py` after implementation — PASS,
+  13 passed.
+- `uv run pytest -q` — PASS, 745 passed.
+- Independent Python/`Draft202012Validator(..., format_checker=FormatChecker())`
+  parity matrix for valid leap/non-leap dates, invalid dates/times, separator,
+  timezone, leap-second, LF/CRLF, and offset cases — PASS:
+  `round 3 parity checks: PASS`.
+- `git diff --check` — PASS.
+
+Self-review: only `article_group/v4/contracts.py`,
+`schemas/editorial-pipeline-v4/v4-artifact.schema.json`,
+`tests/test_v4_contracts.py`, and this report were changed in this round.
+V3 behavior, Vault, network, credentials, and unrelated working-tree changes
+were untouched. Concern: the checkout remains dirty with pre-existing user
+changes and untracked files outside this task.

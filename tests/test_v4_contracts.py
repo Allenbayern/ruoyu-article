@@ -108,11 +108,18 @@ def test_v4_generated_at_python_and_schema_have_matching_rfc3339_subset():
     cases = {
         "2026-09-08T10:00:00+08:00": True,
         "2026-09-08T10:00:00.123Z": True,
+        "2024-02-29T10:00:00Z": True,
         "2026-09-08 10:00:00+08:00": False,
         "2026-09-08T10:00:00": False,
         "2026-09-08T10:00:60Z": False,
+        "2026-02-30T10:00:00Z": False,
+        "2026-09-08T10:60:00Z": False,
+        "2026-09-08T24:00:00Z": False,
+        "2023-02-29T10:00:00Z": False,
         "2026-09-08t10:00:00Z": False,
         "2026-09-08T10:00:00+0800": False,
+        "2026-09-08T10:00:00Z\n": False,
+        "2026-09-08T10:00:00Z\r\n": False,
     }
 
     for generated_at, accepted in cases.items():
