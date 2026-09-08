@@ -52,6 +52,7 @@ def _minimal_batch(root: Path) -> dict:
             "material_pack_path": files["material_pack"],
             "review_path": files["review"],
             "claims": [{"claim_id": "cl-1", "claim_type": "release", "source_ids": ["src-1"]}],
+            "title_claim_ids": ["cl-1"],
             "title": "A title",
             "opening": "Opening.",
             "paragraphs": [{"id": "p1-s1", "text": "Paragraph one.", "claim_ids": ["cl-1"]}],
@@ -128,7 +129,70 @@ def test_real_controlled_002_uses_run_manifest_material_packs_and_locators():
     assert any(node_id.startswith("paragraph:art-001:") for node_id in nodes)
     assert any(node_id.startswith("paragraph:art-002:") for node_id in nodes)
     assert all(edge["locator"] for edge in edges)
+    for article_id in ("art-001", "art-002"):
+        ledger = json.loads((root / f"review/{article_id}/citations-ledger.json").read_text(encoding="utf-8"))
+        for claim in ledger["claims"]:
+            claim_id = claim["claim_id"]
+            tokens = [token.strip() for token in claim["draft_locator"].split(";")]
+            materialized = [
+                edge for edge in edges
+                if edge["from"] == f"claim:{article_id}:{claim_id}"
+                and edge["edge_type"] == "materialized_as"
+            ]
+            assert {edge["locator"] for edge in materialized} >= set(tokens)
+    assert all(
+        not (edge["to"].startswith("title:") and edge["locator"].startswith("p1-"))
+        for edge in edges
+    )
     assert validate_evidence_graph(graph, root) == []
+
+
+def test_source_impact_does_not_cross_to_sibling_sources(tmp_path: Path):
+    root = Path("runs/2026-09-07/controlled-002")
+    graph = build_evidence_graph(root, json.loads((root / "batch.json").read_text(encoding="utf-8")))
+    impacted = trace_impact(graph, "source:src-kong-body")
+    assert "source:src-kong-cross" not in impacted
+    assert "source:src-kong-industry" not in impacted
+    assert "material:m-kong-body" in impacted
+    assert any(item.startswith("claim:art-001:") for item in impacted)
+    changed = invalidate_source(graph, "src-kong-body", "unavailable")
+    assert changed["payload"]["nodes"]["source:src-kong-cross"]["status"] == "present"
+    assert changed["payload"]["nodes"]["source:src-kong-industry"]["status"] == "present"
+
+
+def test_material_without_manifest_binding_blocks_graph(tmp_path: Path):
+    batch = _minimal_batch(tmp_path)
+    pack_path = tmp_path / batch["articles"][0]["material_pack_path"]
+    pack_path.write_text('{"materials":{"body_facts":[{"material_id":"m-1","locator":"material locator"}]}}', encoding="utf-8")
+    graph = build_evidence_graph(tmp_path, batch)
+    assert any("material_binding" in error for error in graph["payload"]["build_errors"])
+    assert any("material" in error for error in validate_evidence_graph(graph, tmp_path))
+
+
+def test_incomplete_batches_fail_closed_even_when_default_files_exist():
+    root = Path("runs/2026-09-07/controlled-002")
+    batch = json.loads((root / "batch.json").read_text(encoding="utf-8"))
+    for articles in ([], batch["articles"][:1]):
+        broken = {**batch, "articles": articles}
+        graph = build_evidence_graph(root, broken)
+        assert graph["payload"].get("build_errors")
+        assert validate_evidence_graph(graph, root)
+
+
+def test_manifest_mapping_missing_does_not_fall_back_to_conventional_paths(tmp_path: Path):
+    batch = _minimal_batch(tmp_path)
+    manifest = {
+        "run_id": "controlled-002",
+        "selected_articles": [{"article_id": "art-001", "topic_id": "top-1"}],
+        "outputs": {"drafts": [batch["articles"][0]["draft_path"]]},
+        "inputs": {"material_packs": [batch["articles"][0]["material_pack_path"]]},
+    }
+    (tmp_path / "run-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    broken = {key: value for key, value in batch.items() if key != "articles"}
+    broken["articles"] = [{"article_id": "art-001"}]
+    graph = build_evidence_graph(tmp_path, broken)
+    assert any("fact:art-001" in error or "ledger:art-001" in error for error in graph["payload"]["build_errors"])
+    assert validate_evidence_graph(graph, tmp_path)
 
 
 def test_validation_requires_node_and_edge_contract_fields(tmp_path: Path):

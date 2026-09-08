@@ -66,7 +66,7 @@ def _find_output(outputs: Mapping[str, Any], key: str, article_id: str) -> str:
     values = outputs.get(key)
     if isinstance(values, str): return values
     if isinstance(values, list):
-        return next((v for v in values if isinstance(v, str) and article_id in Path(v).name), "")
+        return next((v for v in values if isinstance(v, str) and article_id in v), "")
     return ""
 
 
@@ -76,32 +76,72 @@ def _merge_article(manifest: Mapping[str, Any], article: Mapping[str, Any]) -> d
     outputs = manifest.get("outputs", {}) if isinstance(manifest.get("outputs"), Mapping) else {}
     inputs = manifest.get("inputs", {}) if isinstance(manifest.get("inputs"), Mapping) else {}
     aid = _text(merged.get("article_id"))
-    merged.setdefault("topic_card_path", f"review/{aid}/topic-card.json")
-    merged.setdefault("fact_card_path", f"review/{aid}/fact-card.json")
-    merged.setdefault("citation_ledger_path", f"review/{aid}/citations-ledger.json")
-    merged.setdefault("draft_path", _find_output(outputs, "drafts", aid) or f"drafts/{aid}.md")
-    merged.setdefault("review_path", _find_output(outputs, "review_records", aid) or f"review/editorial-review-record-{aid}-v2.json")
+    if not merged.get("topic_card_path"):
+        mapped = _find_output(outputs, "topic_cards", aid)
+        conventional = f"review/{aid}/topic-card.json"
+        merged["topic_card_path"] = mapped or (conventional if Path(manifest.get("_run_root", "."), conventional).is_file() else "")
+    for field, output_key in (("fact_card_path", "fact_cards"), ("citation_ledger_path", "citation_ledgers"), ("draft_path", "drafts"), ("review_path", "review_records")):
+        if not merged.get(field): merged[field] = _find_output(outputs, output_key, aid)
     if not merged.get("material_pack_path"):
         packs = inputs.get("material_packs", []); task = _text(merged.get("crawl_task_id"))
         merged["material_pack_path"] = next((p for p in packs if isinstance(p, str) and (not task or task in p)), "")
     return merged
 
 
-def _draft_locators(root: Path, draft_path: str) -> tuple[str, str, list[str]]:
+def _draft_locators(root: Path, draft_path: str) -> tuple[str, str, list[tuple[str, list[str]]], dict[str, str]]:
     path = safe_relative_path(root, draft_path)
-    if path is None or not path.is_file(): return "h1", "p1-s1", []
+    if path is None or not path.is_file(): return "h1", "p1-s1", [], {}
     try: lines = path.read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeError): return "h1", "p1-s1", []
-    blocks: list[str] = []; block: list[str] = []
+    except (OSError, UnicodeError): return "h1", "p1-s1", [], {}
+    blocks: list[tuple[str, str]] = []; block: list[str] = []; section = ""
     for line in lines:
         value = line.strip()
         if value.startswith("#"):
-            if block: blocks.append(" ".join(block)); block = []
+            if block: blocks.append((section, " ".join(block))); block = []
+            if value.startswith("## "):
+                section = re.split(r"[，,：:。]", value[3:].strip(), maxsplit=1)[0]
+                section = re.sub(r"\s+", "-", section)
         elif value: block.append(value)
-        elif block: blocks.append(" ".join(block)); block = []
-    if block: blocks.append(" ".join(block))
-    locators = [f"p{i}-s1" for i in range(1, len(blocks) + 1)]
-    return "h1", (locators[0] if locators else "p1-s1"), locators
+        elif block: blocks.append((section, " ".join(block))); block = []
+    if block: blocks.append((section, " ".join(block)))
+    paragraph_data: list[tuple[str, list[str]]] = []; token_to_primary: dict[str, str] = {}; section_counts: dict[str, int] = {}
+    boundary = re.compile(r"(?<=[。！？!?；;])")
+    for index, (section_name, text) in enumerate(blocks, 1):
+        sentences = [part.strip() for part in boundary.split(text) if part.strip()] or [text]
+        aliases: list[str] = []
+        primary = f"p{index}-s1"
+        for sentence_index, _ in enumerate(sentences, 1):
+            token = f"p{index}-s{sentence_index}"; aliases.append(token); token_to_primary[token] = primary
+            if section_name:
+                section_counts[section_name] = section_counts.get(section_name, 0) + 1
+                section_token = f"§{section_name}-s{section_counts[section_name]}"
+                aliases.append(section_token); token_to_primary[section_token] = primary
+        paragraph_data.append((primary, aliases))
+    opening = paragraph_data[0][0] if paragraph_data else "p1-s1"
+    return "h1", opening, paragraph_data, token_to_primary
+
+
+def _title_claim_ids(article: Mapping[str, Any], topic: Mapping[str, Any], claims: Mapping[str, Mapping[str, Any]], errors: list[str], article_id: str) -> list[str]:
+    explicit = article.get("title_claim_ids", topic.get("title_claim_ids"))
+    if explicit is not None:
+        values = [explicit] if isinstance(explicit, str) else explicit
+        if not isinstance(values, list): errors.append(f"invalid:title_claim_ids:{article_id}"); return []
+        result = [_text(value) for value in values if _text(value)]
+        for claim_id in result:
+            if claim_id not in claims: errors.append(f"unknown:title_claim_id:{article_id}:{claim_id}")
+        return result
+    title = _text(article.get("title")); subject = _text(article.get("subject"))
+    terms: set[str] = set()
+    for value in (title, subject):
+        for run in re.findall(r"[\u4e00-\u9fff]{2,}", value):
+            terms.update(run[index:index + 2] for index in range(len(run) - 1))
+        terms.update(re.findall(r"[A-Za-z0-9]{3,}", value))
+    result = []
+    for claim_id, claim in claims.items():
+        claim_text = _text(claim.get("text") or claim.get("claim") or claim.get("claim_text"))
+        if any(term in claim_text for term in terms): result.append(claim_id)
+    if not result: errors.append(f"missing:title_binding:{article_id}")
+    return result
 
 
 def build_evidence_graph(run_root: Path, batch: Mapping[str, Any]) -> dict[str, Any]:
@@ -116,7 +156,19 @@ def build_evidence_graph(run_root: Path, batch: Mapping[str, Any]) -> dict[str, 
     source_manifest = _read_required(root, source_manifest_path, "source_manifest", build_errors)
     if "sources" not in source_manifest or not isinstance(source_manifest.get("sources"), list): build_errors.append("invalid:source_manifest:sources")
     source_records = {str(x.get("source_id")): x for x in source_manifest.get("sources", []) if isinstance(x, Mapping) and _text(x.get("source_id"))}
-    raw_articles = batch.get("articles") if isinstance(batch.get("articles"), list) else manifest.get("selected_articles", [])
+    if "articles" in batch and not isinstance(batch.get("articles"), list): build_errors.append("invalid:articles")
+    if "articles" in batch and isinstance(batch.get("articles"), list) and not batch["articles"]: build_errors.append("missing:articles")
+    selected = manifest.get("selected_articles", []) if isinstance(manifest.get("selected_articles"), list) else []
+    explicit_articles = batch.get("articles") if isinstance(batch.get("articles"), list) else None
+    if manifest and explicit_articles is not None:
+        selected_ids = {str(x.get("article_id")) for x in selected if isinstance(x, Mapping)}
+        explicit_ids = {str(x.get("article_id")) for x in explicit_articles if isinstance(x, Mapping)}
+        if selected_ids != explicit_ids: build_errors.append("mismatch:manifest_batch_article_ids")
+        if len(selected) != 2: build_errors.append("invalid:article_count")
+    raw_articles = explicit_articles if explicit_articles is not None else selected
+    if not raw_articles: build_errors.append("missing:selected_articles")
+    if manifest and len(raw_articles) != 2: build_errors.append("invalid:article_count")
+    manifest = dict(manifest); manifest["_run_root"] = root
     nodes: dict[str, dict[str, Any]] = {}; edges: list[dict[str, Any]] = []
     for raw in raw_articles:
         if not isinstance(raw, Mapping): build_errors.append("invalid:article"); continue
@@ -124,7 +176,7 @@ def build_evidence_graph(run_root: Path, batch: Mapping[str, Any]) -> dict[str, 
         if not aid: build_errors.append("missing:article_id"); continue
         if not topic_id: build_errors.append(f"missing:topic_id:{aid}"); topic_id = f"missing:{aid}"
         topic_node = f"topic:{topic_id}"; topic_path = _text(article.get("topic_card_path"))
-        _topic = _read_required(root, topic_path, f"topic:{aid}", build_errors)
+        topic = _read_required(root, topic_path, f"topic:{aid}", build_errors)
         nodes[topic_node] = _node(root, topic_node, "topic", topic_path, locator="topic-card")
         fact_path = _text(article.get("fact_card_path")); ledger_path = _text(article.get("citation_ledger_path"))
         fact = _read_required(root, fact_path, f"fact:{aid}", build_errors); ledger = _read_required(root, ledger_path, f"ledger:{aid}", build_errors)
@@ -167,25 +219,31 @@ def build_evidence_graph(run_root: Path, batch: Mapping[str, Any]) -> dict[str, 
                 mid = _text(material["material_id"]); mn = f"material:{mid}"; locator = _text(material.get("locator"))
                 nodes[mn] = _node(root, mn, "material", pack_path, locator=locator, category=category)
                 source_ids = material.get("source_ids", material.get("source_id", [])); source_ids = [source_ids] if isinstance(source_ids, str) else source_ids
-                if not isinstance(source_ids, list): source_ids = []
-                if not source_ids and _text(material.get("source_url")):
-                    source_ids = [sid for sid, source in source_records.items() if _text(source.get("url")) == material.get("source_url")]
+                if not isinstance(source_ids, list): build_errors.append(f"invalid:material_binding:{aid}:{mid}"); source_ids = []
+                source_url = material.get("source_url")
+                if not source_ids and source_url is not None and not isinstance(source_url, str): build_errors.append(f"invalid:material_binding:{aid}:{mid}")
+                if not source_ids and _text(source_url):
+                    source_ids = [sid for sid, source in source_records.items() if _text(source.get("url")) == source_url]
+                if not source_ids: build_errors.append(f"missing:material_binding:{aid}:{mid}")
                 for sid in source_ids:
                     sid = _text(sid)
-                    if not sid: continue
-                    source = source_records.get(sid, {}); spath = _text(source.get("relative_path") or source.get("path")); role = _text(source.get("role") or source.get("source_role"))
+                    if not sid or sid not in source_records: build_errors.append(f"unknown:material_binding:{aid}:{mid}:{sid}"); continue
+                    source = source_records[sid]; spath = _text(source.get("relative_path") or source.get("path")); role = _text(source.get("role") or source.get("source_role"))
                     nodes[f"source:{sid}"] = _node(root, f"source:{sid}", "source", spath, source_role=role)
                     _edge(edges, f"source:{sid}", "captured_as", mn, locator or f"material:{mid}", generated_at)
-        draft_path = _text(article.get("draft_path")); title_loc, opening_loc, paragraph_locs = _draft_locators(root, draft_path)
+        draft_path = _text(article.get("draft_path")); title_loc, opening_loc, paragraph_data, locator_map = _draft_locators(root, draft_path)
         title, opening = f"title:{aid}", f"opening:{aid}"; nodes[title] = _node(root, title, "title", draft_path, locator=title_loc); nodes[opening] = _node(root, opening, "opening", draft_path, locator=opening_loc)
-        for loc in paragraph_locs: nodes[f"paragraph:{aid}:{loc}"] = _node(root, f"paragraph:{aid}:{loc}", "paragraph", draft_path, locator=loc)
+        for primary, aliases in paragraph_data: nodes[f"paragraph:{aid}:{primary}"] = _node(root, f"paragraph:{aid}:{primary}", "paragraph", draft_path, locator=primary, locators=aliases)
+        title_claim_ids = _title_claim_ids(article, topic, fact_by_id, build_errors, aid)
+        for claim_id in title_claim_ids:
+            if claim_id in fact_by_id: _edge(edges, f"claim:{aid}:{claim_id}", "materialized_as", title, "title", generated_at)
         for cid, lc in ledger_claims.items():
             for loc in [x.strip() for x in _text(lc.get("draft_locator")).split(";") if x.strip()]:
-                target = opening if loc == opening_loc else f"paragraph:{aid}:{loc}"
-                if target in nodes: _edge(edges, f"claim:{aid}:{cid}", "materialized_as", target, loc, generated_at)
-                paragraph_target = f"paragraph:{aid}:{loc}"
-                if paragraph_target in nodes and paragraph_target != target: _edge(edges, f"claim:{aid}:{cid}", "materialized_as", paragraph_target, loc, generated_at)
-            if opening_loc in _text(lc.get("draft_locator")): _edge(edges, f"claim:{aid}:{cid}", "materialized_as", title, opening_loc, generated_at)
+                primary = locator_map.get(loc)
+                if primary is None: build_errors.append(f"unresolved:draft_locator:{aid}:{loc}"); continue
+                paragraph_target = f"paragraph:{aid}:{primary}"
+                _edge(edges, f"claim:{aid}:{cid}", "materialized_as", paragraph_target, loc, generated_at)
+                if loc == opening_loc: _edge(edges, f"claim:{aid}:{cid}", "materialized_as", opening, loc, generated_at)
         review_path = _text(article.get("review_path")); review = _read_required(root, review_path, f"review:{aid}", build_errors); rid = _text(review.get("article_id")) or aid; rn = f"review:{aid}:{rid}"; nodes[rn] = _node(root, rn, "review", review_path, locator=review_path)
         for component in [title, opening, *[key for key in nodes if key.startswith(f"paragraph:{aid}:")]]: _edge(edges, component, "reviewed_by", rn, review_path, generated_at)
     edges.sort(key=lambda x: (x["from"], x["edge_type"], x["to"], x["locator"])); payload: dict[str, Any] = {"nodes": nodes, "edges": edges}
@@ -202,15 +260,22 @@ def validate_evidence_graph(graph: Mapping[str, Any], run_root: Path) -> list[st
     if not isinstance(graph, Mapping): return ["invalid:graph"]
     errors = validate_artifact_envelope(graph, _SCHEMA, run_id=_text(graph.get("run_id")) or "__missing__"); payload = _payload(graph); nodes = payload.get("nodes"); edges = payload.get("edges")
     if not isinstance(nodes, Mapping): return errors + ["invalid:nodes"]
+    if not nodes: errors.append("invalid:empty_nodes")
     if not isinstance(edges, list): return errors + ["invalid:edges"]
-    errors.extend(f"build:{x}" for x in payload.get("build_errors", []) if isinstance(x, str))
+    if not edges: errors.append("invalid:empty_edges")
+    build_errors = payload.get("build_errors", [])
+    if not isinstance(build_errors, list): errors.append("invalid:build_errors")
+    errors.extend(f"build:{x}" for x in build_errors if isinstance(x, str))
     known: dict[str, Mapping[str, Any]] = {}
+    node_ids: set[str] = set()
     for key, node in nodes.items():
         if not isinstance(key, str) or not isinstance(node, Mapping): errors.append("invalid:node"); continue
         for field in _REQUIRED_NODE:
             if field not in node: errors.append(f"missing:node:{field}:{key}")
         if node.get("node_id") != key: errors.append(f"mismatch:node_id:{key}")
         if not isinstance(node.get("node_id"), str) or not node.get("node_id"): errors.append(f"invalid:node_id:{key}")
+        elif node["node_id"] in node_ids: errors.append(f"duplicate:node:{node['node_id']}")
+        else: node_ids.add(node["node_id"])
         if not isinstance(node.get("node_type"), str) or node.get("node_type") not in NODE_TYPES: errors.append(f"unknown:node_type:{key}")
         if not isinstance(node.get("status"), str) or node.get("status") not in _STATUSES: errors.append(f"invalid:status:{key}")
         if not isinstance(node.get("artifact_path"), str) or not node.get("artifact_path"): errors.append(f"invalid:artifact_path:{key}")
@@ -225,7 +290,7 @@ def validate_evidence_graph(graph: Mapping[str, Any], run_root: Path) -> list[st
             try:
                 if digest != sha256_file(path): errors.append(f"mismatch:hash:{key}")
             except OSError: errors.append(f"missing:artifact:{key}")
-    adjacency: dict[str, set[str]] = {key: set() for key in known}; incoming: dict[str, set[str]] = {key: set() for key in known}; signatures: set[tuple[Any, ...]] = set()
+    adjacency: dict[str, set[str]] = {key: set() for key in known}; incoming: dict[str, set[str]] = {key: set() for key in known}; incoming_edges: dict[str, list[tuple[str, str]]] = {key: [] for key in known}; signatures: set[tuple[Any, ...]] = set()
     for edge in edges:
         if not isinstance(edge, Mapping): errors.append("invalid:edge"); continue
         for field in _REQUIRED_EDGE:
@@ -240,13 +305,14 @@ def validate_evidence_graph(graph: Mapping[str, Any], run_root: Path) -> list[st
         if all(isinstance(value, str) for value in sig):
             if sig in signatures: errors.append("duplicate:edge")
             signatures.add(sig)
-        adjacency[left].add(right); incoming[right].add(left)
+        adjacency[left].add(right); incoming[right].add(left); incoming_edges[right].append((left, kind))
     for key, node in known.items():
         kind = node.get("node_type")
         if isinstance(kind, str) and kind in {"title", "opening", "review"} and not incoming[key]: errors.append(f"isolated:{kind}:{key}")
         if kind == "claim":
             if not any(known[parent].get("node_type") == "topic" for parent in incoming[key]): errors.append(f"isolated:claim:{key}")
             if not any(known[child].get("node_type") == "source" for child in adjacency[key]): errors.append(f"unsupported:claim:{key}")
+        if kind == "material" and not any(known[parent].get("node_type") == "source" and edge_kind == "captured_as" for parent, edge_kind in incoming_edges[key]): errors.append(f"unbound:material:{key}")
     return list(dict.fromkeys(errors))
 
 
@@ -256,8 +322,10 @@ def trace_impact(graph: Mapping[str, Any], node_id: str) -> list[str]:
     adjacency: dict[str, list[str]] = {}
     for edge in edges:
         if not isinstance(edge, Mapping) or edge.get("from") not in nodes or edge.get("to") not in nodes: continue
-        adjacency.setdefault(edge["from"], []).append(edge["to"])
-        if edge.get("edge_type") == "supported_by": adjacency.setdefault(edge["to"], []).append(edge["from"])
+        if edge.get("edge_type") == "supported_by":
+            adjacency.setdefault(edge["to"], []).append(edge["from"])
+        else:
+            adjacency.setdefault(edge["from"], []).append(edge["to"])
     for values in adjacency.values(): values.sort()
     result: list[str] = []; seen = {node_id}; queue = deque([node_id])
     while queue:
