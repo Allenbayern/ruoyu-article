@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from article_group.v4.evidence_graph import (
+    _find_output,
     build_evidence_graph,
     invalidate_source,
     trace_impact,
@@ -18,6 +19,7 @@ def _minimal_batch(root: Path) -> dict:
         "fact": "review/art-001/fact-card.json",
         "ledger": "review/art-001/citations-ledger.json",
         "draft": "drafts/art-001.md",
+        "draft_two": "drafts/art-002.md",
         "material": "materials/src-1.md",
         "material_pack": "inputs/task-results/crawl-1/material-pack.json",
         "material_pack_two": "inputs/task-results/crawl-2/material-pack.json",
@@ -26,9 +28,10 @@ def _minimal_batch(root: Path) -> dict:
     }
     for relative, text in {
         files["topic"]: '{"topic_id":"top-1"}',
-        files["fact"]: '{"claims":[{"claim_id":"cl-1","claim_type":"release","source_ids":["src-1"]}]}',
+        files["fact"]: '{"claims":[{"claim_id":"cl-1","claim_type":"release","source_ids":["src-1"],"locator":"fact claim locator"}]}',
         files["ledger"]: '{"claims":[{"claim_id":"cl-1","source_ids":["src-1"],"draft_locator":"p1-s1; p2-s1","source_locator":"ledger source locator"}]}',
         files["draft"]: "# A title\n\nOpening.\n\nParagraph one.\n",
+        files["draft_two"]: "# A title two\n\nOpening.\n\nParagraph one.\n",
         files["material"]: "Captured source material.\n",
         files["review"]: '{"review_id":"rev-1","article_id":"art-001"}',
         files["material_pack"]: '{"materials":{"body_facts":[{"material_id":"m-1","source_id":"src-1","locator":"material locator"}]}}',
@@ -64,7 +67,7 @@ def _minimal_batch(root: Path) -> dict:
             "fact_card_path": files["fact"],
             "citation_ledger_path": files["ledger"],
             "topic_card_path": files["topic"],
-            "draft_path": files["draft"],
+            "draft_path": files["draft_two"],
             "material_pack_path": files["material_pack"],
             "review_path": files["review"],
             "claims": [{"claim_id": "cl-1", "claim_type": "release", "source_ids": ["src-1"]}],
@@ -276,3 +279,121 @@ def test_malformed_required_json_cannot_be_bypassed_by_inline_claims(tmp_path: P
     graph = build_evidence_graph(tmp_path, batch)
     assert graph["payload"]["build_errors"]
     assert any("fact" in error for error in validate_evidence_graph(graph, tmp_path))
+
+
+def test_duplicate_article_ids_with_distinct_artifacts_fail_closed(tmp_path: Path):
+    batch = _minimal_batch(tmp_path)
+    duplicate_draft = tmp_path / "drafts/art-001-duplicate.md"
+    duplicate_draft.write_text("# A title\n\nOpening.\n", encoding="utf-8")
+    batch["articles"][1] = {
+        **batch["articles"][1],
+        "article_id": "art-001",
+        "draft_path": "drafts/art-001-duplicate.md",
+    }
+    graph = build_evidence_graph(tmp_path, batch)
+    assert any("duplicate:article_id" in error for error in graph["payload"].get("build_errors", []))
+    assert any("duplicate" in error for error in validate_evidence_graph(graph, tmp_path))
+
+
+def test_duplicate_node_id_with_distinct_artifact_fails_closed(tmp_path: Path):
+    graph = build_evidence_graph(tmp_path, _minimal_batch(tmp_path))
+    other = tmp_path / "sources/other.md"
+    other.write_text("Another source.\n", encoding="utf-8")
+    broken = copy.deepcopy(graph)
+    source = dict(broken["payload"]["nodes"]["source:src-1"])
+    source["artifact_path"] = "sources/other.md"
+    source["artifact_sha256"] = None
+    broken["payload"]["nodes"]["source:src-1-copy"] = source
+    assert any("duplicate:node" in error or "mismatch:node_id" in error for error in validate_evidence_graph(broken, tmp_path))
+
+
+def test_graph_input_hashes_protect_source_manifest_binding(tmp_path: Path):
+    batch = _minimal_batch(tmp_path)
+    graph = build_evidence_graph(tmp_path, batch)
+    assert graph["input_hashes"]
+    assert any("source-manifest.json" in key for key in graph["input_hashes"])
+    manifest_path = tmp_path / batch["source_manifest_path"]
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    (tmp_path / "sources/other.md").write_text("Rebound source.\n", encoding="utf-8")
+    manifest["sources"][0]["path"] = "sources/other.md"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    errors = validate_evidence_graph(graph, tmp_path)
+    assert any("input_hash" in error or "source_mapping" in error for error in errors)
+
+
+def test_output_mapping_does_not_match_article_id_substrings_or_ambiguity():
+    errors: list[str] = []
+    outputs = {"drafts": ["drafts/art-0010.md", "drafts/art-001.md"]}
+    assert _find_output(outputs, "drafts", "art-001", errors) == "drafts/art-001.md"
+    assert errors == []
+    ambiguous: list[str] = []
+    outputs["drafts"] = ["drafts/art-001/first.md", "drafts/art-001/second.md"]
+    assert _find_output(outputs, "drafts", "art-001", ambiguous) == ""
+    assert any("ambiguous" in error for error in ambiguous)
+
+
+def test_draft_locators_require_one_matching_real_h1(tmp_path: Path):
+    batch = _minimal_batch(tmp_path)
+    draft_path = tmp_path / batch["articles"][0]["draft_path"]
+    draft_path.write_text("Opening without a title.\n\nBody.\n", encoding="utf-8")
+    graph = build_evidence_graph(tmp_path, batch)
+    assert any("h1" in error for error in graph["payload"].get("build_errors", []))
+    assert validate_evidence_graph(graph, tmp_path)
+
+    draft_path.write_text("# A title\n\nOpening.\n\n# Another title\n\nBody.\n", encoding="utf-8")
+    repeated = build_evidence_graph(tmp_path, batch)
+    assert any("h1" in error for error in repeated["payload"].get("build_errors", []))
+    assert validate_evidence_graph(repeated, tmp_path)
+
+
+def test_draft_title_must_match_input_and_locator_comes_from_markdown(tmp_path: Path):
+    batch = _minimal_batch(tmp_path)
+    graph = build_evidence_graph(tmp_path, batch)
+    assert graph["payload"]["nodes"]["title:art-001"]["locator"] == "h1:A title"
+    draft_path = tmp_path / batch["articles"][0]["draft_path"]
+    draft_path.write_text("# Different title\n\nOpening.\n\nBody.\n", encoding="utf-8")
+    broken = build_evidence_graph(tmp_path, batch)
+    assert any("title" in error for error in broken["payload"].get("build_errors", []))
+    assert validate_evidence_graph(broken, tmp_path)
+
+
+def test_publication_authorization_is_outside_graph_boundary(tmp_path: Path):
+    graph = build_evidence_graph(tmp_path, _minimal_batch(tmp_path))
+    assert "publication_authorization" not in graph
+    assert "publication_authorization" not in graph["payload"]
+    broken = copy.deepcopy(graph)
+    broken["payload"]["publication_authorization"] = "authorized"
+    assert any("publication_authorization" in error for error in validate_evidence_graph(broken, tmp_path))
+
+
+def test_missing_claim_source_and_material_locators_fail_closed(tmp_path: Path):
+    batch = _minimal_batch(tmp_path)
+    ledger_path = tmp_path / batch["articles"][0]["citation_ledger_path"]
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    ledger["claims"][0]["source_locator"] = ""
+    ledger_path.write_text(json.dumps(ledger), encoding="utf-8")
+    source_broken = build_evidence_graph(tmp_path, batch)
+    assert any("source_locator" in error for error in source_broken["payload"].get("build_errors", []))
+    assert validate_evidence_graph(source_broken, tmp_path)
+
+    batch = _minimal_batch(tmp_path)
+    fact_path = tmp_path / batch["articles"][0]["fact_card_path"]
+    fact = json.loads(fact_path.read_text(encoding="utf-8"))
+    fact["claims"][0]["locator"] = ""
+    ledger_path = tmp_path / batch["articles"][0]["citation_ledger_path"]
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    ledger["claims"][0]["draft_locator"] = ""
+    fact_path.write_text(json.dumps(fact), encoding="utf-8")
+    ledger_path.write_text(json.dumps(ledger), encoding="utf-8")
+    claim_broken = build_evidence_graph(tmp_path, batch)
+    assert any("claim_locator" in error for error in claim_broken["payload"].get("build_errors", []))
+    assert validate_evidence_graph(claim_broken, tmp_path)
+
+    batch = _minimal_batch(tmp_path)
+    pack_path = tmp_path / batch["articles"][0]["material_pack_path"]
+    pack = json.loads(pack_path.read_text(encoding="utf-8"))
+    pack["materials"]["body_facts"][0]["locator"] = ""
+    pack_path.write_text(json.dumps(pack), encoding="utf-8")
+    material_broken = build_evidence_graph(tmp_path, batch)
+    assert any("material_locator" in error for error in material_broken["payload"].get("build_errors", []))
+    assert validate_evidence_graph(material_broken, tmp_path)

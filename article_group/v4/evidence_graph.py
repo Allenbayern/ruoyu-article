@@ -58,43 +58,166 @@ def _node(root: Path, node_id: str, node_type: str, artifact_path: str, **extra:
     return node
 
 
+def _put_node(
+    nodes: dict[str, dict[str, Any]],
+    node: dict[str, Any],
+    errors: list[str],
+) -> None:
+    """Insert a node without allowing a later artifact to overwrite it."""
+
+    node_id = node.get("node_id")
+    if not isinstance(node_id, str) or not node_id:
+        errors.append("invalid:node_id")
+        return
+    existing = nodes.get(node_id)
+    if existing is None:
+        nodes[node_id] = node
+        return
+    if existing != node:
+        errors.append(f"duplicate:node:{node_id}")
+
+
+def _claim_locator(
+    fact_claim: Mapping[str, Any],
+    ledger: Mapping[str, Any],
+    claim_id: str,
+    *,
+    fact_card: Mapping[str, Any] | None = None,
+) -> str:
+    """Return an artifact locator, including the structured fact-card form."""
+
+    for value in (
+        fact_claim.get("locator"),
+        fact_claim.get("claim_locator"),
+        ledger.get("claim_locator"),
+        ledger.get("locator"),
+    ):
+        locator = _text(value)
+        if locator:
+            return locator
+    # The current fact-card format stores permitted claims without a per-claim
+    # locator. This is a concrete JSON-field locator, not a node-id fallback.
+    if isinstance(fact_card, Mapping) and isinstance(fact_card.get("permitted_claims"), list):
+        return f"fact-card:permitted_claims[{claim_id}]"
+    return ""
+
+
 def _edge(edges: list[dict[str, Any]], left: str, kind: str, right: str, locator: str, created_at: str) -> None:
     edges.append({"from": left, "to": right, "edge_type": kind, "locator": locator, "created_at": created_at})
 
 
-def _find_output(outputs: Mapping[str, Any], key: str, article_id: str) -> str:
+def _article_path_match(raw_path: str, article_id: str) -> bool:
+    """Match an output to an article by a complete path component or stem."""
+
+    try:
+        path = Path(raw_path)
+    except (TypeError, ValueError):
+        return False
+    return (
+        article_id in path.parts
+        or path.stem == article_id
+        or re.search(
+            rf"(?<![A-Za-z0-9]){re.escape(article_id)}(?![A-Za-z0-9])",
+            raw_path,
+        )
+        is not None
+    )
+
+
+def _find_output(
+    outputs: Mapping[str, Any],
+    key: str,
+    article_id: str,
+    errors: list[str] | None = None,
+) -> str:
+    """Resolve exactly one output for an article, never by substring matching."""
+
     values = outputs.get(key)
-    if isinstance(values, str): return values
-    if isinstance(values, list):
-        return next((v for v in values if isinstance(v, str) and article_id in v), "")
+    candidates: list[str] = []
+    if isinstance(values, str):
+        if _article_path_match(values, article_id):
+            candidates = [values]
+    elif isinstance(values, list):
+        candidates = [
+            value for value in values
+            if isinstance(value, str) and _article_path_match(value, article_id)
+        ]
+    elif isinstance(values, Mapping):
+        value = values.get(article_id)
+        if isinstance(value, str) and value:
+            candidates = [value]
+
+    if len(candidates) == 1:
+        return candidates[0]
+    if errors is not None:
+        if len(candidates) > 1:
+            errors.append(f"ambiguous:output:{key}:{article_id}")
+        elif values is not None:
+            errors.append(f"missing:output:{key}:{article_id}")
     return ""
 
 
-def _merge_article(manifest: Mapping[str, Any], article: Mapping[str, Any]) -> dict[str, Any]:
+def _merge_article(
+    manifest: Mapping[str, Any],
+    article: Mapping[str, Any],
+    errors: list[str] | None = None,
+) -> dict[str, Any]:
     selected = next((x for x in manifest.get("selected_articles", []) if isinstance(x, Mapping) and x.get("article_id") == article.get("article_id")), {})
     merged = dict(selected) if isinstance(selected, Mapping) else {}; merged.update(article)
     outputs = manifest.get("outputs", {}) if isinstance(manifest.get("outputs"), Mapping) else {}
     inputs = manifest.get("inputs", {}) if isinstance(manifest.get("inputs"), Mapping) else {}
     aid = _text(merged.get("article_id"))
     if not merged.get("topic_card_path"):
-        merged["topic_card_path"] = _find_output(outputs, "topic_cards", aid)
+        merged["topic_card_path"] = _find_output(outputs, "topic_cards", aid, errors)
     for field, output_key in (("fact_card_path", "fact_cards"), ("citation_ledger_path", "citation_ledgers"), ("draft_path", "drafts"), ("review_path", "review_records")):
-        if not merged.get(field): merged[field] = _find_output(outputs, output_key, aid)
+        if not merged.get(field):
+            merged[field] = _find_output(outputs, output_key, aid, errors)
     if not merged.get("material_pack_path"):
         packs = inputs.get("material_packs", []); task = _text(merged.get("crawl_task_id"))
         merged["material_pack_path"] = next((p for p in packs if isinstance(p, str) and (not task or task in p)), "")
     return merged
 
 
-def _draft_locators(root: Path, draft_path: str) -> tuple[str, str, list[tuple[str, list[str]]], dict[str, str]]:
+def _draft_locators(
+    root: Path,
+    draft_path: str,
+    expected_title: str = "",
+    errors: list[str] | None = None,
+) -> tuple[str, str, list[tuple[str, list[str]]], dict[str, str]]:
     path = safe_relative_path(root, draft_path)
-    if path is None or not path.is_file(): return "h1", "p1-s1", [], {}
-    try: lines = path.read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeError): return "h1", "p1-s1", [], {}
+    if path is None or not path.is_file():
+        if errors is not None:
+            errors.append(f"missing:draft:{draft_path or 'path'}")
+        return "", "", [], {}
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        if errors is not None:
+            errors.append(f"malformed:draft:{draft_path}")
+        return "", "", [], {}
+
+    h1s: list[tuple[int, str]] = []
+    for line_number, line in enumerate(lines, 1):
+        match = re.match(r"^[ \t]{0,3}#[ \t]+(.+?)[ \t]*#?[ \t]*$", line)
+        if match:
+            heading = match.group(1).strip()
+            if heading:
+                h1s.append((line_number, heading))
+    title_locator = ""
+    if len(h1s) != 1:
+        if errors is not None:
+            errors.append(f"invalid:h1:{draft_path}:count={len(h1s)}")
+    else:
+        heading = h1s[0][1]
+        title_locator = f"h1:{heading}"
+        if expected_title and heading != expected_title.strip():
+            if errors is not None:
+                errors.append(f"mismatch:title:{draft_path}")
+
     blocks: list[tuple[str, str]] = []; block: list[str] = []; section = ""
     for line in lines:
         value = line.strip()
-        if value.startswith("#"):
+        if re.match(r"^#{1,6}(?:[ \t]+|$)", value):
             if block: blocks.append((section, " ".join(block))); block = []
             if value.startswith("## "):
                 section = re.split(r"[，,：:。]", value[3:].strip(), maxsplit=1)[0]
@@ -115,8 +238,8 @@ def _draft_locators(root: Path, draft_path: str) -> tuple[str, str, list[tuple[s
                 section_token = f"§{section_name}-s{section_counts[section_name]}"
                 aliases.append(section_token); token_to_primary[section_token] = primary
         paragraph_data.append((primary, aliases))
-    opening = paragraph_data[0][0] if paragraph_data else "p1-s1"
-    return "h1", opening, paragraph_data, token_to_primary
+    opening = paragraph_data[0][0] if paragraph_data else ""
+    return title_locator, opening, paragraph_data, token_to_primary
 
 
 def _title_claim_ids(article: Mapping[str, Any], topic: Mapping[str, Any], claims: Mapping[str, Mapping[str, Any]], errors: list[str], article_id: str) -> list[str]:
@@ -142,10 +265,33 @@ def _title_claim_ids(article: Mapping[str, Any], topic: Mapping[str, Any], claim
     return result
 
 
+def _input_hashes(
+    root: Path,
+    manifest_path: str,
+    source_manifest_path: str,
+) -> dict[str, str]:
+    """Hash the manifests whose paths and source bindings define the graph."""
+
+    result: dict[str, str] = {}
+    for prefix, raw_path in (
+        ("__run_manifest__:", manifest_path),
+        ("__source_manifest__:", source_manifest_path),
+    ):
+        path = safe_relative_path(root, raw_path)
+        if path is None or not path.is_file():
+            continue
+        try:
+            result[f"{prefix}{raw_path}"] = sha256_file(path)
+        except OSError:
+            continue
+    return result
+
+
 def build_evidence_graph(run_root: Path, batch: Mapping[str, Any]) -> dict[str, Any]:
     root = Path(run_root); batch = batch if isinstance(batch, Mapping) else {}; build_errors: list[str] = []
     manifest_path = _text(batch.get("run_manifest_path")) or "run-manifest.json"
-    use_manifest = (root / manifest_path).is_file() or not isinstance(batch.get("articles"), list)
+    manifest_file = safe_relative_path(root, manifest_path)
+    use_manifest = (manifest_file is not None and manifest_file.is_file()) or not isinstance(batch.get("articles"), list)
     manifest = _read_required(root, manifest_path, "run_manifest", build_errors) if use_manifest else {}
     run_id = _text(batch.get("run_id") or manifest.get("run_id")) or "controlled-002"
     generated_at = _text(batch.get("generated_at") or manifest.get("created_at")) or "1970-01-01T00:00:00Z"
@@ -153,11 +299,29 @@ def build_evidence_graph(run_root: Path, batch: Mapping[str, Any]) -> dict[str, 
     source_manifest_path = _text(batch.get("source_manifest_path") or outputs.get("source_manifest")) or "source-manifest.json"
     source_manifest = _read_required(root, source_manifest_path, "source_manifest", build_errors)
     if "sources" not in source_manifest or not isinstance(source_manifest.get("sources"), list): build_errors.append("invalid:source_manifest:sources")
-    source_records = {str(x.get("source_id")): x for x in source_manifest.get("sources", []) if isinstance(x, Mapping) and _text(x.get("source_id"))}
+    source_records: dict[str, Mapping[str, Any]] = {}
+    for source in source_manifest.get("sources", []):
+        if not isinstance(source, Mapping) or not _text(source.get("source_id")):
+            continue
+        source_id = _text(source.get("source_id"))
+        if source_id in source_records:
+            build_errors.append(f"duplicate:source_id:{source_id}")
+        else:
+            source_records[source_id] = source
     if "articles" in batch and not isinstance(batch.get("articles"), list): build_errors.append("invalid:articles")
     if "articles" in batch and isinstance(batch.get("articles"), list) and not batch["articles"]: build_errors.append("missing:articles")
     selected = manifest.get("selected_articles", []) if isinstance(manifest.get("selected_articles"), list) else []
     explicit_articles = batch.get("articles") if isinstance(batch.get("articles"), list) else None
+    for label, items in (("manifest_article_id", selected), ("article_id", explicit_articles or [])):
+        seen: set[str] = set()
+        for item in items:
+            if not isinstance(item, Mapping):
+                continue
+            article_id = _text(item.get("article_id"))
+            if article_id and article_id in seen:
+                build_errors.append(f"duplicate:{label}:{article_id}")
+            elif article_id:
+                seen.add(article_id)
     if manifest and explicit_articles is not None:
         selected_ids = {str(x.get("article_id")) for x in selected if isinstance(x, Mapping)}
         explicit_ids = {str(x.get("article_id")) for x in explicit_articles if isinstance(x, Mapping)}
@@ -170,12 +334,12 @@ def build_evidence_graph(run_root: Path, batch: Mapping[str, Any]) -> dict[str, 
     nodes: dict[str, dict[str, Any]] = {}; edges: list[dict[str, Any]] = []
     for raw in raw_articles:
         if not isinstance(raw, Mapping): build_errors.append("invalid:article"); continue
-        article = _merge_article(manifest, raw); aid = _text(article.get("article_id")); topic_id = _text(article.get("topic_id"))
+        article = _merge_article(manifest, raw, build_errors); aid = _text(article.get("article_id")); topic_id = _text(article.get("topic_id"))
         if not aid: build_errors.append("missing:article_id"); continue
         if not topic_id: build_errors.append(f"missing:topic_id:{aid}"); topic_id = f"missing:{aid}"
         topic_node = f"topic:{topic_id}"; topic_path = _text(article.get("topic_card_path"))
         topic = _read_required(root, topic_path, f"topic:{aid}", build_errors)
-        nodes[topic_node] = _node(root, topic_node, "topic", topic_path, locator="topic-card")
+        _put_node(nodes, _node(root, topic_node, "topic", topic_path, locator="topic-card"), build_errors)
         fact_path = _text(article.get("fact_card_path")); ledger_path = _text(article.get("citation_ledger_path"))
         fact = _read_required(root, fact_path, f"fact:{aid}", build_errors); ledger = _read_required(root, ledger_path, f"ledger:{aid}", build_errors)
         if "permitted_claims" not in fact and "claims" not in fact: build_errors.append(f"invalid:fact:claims:{aid}")
@@ -195,18 +359,46 @@ def build_evidence_graph(run_root: Path, batch: Mapping[str, Any]) -> dict[str, 
             else:
                 fact_by_id[claim_id] = inline
         if not set(ledger_claims) <= set(fact_by_id): build_errors.append(f"mismatch:claim_ids:{aid}")
-        for claim_id in sorted(set(fact_by_id) | set(ledger_claims)):
+        # A permitted fact that is not present in the current citation ledger
+        # is not materialized in this draft; keeping it out avoids inventing a
+        # draft/source locator for an unused claim.
+        claim_ids = set(ledger_claims) | {
+            _text(item.get("claim_id"))
+            for item in inline_claims
+            if isinstance(item, Mapping) and _text(item.get("claim_id"))
+        }
+        for claim_id in sorted(claim_ids):
             fc, lc = fact_by_id.get(claim_id, {}), ledger_claims.get(claim_id, {})
             fs = set(fc.get("source_ids", [])) if isinstance(fc.get("source_ids", []), list) else set(); ls = set(lc.get("source_ids", [])) if isinstance(lc.get("source_ids", []), list) else set()
             if claim_id in fact_by_id and claim_id in ledger_claims and fs != ls: build_errors.append(f"mismatch:source_ids:{aid}:{claim_id}")
-            cid = f"claim:{aid}:{claim_id}"; nodes[cid] = _node(root, cid, "claim", fact_path, claim_type=_text(fc.get("claim_type")) or "fact", locator=f"claim:{claim_id}")
-            _edge(edges, topic_node, "supports", cid, _text(lc.get("source_locator") or fc.get("locator")) or f"claim:{claim_id}", generated_at)
+            cid = f"claim:{aid}:{claim_id}"
+            claim_locator = _claim_locator(fc, lc, claim_id, fact_card=fact)
+            if not claim_locator:
+                build_errors.append(f"missing:claim_locator:{aid}:{claim_id}")
+            _put_node(
+                nodes,
+                _node(
+                    root,
+                    cid,
+                    "claim",
+                    fact_path,
+                    claim_type=_text(fc.get("claim_type")) or "fact",
+                    locator=claim_locator,
+                ),
+                build_errors,
+            )
+            support_locator = _text(lc.get("source_locator"))
+            if not support_locator:
+                build_errors.append(f"missing:source_locator:{aid}:{claim_id}")
+            else:
+                _edge(edges, topic_node, "supports", cid, support_locator, generated_at)
             for sid in sorted(fs | ls):
                 source = source_records.get(sid, {})
                 if not source: build_errors.append(f"missing:source_manifest:{sid}")
                 source_path = _text(source.get("relative_path") or source.get("path")); role = _text(source.get("role") or source.get("source_role"))
-                nodes[f"source:{sid}"] = _node(root, f"source:{sid}", "source", source_path, source_role=role)
-                _edge(edges, cid, "supported_by", f"source:{sid}", _text(lc.get("source_locator")) or f"source:{sid}", generated_at)
+                _put_node(nodes, _node(root, f"source:{sid}", "source", source_path, source_role=role), build_errors)
+                if support_locator:
+                    _edge(edges, cid, "supported_by", f"source:{sid}", support_locator, generated_at)
         pack_path = _text(article.get("material_pack_path")); pack = _read_required(root, pack_path, f"material_pack:{aid}", build_errors)
         if "materials" not in pack or not isinstance(pack.get("materials"), Mapping): build_errors.append(f"invalid:material_pack:materials:{aid}")
         materials = pack.get("materials", {}) if isinstance(pack.get("materials"), Mapping) else {}
@@ -215,7 +407,9 @@ def build_evidence_graph(run_root: Path, batch: Mapping[str, Any]) -> dict[str, 
             for material in values:
                 if not isinstance(material, Mapping) or not _text(material.get("material_id")): build_errors.append(f"invalid:material:{aid}"); continue
                 mid = _text(material["material_id"]); mn = f"material:{mid}"; locator = _text(material.get("locator"))
-                nodes[mn] = _node(root, mn, "material", pack_path, locator=locator, category=category)
+                if not locator:
+                    build_errors.append(f"missing:material_locator:{aid}:{mid}")
+                _put_node(nodes, _node(root, mn, "material", pack_path, locator=locator, category=category), build_errors)
                 source_ids = material.get("source_ids", material.get("source_id", [])); source_ids = [source_ids] if isinstance(source_ids, str) else source_ids
                 if not isinstance(source_ids, list): build_errors.append(f"invalid:material_binding:{aid}:{mid}"); source_ids = []
                 source_url = material.get("source_url")
@@ -227,12 +421,17 @@ def build_evidence_graph(run_root: Path, batch: Mapping[str, Any]) -> dict[str, 
                     sid = _text(sid)
                     if not sid or sid not in source_records: build_errors.append(f"unknown:material_binding:{aid}:{mid}:{sid}"); continue
                     source = source_records[sid]; spath = _text(source.get("relative_path") or source.get("path")); role = _text(source.get("role") or source.get("source_role"))
-                    nodes[f"source:{sid}"] = _node(root, f"source:{sid}", "source", spath, source_role=role)
-                    _edge(edges, f"source:{sid}", "captured_as", mn, locator or f"material:{mid}", generated_at)
-        draft_path = _text(article.get("draft_path")); title_loc, opening_loc, paragraph_data, locator_map = _draft_locators(root, draft_path)
-        title, opening = f"title:{aid}", f"opening:{aid}"; nodes[title] = _node(root, title, "title", draft_path, locator=title_loc); nodes[opening] = _node(root, opening, "opening", draft_path, locator=opening_loc)
-        for primary, aliases in paragraph_data: nodes[f"paragraph:{aid}:{primary}"] = _node(root, f"paragraph:{aid}:{primary}", "paragraph", draft_path, locator=primary, locators=aliases)
-        title_claim_ids = _title_claim_ids(article, topic, fact_by_id, build_errors, aid)
+                    _put_node(nodes, _node(root, f"source:{sid}", "source", spath, source_role=role), build_errors)
+                    if locator:
+                        _edge(edges, f"source:{sid}", "captured_as", mn, locator, generated_at)
+        draft_path = _text(article.get("draft_path")); title_loc, opening_loc, paragraph_data, locator_map = _draft_locators(root, draft_path, _text(article.get("title") or article.get("subject")), build_errors)
+        title, opening = f"title:{aid}", f"opening:{aid}"
+        _put_node(nodes, _node(root, title, "title", draft_path, locator=title_loc), build_errors)
+        _put_node(nodes, _node(root, opening, "opening", draft_path, locator=opening_loc), build_errors)
+        for primary, aliases in paragraph_data:
+            _put_node(nodes, _node(root, f"paragraph:{aid}:{primary}", "paragraph", draft_path, locator=primary, locators=aliases), build_errors)
+        current_claims = {claim_id: fact_by_id[claim_id] for claim_id in claim_ids if claim_id in fact_by_id}
+        title_claim_ids = _title_claim_ids(article, topic, current_claims, build_errors, aid)
         for claim_id in title_claim_ids:
             if claim_id in fact_by_id: _edge(edges, f"claim:{aid}:{claim_id}", "materialized_as", title, "title", generated_at)
         for cid, lc in ledger_claims.items():
@@ -242,11 +441,13 @@ def build_evidence_graph(run_root: Path, batch: Mapping[str, Any]) -> dict[str, 
                 paragraph_target = f"paragraph:{aid}:{primary}"
                 _edge(edges, f"claim:{aid}:{cid}", "materialized_as", paragraph_target, loc, generated_at)
                 if loc == opening_loc: _edge(edges, f"claim:{aid}:{cid}", "materialized_as", opening, loc, generated_at)
-        review_path = _text(article.get("review_path")); review = _read_required(root, review_path, f"review:{aid}", build_errors); rid = _text(review.get("article_id")) or aid; rn = f"review:{aid}:{rid}"; nodes[rn] = _node(root, rn, "review", review_path, locator=review_path)
+        review_path = _text(article.get("review_path")); review = _read_required(root, review_path, f"review:{aid}", build_errors); rid = _text(review.get("article_id")) or aid; rn = f"review:{aid}:{rid}"; _put_node(nodes, _node(root, rn, "review", review_path, locator=review_path), build_errors)
         for component in [title, opening, *[key for key in nodes if key.startswith(f"paragraph:{aid}:")]]: _edge(edges, component, "reviewed_by", rn, review_path, generated_at)
     edges.sort(key=lambda x: (x["from"], x["edge_type"], x["to"], x["locator"])); payload: dict[str, Any] = {"nodes": nodes, "edges": edges}
     if build_errors: payload["build_errors"] = sorted(set(build_errors))
-    return new_artifact_envelope(_SCHEMA, run_id, payload, generated_at=generated_at)
+    graph = new_artifact_envelope(_SCHEMA, run_id, payload, generated_at=generated_at)
+    graph["input_hashes"] = _input_hashes(root, manifest_path, source_manifest_path)
+    return graph
 
 
 def _payload(graph: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -254,16 +455,70 @@ def _payload(graph: Mapping[str, Any]) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
 
 
+def _validate_input_hashes(
+    graph: Mapping[str, Any],
+    run_root: Path,
+    errors: list[str],
+) -> dict[str, Mapping[str, Any]]:
+    """Recheck graph-defining manifests and return the current source map."""
+
+    hashes = graph.get("input_hashes")
+    if not isinstance(hashes, Mapping):
+        errors.append("invalid:input_hashes")
+        return {}
+    source_records: dict[str, Mapping[str, Any]] = {}
+    for key, expected in hashes.items():
+        if not isinstance(key, str) or not isinstance(expected, str):
+            continue
+        if key.startswith("__source_manifest__:"):
+            raw_path = key.split(":", 1)[1]
+            label = "source_manifest"
+        elif key.startswith("__run_manifest__:"):
+            raw_path = key.split(":", 1)[1]
+            label = "run_manifest"
+        else:
+            continue
+        path = safe_relative_path(Path(run_root), raw_path)
+        if path is None or not path.is_file():
+            errors.append(f"missing:input_hash:{label}:{raw_path}")
+            continue
+        try:
+            actual = sha256_file(path)
+        except OSError:
+            errors.append(f"missing:input_hash:{label}:{raw_path}")
+            continue
+        if actual != expected:
+            errors.append(f"mismatch:input_hash:{label}:{raw_path}")
+        if label == "source_manifest":
+            manifest = _read_json(Path(run_root), raw_path)
+            records = manifest.get("sources")
+            if isinstance(records, list):
+                for record in records:
+                    if not isinstance(record, Mapping):
+                        continue
+                    source_id = _text(record.get("source_id"))
+                    if source_id and source_id not in source_records:
+                        source_records[source_id] = record
+    return source_records
+
+
 def validate_evidence_graph(graph: Mapping[str, Any], run_root: Path) -> list[str]:
     if not isinstance(graph, Mapping): return ["invalid:graph"]
     errors = validate_artifact_envelope(graph, _SCHEMA, run_id=_text(graph.get("run_id")) or "__missing__"); payload = _payload(graph); nodes = payload.get("nodes"); edges = payload.get("edges")
+    if set(graph) != {"schema_version", "run_id", "generated_at", "input_hashes", "payload"}:
+        errors.append("invalid:top_level")
+    source_records = _validate_input_hashes(graph, Path(run_root), errors)
     if not isinstance(nodes, Mapping): return errors + ["invalid:nodes"]
     if not nodes: errors.append("invalid:empty_nodes")
     if not isinstance(edges, list): return errors + ["invalid:edges"]
     if not edges: errors.append("invalid:empty_edges")
     build_errors = payload.get("build_errors", [])
-    if not isinstance(build_errors, list): errors.append("invalid:build_errors")
+    if not isinstance(build_errors, list):
+        errors.append("invalid:build_errors")
+        build_errors = []
     errors.extend(f"build:{x}" for x in build_errors if isinstance(x, str))
+    if "publication_authorization" in payload:
+        errors.append("publication_authorization_must_not_be_present")
     known: dict[str, Mapping[str, Any]] = {}
     node_ids: set[str] = set()
     for key, node in nodes.items():
@@ -279,8 +534,13 @@ def validate_evidence_graph(graph: Mapping[str, Any], run_root: Path) -> list[st
         if not isinstance(node.get("artifact_path"), str) or not node.get("artifact_path"): errors.append(f"invalid:artifact_path:{key}")
         digest = node.get("artifact_sha256")
         if digest is not None and (not isinstance(digest, str) or len(digest) != 64): errors.append(f"invalid:artifact_sha256:{key}")
-        if node.get("node_type") == "source" and not _text(node.get("source_role")): errors.append(f"missing:source_role:{key}")
-        if node.get("node_type") == "claim" and not _text(node.get("claim_type")): errors.append(f"missing:claim_type:{key}")
+        node_type = node.get("node_type")
+        if node_type == "source" and not _text(node.get("source_role")): errors.append(f"missing:source_role:{key}")
+        if node_type == "claim" and not _text(node.get("claim_type")): errors.append(f"missing:claim_type:{key}")
+        if isinstance(node_type, str) and node_type in {"claim", "material", "title", "opening", "paragraph", "review"} and not _text(node.get("locator")):
+            errors.append(f"missing:locator:{key}")
+        if node_type == "title" and _text(node.get("locator")) and not node["locator"].startswith("h1:"):
+            errors.append(f"invalid:title_locator:{key}")
         known[key] = node; path = safe_relative_path(Path(run_root), node.get("artifact_path"))
         if path is None: errors.append(f"invalid:path:{key}")
         elif not path.is_file() or digest is None: errors.append(f"missing:artifact:{key}")
@@ -288,6 +548,16 @@ def validate_evidence_graph(graph: Mapping[str, Any], run_root: Path) -> list[st
             try:
                 if digest != sha256_file(path): errors.append(f"mismatch:hash:{key}")
             except OSError: errors.append(f"missing:artifact:{key}")
+        if node_type == "source" and key.startswith("source:"):
+            source_id = key.split(":", 1)[1]
+            record = source_records.get(source_id)
+            if record is not None:
+                expected_path = _text(record.get("relative_path") or record.get("path"))
+                if node.get("artifact_path") != expected_path:
+                    errors.append(f"mismatch:source_mapping:{source_id}")
+                expected_role = _text(record.get("role") or record.get("source_role"))
+                if expected_role and node.get("source_role") != expected_role:
+                    errors.append(f"mismatch:source_role:{source_id}")
     adjacency: dict[str, set[str]] = {key: set() for key in known}; incoming: dict[str, set[str]] = {key: set() for key in known}; incoming_edges: dict[str, list[tuple[str, str]]] = {key: [] for key in known}; signatures: set[tuple[Any, ...]] = set()
     for edge in edges:
         if not isinstance(edge, Mapping): errors.append("invalid:edge"); continue
