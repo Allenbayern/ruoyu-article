@@ -1,0 +1,14 @@
+{
+  "strategy_id": "strategy-v5-001",
+  "version": 1,
+  "run_id": "v5-controlled-001",
+  "applicable_topic_types": ["人物"],
+  "hypothesis": "具体人物动作与关系冲突组合提高点击和完成率",
+  "evidence_samples": ["strategy-sample-1", "strategy-sample-2", "strategy-sample-3"],
+  "success_conditions": ["completion_rate >= 0.60"],
+  "failure_boundary": ["risk_score >= 0.70"],
+  "last_validated_at": "2026-09-09T10:00:00+08:00",
+  "state": "testing",
+  "controller_decision": "approve_support",
+  "generated_at": "2026-09-09T10:00:00+08:00"
+}

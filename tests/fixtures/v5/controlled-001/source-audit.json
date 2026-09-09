@@ -1,0 +1,14 @@
+{
+  "source_roles": {
+    "body_facts": {"status": "present", "source_count": 1},
+    "industry_context": {"status": "present", "source_count": 1},
+    "audience_reactions": {"status": "present", "source_count": 1},
+    "cross_check_facts": {"status": "present", "source_count": 1}
+  },
+  "missing_source_roles": [],
+  "failed_sources": [],
+  "retry_required": false,
+  "retry_requirements": [],
+  "manual_escalations": ["controller_review_required_before_apply_or_publish"],
+  "synthetic_fixture": true
+}

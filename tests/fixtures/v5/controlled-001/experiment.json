@@ -1,0 +1,17 @@
+{
+  "experiment_id": "experiment-v5-001",
+  "run_id": "v5-controlled-001",
+  "topic_id": "topic-v5-001",
+  "topic_version": 1,
+  "hypothesis": "具体人物动作加关系冲突比泛影视新闻标题更容易获得点击",
+  "changed_variable": "title_angle",
+  "controls": ["topic", "publish_window", "platform", "distribution_conditions"],
+  "metrics": ["ctr", "completion_rate", "rpm"],
+  "design": "controlled",
+  "treatment_ids": ["treatment-1", "treatment-2", "treatment-3"],
+  "control_ids": ["control-1", "control-2", "control-3"],
+  "week_start": "2026-09-07",
+  "fixed_publish_window": {"start": "18:00", "end": "20:00"},
+  "distribution_conditions": {"platform": "synthetic-platform", "account_state": "stable"},
+  "generated_at": "2026-09-09T10:00:00+08:00"
+}

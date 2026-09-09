@@ -1,0 +1,42 @@
+[
+  {
+    "event_id": "publication-v5-001",
+    "event_type": "published",
+    "article_id": "article-v5-001",
+    "published_at": "2026-09-09T09:00:00+08:00",
+    "platform": "synthetic-platform",
+    "evidence_ref": "fixture-publication-v5-001"
+  },
+  {
+    "event_id": "observation-v5-001",
+    "event_type": "observation",
+    "article_id": "article-v5-001",
+    "observed_at": "2026-09-09T12:00:00+08:00",
+    "evidence_ref": "fixture-observation-v5-001",
+    "metrics": {
+      "impressions": 2000,
+      "reads": 500,
+      "clicks": 100,
+      "completion_rate": 0.7,
+      "interactions": 60,
+      "revenue": 10,
+      "risk_score": 0.1
+    }
+  },
+  {
+    "event_id": "metric-v5-001",
+    "event_type": "metric",
+    "article_id": "article-v5-001",
+    "timestamp": "2026-09-09T13:00:00+08:00",
+    "evidence_ref": "fixture-metric-v5-001",
+    "metrics": {
+      "impressions": 800,
+      "reads": 400,
+      "clicks": 40,
+      "completion_rate": 0.2,
+      "interactions": 20,
+      "revenue": 1,
+      "risk_score": 0.1
+    }
+  }
+]

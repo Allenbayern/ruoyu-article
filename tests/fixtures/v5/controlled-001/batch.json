@@ -1,0 +1,14 @@
+{
+  "run_id": "v5-controlled-001",
+  "generated_at": "2026-09-09T10:00:00+08:00",
+  "topic_id": "topic-v5-001",
+  "topic_version": 1,
+  "topic_type": "人物",
+  "article_id": "article-v5-001",
+  "base_quotas": {
+    "人物": {
+      "share": 0.5,
+      "cooldown_days": 7
+    }
+  }
+}

@@ -1,0 +1,5 @@
+[
+  {"sample_id": "strategy-sample-1", "date": "2026-08-25", "usable": true, "outcome": "success"},
+  {"sample_id": "strategy-sample-2", "date": "2026-09-01", "usable": true, "outcome": "success"},
+  {"sample_id": "strategy-sample-3", "date": "2026-09-08", "usable": true, "outcome": "success"}
+]

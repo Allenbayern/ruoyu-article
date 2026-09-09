@@ -1,0 +1,5 @@
+[
+  {"sample_id": "quota-1", "date": "2026-08-25", "topic_type": "人物", "completion_rate": 0.60, "rpm": 12.0, "risk_score": 0.10, "usable": true},
+  {"sample_id": "quota-2", "date": "2026-09-01", "topic_type": "人物", "completion_rate": 0.70, "rpm": 14.0, "risk_score": 0.10, "usable": true},
+  {"sample_id": "quota-3", "date": "2026-09-08", "topic_type": "人物", "completion_rate": 0.65, "rpm": 13.0, "risk_score": 0.10, "usable": true}
+]

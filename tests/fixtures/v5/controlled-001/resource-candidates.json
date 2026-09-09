@@ -1,0 +1,4 @@
+[
+  {"candidate_id": "article-v5-001", "value_score": 0.90, "evidence_readiness": 0.90, "potential_score": 0.60, "controversy_score": 0.20, "risk_score": 0.10},
+  {"candidate_id": "synthetic-controversy-001", "value_score": 0.60, "evidence_readiness": 0.30, "potential_score": 0.90, "controversy_score": 0.90, "risk_score": 0.60}
+]
