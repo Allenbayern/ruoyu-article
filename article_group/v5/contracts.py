@@ -91,7 +91,7 @@ def payload_of(value: Mapping[str, Any]) -> Mapping[str, Any]:
 
 
 def _is_authorization_key(key: object) -> bool:
-    return isinstance(key, str) and "authorization" in key.lower()
+    return isinstance(key, str) and "authorization" in key.casefold()
 
 
 def _has_forbidden_authorization(value: object) -> bool:

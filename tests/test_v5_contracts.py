@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from jsonschema import Draft202012Validator, FormatChecker
 
 from article_group.v5.contracts import (
@@ -166,3 +167,75 @@ def test_v5_schema_rejects_authorization_escalation_recursively():
     )
 
     assert list(validator.iter_errors(artifact))
+
+
+@pytest.mark.parametrize(
+    "authorization_key",
+    ["publication_authorization", "PUBLICATION_AUTHORIZATION", "Publication_Authorization"],
+)
+def test_v5_python_and_schema_reject_case_variant_authorization_keys(
+    authorization_key: str,
+):
+    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    validator = Draft202012Validator(schema, format_checker=FormatChecker())
+    artifact = new_artifact_envelope(
+        "v5-experiment-record-v1",
+        "v5-fixture-001",
+        {"nested": {authorization_key: "authorized"}},
+        generated_at="2026-09-09T10:00:00+08:00",
+    )
+
+    python_errors = validate_v5_artifact_envelope(
+        artifact,
+        "v5-experiment-record-v1",
+        run_id="v5-fixture-001",
+    )
+    schema_errors = list(validator.iter_errors(artifact))
+
+    assert "publication_authorization_must_be_not_authorized" in python_errors
+    assert schema_errors
+
+
+def test_v5_python_and_schema_require_all_envelope_fields():
+    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    validator = Draft202012Validator(schema, format_checker=FormatChecker())
+    artifact = new_artifact_envelope(
+        "v5-experiment-record-v1",
+        "v5-fixture-001",
+        {},
+        generated_at="2026-09-09T10:00:00+08:00",
+    )
+
+    for field in artifact:
+        missing = {key: value for key, value in artifact.items() if key != field}
+        python_errors = validate_v5_artifact_envelope(
+            missing,
+            "v5-experiment-record-v1",
+            run_id="v5-fixture-001",
+        )
+        schema_errors = list(validator.iter_errors(missing))
+
+        assert f"missing:{field}" in python_errors
+        assert any(error.validator == "required" for error in schema_errors)
+
+
+@pytest.mark.parametrize("blank_run_id", ["", "   ", "\t"])
+def test_v5_python_and_schema_reject_blank_run_ids(blank_run_id: str):
+    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    validator = Draft202012Validator(schema, format_checker=FormatChecker())
+    artifact = new_artifact_envelope(
+        "v5-experiment-record-v1",
+        blank_run_id,
+        {},
+        generated_at="2026-09-09T10:00:00+08:00",
+    )
+
+    python_errors = validate_v5_artifact_envelope(
+        artifact,
+        "v5-experiment-record-v1",
+        run_id="v5-fixture-001",
+    )
+    schema_errors = list(validator.iter_errors(artifact))
+
+    assert "missing:run_id" in python_errors
+    assert schema_errors

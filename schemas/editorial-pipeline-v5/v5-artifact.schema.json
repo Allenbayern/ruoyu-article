@@ -19,7 +19,7 @@
         "v5-verification-v1"
       ]
     },
-    "run_id": {"type": "string", "minLength": 1},
+    "run_id": {"type": "string", "minLength": 1, "pattern": "\\S"},
     "generated_at": {
       "type": "string",
       "format": "date-time",
@@ -45,7 +45,9 @@
     "payload": {
       "type": "object",
       "patternProperties": {
-        ".*authorization.*": {"const": "not_authorized"}
+        "[Aa][Uu][Tt][Hh][Oo][Rr][Ii][Zz][Aa][Tt][Ii][Oo][Nn]": {
+          "const": "not_authorized"
+        }
       },
       "additionalProperties": {"$ref": "#/$defs/value"}
     },
@@ -62,7 +64,9 @@
         {
           "type": "object",
           "patternProperties": {
-            ".*authorization.*": {"const": "not_authorized"}
+            "[Aa][Uu][Tt][Hh][Oo][Rr][Ii][Zz][Aa][Tt][Ii][Oo][Nn]": {
+              "const": "not_authorized"
+            }
           },
           "additionalProperties": {"$ref": "#/$defs/value"}
         }
