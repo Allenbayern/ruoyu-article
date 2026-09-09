@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "v5-artifact.schema.json",
+  "title": "Editorial Pipeline V5 artifact envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "generated_at", "input_hashes", "payload"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": [
+        "v5-experiment-record-v1",
+        "v5-content-lifecycle-v1",
+        "v5-article-dna-v1",
+        "v5-failure-samples-v1",
+        "v5-dynamic-quotas-v1",
+        "v5-strategy-library-v1",
+        "v5-resource-plan-v1",
+        "v5-verification-v1"
+      ]
+    },
+    "run_id": {"type": "string", "minLength": 1},
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "oneOf": [
+        {
+          "pattern": "^[0-9]{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12][0-9]|3[01])|(?:0[469]|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-8]))T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]+)?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])(?![\\s\\S])"
+        },
+        {
+          "pattern": "^(?:[0-9]{2}(?:0[48]|[2468][048]|[13579][26])|(?:[02468][048]|[13579][26])00)-02-29T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]+)?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])(?![\\s\\S])"
+        }
+      ]
+    },
+    "input_hashes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[a-fA-F0-9]{64}$"
+      }
+    },
+    "payload": {"$ref": "#/$defs/payload"}
+  },
+  "$defs": {
+    "payload": {
+      "type": "object",
+      "patternProperties": {
+        ".*authorization.*": {"const": "not_authorized"}
+      },
+      "additionalProperties": {"$ref": "#/$defs/value"}
+    },
+    "value": {
+      "anyOf": [
+        {"type": "string"},
+        {"type": "number"},
+        {"type": "boolean"},
+        {"type": "null"},
+        {
+          "type": "array",
+          "items": {"$ref": "#/$defs/value"}
+        },
+        {
+          "type": "object",
+          "patternProperties": {
+            ".*authorization.*": {"const": "not_authorized"}
+          },
+          "additionalProperties": {"$ref": "#/$defs/value"}
+        }
+      ]
+    }
+  }
+}
