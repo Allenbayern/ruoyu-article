@@ -45,6 +45,23 @@ def append_stage_decision(path: Path, decision: Mapping[str, Any]) -> None:
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(dict(decision), ensure_ascii=False, sort_keys=True) + "\n")
 
+def verify_context(*, v4_run_dir: Path | None = None, v5_run_dir: Path | None = None) -> dict[str, Any]:
+    """Read existing V4/V5 reports and summarize them without recomputation."""
+    result: dict[str, Any] = {"status": "PASS", "layers": {}, "missing": []}
+    for name, root, filename in (("v4", v4_run_dir, "v4-verification.json"), ("v5", v5_run_dir, "v5-verification.json")):
+        if root is None: continue
+        path = root.resolve() / filename
+        if not path.is_file(): result["missing"].append(f"{name}:{filename}"); result["status"]="BLOCKED"; continue
+        try: report=json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError): result["missing"].append(f"{name}:invalid_json"); result["status"]="BLOCKED"; continue
+        payload=report.get("payload") if isinstance(report, Mapping) else {}
+        status=payload.get("status") if isinstance(payload, Mapping) else None
+        result["layers"][name]={"status":status or "UNKNOWN","decision":payload.get("decision") if isinstance(payload, Mapping) else None,"content_status":payload.get("content_status") if isinstance(payload, Mapping) else None,"missing_source_roles":payload.get("missing_source_roles",[]) if isinstance(payload, Mapping) else [],"retry_requirements":payload.get("retry_requirements",[]) if isinstance(payload, Mapping) else [],"manual_escalations":payload.get("manual_escalations",[]) if isinstance(payload, Mapping) else [],"sha256":hashlib.sha256(path.read_bytes()).hexdigest()}
+        if status != "PASS": result["status"]="BLOCKED"
+    result["content_status"]="CONTENT_READY" if result["status"]=="PASS" else "CONTENT_BLOCKED"
+    result["publication_authorization"]=PUBLICATION_AUTHORIZATION
+    return result
+
 def validate_controller_transition(from_state: str, to_state: str, **kwargs: Any) -> list[str]:
     from article_group.editorial_pipeline_v3 import validate_transition
     if from_state == "candidate" and to_state == "approved":
@@ -54,4 +71,4 @@ def validate_controller_transition(from_state: str, to_state: str, **kwargs: Any
         return validate_transition("approved", "researching", topic_card=kwargs.get("topic_card"), crawl_task=kwargs.get("crawl_task"))
     return validate_transition(from_state, to_state, topic_card=kwargs.get("topic_card"), crawl_task=kwargs.get("crawl_task"), material_pack=kwargs.get("material_pack"))
 
-__all__=["STATES","validate_controller_manifest","validate_stage_decision","append_stage_decision","validate_controller_transition"]
+__all__=["STATES","validate_controller_manifest","validate_stage_decision","append_stage_decision","validate_controller_transition","verify_context"]
