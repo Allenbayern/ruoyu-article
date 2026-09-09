@@ -53,11 +53,13 @@ def _text(value: object) -> str:
 def _score(candidate: Mapping[str, Any], fields: Sequence[str]) -> float:
     for field in fields:
         value = candidate.get(field)
+        if isinstance(value, bool):
+            return 1.0 if value else 0.0
         if _is_number(value):
             return min(1.0, max(0.0, float(value)))
         if isinstance(value, str):
             normalized = value.strip().casefold()
-            if normalized in {"high", "ready", "full", "yes", "true"}:
+            if normalized in {"high", "critical", "ready", "full", "yes", "true"}:
                 return 1.0
             if normalized in {"medium", "partial", "normal"}:
                 return 0.5

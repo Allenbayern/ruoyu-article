@@ -102,9 +102,22 @@ def validate_v5_transition_context(
                 if not isinstance(sample, Mapping):
                     continue
                 categories = sample.get("categories")
-                if isinstance(categories, list) and "insufficient_data" in categories:
+                if (
+                    sample.get("status") == "insufficient_data"
+                    or isinstance(categories, list)
+                    and "insufficient_data" in categories
+                ):
                     errors.append("v5_failure_insufficient_data")
-                if isinstance(categories, list) and "good_data_high_risk" in categories:
+                high_risk = (
+                    isinstance(categories, list)
+                    and "good_data_high_risk" in categories
+                )
+                risk_score = sample.get("risk_score")
+                if not high_risk and isinstance(risk_score, (int, float)):
+                    high_risk = not isinstance(risk_score, bool) and risk_score >= 0.70
+                if not high_risk and sample.get("risk_level") in {"high", "critical"}:
+                    high_risk = True
+                if high_risk:
                     errors.append("v5_failure_high_risk_requires_review")
 
     # review -> closed intentionally has no V5 shortcut: the caller must run
