@@ -68,6 +68,16 @@ _THRESHOLD_ALIASES = {
     "max_rpm": "high_interaction_low_revenue_max_rpm",
     "min_risk_score": "good_data_high_risk_min_risk_score",
 }
+_RATE_THRESHOLDS = frozenset(
+    {
+        "exposure_without_click_max_ctr",
+        "click_low_completion_max_completion_rate",
+        "high_completion_low_exposure_min_completion_rate",
+        "high_interaction_low_revenue_min_interaction_rate",
+        "good_data_high_risk_min_completion_rate",
+        "good_data_high_risk_min_risk_score",
+    }
+)
 _METRIC_ALIASES: dict[str, tuple[str, ...]] = {
     "impressions": ("impressions", "exposure", "views"),
     "reads": ("reads", "read_count", "clicks"),
@@ -96,6 +106,83 @@ _RECOMMENDATIONS = {
     "good_data_high_risk": (
         "escalate to human risk review and stop automatic reuse of this pattern"
     ),
+}
+_EVIDENCE_CONTRACT = {
+    "exposure_without_click": {
+        "metrics": ("impressions", "ctr"),
+        "thresholds": (
+            "exposure_without_click_min_impressions",
+            "exposure_without_click_max_ctr",
+        ),
+        "comparisons": (
+            ("impressions", ">=", "exposure_without_click_min_impressions"),
+            ("ctr", "<", "exposure_without_click_max_ctr"),
+        ),
+    },
+    "click_low_completion": {
+        "metrics": ("reads", "completion_rate"),
+        "thresholds": (
+            "click_low_completion_min_reads",
+            "click_low_completion_max_completion_rate",
+        ),
+        "comparisons": (
+            ("reads", ">=", "click_low_completion_min_reads"),
+            ("completion_rate", "<", "click_low_completion_max_completion_rate"),
+        ),
+    },
+    "high_completion_low_exposure": {
+        "metrics": ("completion_rate", "impressions"),
+        "thresholds": (
+            "high_completion_low_exposure_min_completion_rate",
+            "high_completion_low_exposure_max_impressions",
+        ),
+        "comparisons": (
+            (
+                "completion_rate",
+                ">=",
+                "high_completion_low_exposure_min_completion_rate",
+            ),
+            (
+                "impressions",
+                "<",
+                "high_completion_low_exposure_max_impressions",
+            ),
+        ),
+    },
+    "high_interaction_low_revenue": {
+        "metrics": ("interaction_rate", "rpm"),
+        "thresholds": (
+            "high_interaction_low_revenue_min_interaction_rate",
+            "high_interaction_low_revenue_max_rpm",
+        ),
+        "comparisons": (
+            (
+                "interaction_rate",
+                ">=",
+                "high_interaction_low_revenue_min_interaction_rate",
+            ),
+            ("rpm", "<", "high_interaction_low_revenue_max_rpm"),
+        ),
+    },
+    "good_data_high_risk": {
+        "metrics": ("impressions", "reads", "completion_rate", "risk_score"),
+        "thresholds": (
+            "good_data_high_risk_min_impressions",
+            "good_data_high_risk_min_reads",
+            "good_data_high_risk_min_completion_rate",
+            "good_data_high_risk_min_risk_score",
+        ),
+        "comparisons": (
+            ("impressions", ">=", "good_data_high_risk_min_impressions"),
+            ("reads", ">=", "good_data_high_risk_min_reads"),
+            (
+                "completion_rate",
+                ">=",
+                "good_data_high_risk_min_completion_rate",
+            ),
+            ("risk_score", ">=", "good_data_high_risk_min_risk_score"),
+        ),
+    },
 }
 
 
@@ -190,11 +277,13 @@ def _normalise_metrics(
             and isinstance(impressions, (int, float))
             and impressions > 0
         ):
-            metrics["ctr"] = clicks / impressions
-            statuses["ctr"] = "available"
-            derived_metrics.append("ctr")
-            if "ctr" in missing:
-                missing.remove("ctr")
+            derived_ctr = clicks / impressions
+            if 0 <= derived_ctr <= 1:
+                metrics["ctr"] = derived_ctr
+                statuses["ctr"] = "available"
+                derived_metrics.append("ctr")
+                if "ctr" in missing:
+                    missing.remove("ctr")
 
     if statuses["interactions"] == "unavailable":
         component_values: list[float] = []
@@ -219,11 +308,13 @@ def _normalise_metrics(
             and denominator is not None
             and isinstance(interactions, (int, float))
         ):
-            metrics["interaction_rate"] = interactions / denominator
-            statuses["interaction_rate"] = "available"
-            derived_metrics.append("interaction_rate")
-            if "interaction_rate" in missing:
-                missing.remove("interaction_rate")
+            derived_interaction_rate = interactions / denominator
+            if 0 <= derived_interaction_rate <= 1:
+                metrics["interaction_rate"] = derived_interaction_rate
+                statuses["interaction_rate"] = "available"
+                derived_metrics.append("interaction_rate")
+                if "interaction_rate" in missing:
+                    missing.remove("interaction_rate")
 
     if statuses["rpm"] == "unavailable":
         revenue = metrics["revenue"]
@@ -246,20 +337,53 @@ def _normalise_metrics(
     return metrics, statuses, sorted(set(missing)), derived_metrics + invalid
 
 
+def _valid_threshold_value(key: str, value: object) -> bool:
+    return (
+        _is_number(value)
+        and float(value) >= 0
+        and (key not in _RATE_THRESHOLDS or float(value) <= 1)
+    )
+
+
+def _valid_threshold_mapping(value: object) -> bool:
+    return (
+        isinstance(value, Mapping)
+        and set(value) == set(_DEFAULT_THRESHOLDS)
+        and all(
+            isinstance(key, str) and _valid_threshold_value(key, threshold)
+            for key, threshold in value.items()
+        )
+    )
+
+
 def _resolved_thresholds(
     thresholds: Mapping[str, float] | None,
-) -> dict[str, float]:
+) -> tuple[dict[str, float], list[str]]:
     result = dict(_DEFAULT_THRESHOLDS)
+    if thresholds is None:
+        return result, []
     if not isinstance(thresholds, Mapping):
-        return result
+        return result, ["invalid:thresholds"]
+    errors: list[str] = []
+    seen: set[str] = set()
     for raw_key, raw_value in thresholds.items():
         if not isinstance(raw_key, str):
+            errors.append("invalid:threshold:key")
             continue
         key = raw_key if raw_key in result else _THRESHOLD_ALIASES.get(raw_key)
-        if key is None or not _is_number(raw_value):
+        if key is None:
+            errors.append(f"unknown:threshold:{raw_key}")
             continue
-        result[key] = float(raw_value)
-    return result
+        if key in seen:
+            errors.append(f"duplicate:threshold:{key}")
+            continue
+        seen.add(key)
+        if not _valid_threshold_value(key, raw_value):
+            errors.append(f"invalid:threshold:{key}")
+            continue
+        numeric = float(raw_value)
+        result[key] = numeric
+    return result, errors
 
 
 def _has_metrics(
@@ -311,6 +435,16 @@ def _evidence(
     }
 
 
+def _comparison_holds(value: object, operator: object, threshold: object) -> bool:
+    if not _is_number(value) or not _is_number(threshold):
+        return False
+    if operator == ">=":
+        return float(value) >= float(threshold)
+    if operator == "<":
+        return float(value) < float(threshold)
+    return False
+
+
 def classify_failure_sample(
     event: Mapping[str, Any],
     *,
@@ -319,19 +453,13 @@ def classify_failure_sample(
     """Classify one metric event using only available, non-zero-filled data."""
 
     raw_event = event if isinstance(event, Mapping) else {}
-    resolved = _resolved_thresholds(thresholds)
+    resolved, threshold_errors = _resolved_thresholds(thresholds)
     metrics, statuses, input_missing, derivations = _normalise_metrics(raw_event)
     missing_metrics: set[str] = set(input_missing)
     categories: list[str] = []
     evidence: dict[str, dict[str, Any]] = {}
     recommendations: dict[str, str] = {}
     evaluated_categories = 0
-    risk_level = raw_event.get("risk_level")
-    if isinstance(risk_level, str):
-        risk_level = risk_level.strip().lower()
-    else:
-        risk_level = None
-
     if _has_metrics(
         statuses,
         metrics,
@@ -491,31 +619,21 @@ def classify_failure_sample(
             )
             recommendations[category] = _RECOMMENDATIONS[category]
 
-    risk_available = statuses["risk_score"] == "available" or risk_level in {
-        "high",
-        "critical",
-    }
-    if not risk_available:
-        missing_metrics.add("risk_score")
     if _has_metrics(
         statuses,
         metrics,
-        ("impressions", "reads", "completion_rate"),
+        ("impressions", "reads", "completion_rate", "risk_score"),
         missing_metrics,
-    ) and risk_available:
+    ):
         evaluated_categories += 1
-        risk_value = (
-            float(metrics["risk_score"])
-            if statuses["risk_score"] == "available"
-            else 1.0
-        )
         if (
             float(metrics["impressions"])
             >= resolved["good_data_high_risk_min_impressions"]
             and float(metrics["reads"]) >= resolved["good_data_high_risk_min_reads"]
             and float(metrics["completion_rate"])
             >= resolved["good_data_high_risk_min_completion_rate"]
-            and risk_value >= resolved["good_data_high_risk_min_risk_score"]
+            and float(metrics["risk_score"])
+            >= resolved["good_data_high_risk_min_risk_score"]
         ):
             category = "good_data_high_risk"
             categories.append(category)
@@ -523,9 +641,10 @@ def classify_failure_sample(
                 metrics,
                 resolved,
                 (
-                    ("impressions", "reads", "completion_rate", "risk_score")
-                    if statuses["risk_score"] == "available"
-                    else ("impressions", "reads", "completion_rate")
+                    "impressions",
+                    "reads",
+                    "completion_rate",
+                    "risk_score",
                 ),
                 (
                     "good_data_high_risk_min_impressions",
@@ -553,19 +672,21 @@ def classify_failure_sample(
                         resolved["good_data_high_risk_min_completion_rate"],
                     ),
                     _comparison(
-                        "risk_score" if statuses["risk_score"] == "available" else "risk_level",
-                        metrics["risk_score"] if statuses["risk_score"] == "available" else risk_level,
+                        "risk_score",
+                        metrics["risk_score"],
                         ">=",
                         resolved["good_data_high_risk_min_risk_score"],
                     ),
                 ),
-                extra_metrics=(
-                    {"risk_level": risk_level} if risk_level is not None else None
-                ),
             )
             recommendations[category] = _RECOMMENDATIONS[category]
 
-    if categories:
+    if threshold_errors:
+        categories = ["insufficient_data"]
+        evidence = {}
+        recommendations = {}
+        status = "insufficient_data"
+    elif categories:
         status = "classified"
     elif evaluated_categories < len(_CLASSIFIABLE_FAILURE_TYPES) or missing_metrics:
         categories = ["insufficient_data"]
@@ -583,7 +704,7 @@ def classify_failure_sample(
         "metrics": metrics,
         "metric_status": statuses,
         "missing_metrics": missing_metrics,
-        "thresholds": resolved,
+        "thresholds": {} if threshold_errors else resolved,
         "evidence": evidence,
         "recommendations": recommendations,
         "suggested_changes": deepcopy(recommendations),
@@ -591,6 +712,8 @@ def classify_failure_sample(
         "publication_authorization": PUBLICATION_AUTHORIZATION,
         "auto_apply": False,
     }
+    if threshold_errors:
+        result["threshold_errors"] = threshold_errors
     for key in ("event_id", "evidence_ref", "platform", "published_at"):
         value = raw_event.get(key)
         if isinstance(value, str) and value.strip():
@@ -678,6 +801,8 @@ def _validate_failure_sample(sample: object, index: int) -> list[str]:
     statuses = sample.get("metric_status")
     if not isinstance(metrics, Mapping) or not isinstance(statuses, Mapping):
         errors.append(f"invalid:{prefix}:metrics")
+        metrics = {}
+        statuses = {}
     else:
         for metric in _METRIC_NAMES:
             if metric not in metrics or metric not in statuses:
@@ -691,11 +816,9 @@ def _validate_failure_sample(sample: object, index: int) -> list[str]:
                 errors.append(f"invalid:{prefix}:metric:{metric}")
 
     thresholds = sample.get("thresholds")
-    if not isinstance(thresholds, Mapping) or any(
-        not isinstance(key, str) or not _is_number(value)
-        for key, value in thresholds.items()
-    ):
+    if not _valid_threshold_mapping(thresholds):
         errors.append(f"invalid:{prefix}:thresholds")
+        thresholds = {}
 
     evidence = sample.get("evidence")
     recommendations = sample.get("recommendations")
@@ -714,7 +837,10 @@ def _validate_failure_sample(sample: object, index: int) -> list[str]:
         if evidence or recommendations or suggested_changes:
             errors.append(f"invalid:{prefix}:insufficient_data_details")
         missing_metrics = sample.get("missing_metrics")
-        if not isinstance(missing_metrics, list) or not missing_metrics:
+        if not isinstance(missing_metrics, list) or not missing_metrics or any(
+            not isinstance(metric, str) or metric not in _METRIC_NAMES
+            for metric in missing_metrics
+        ):
             errors.append(f"invalid:{prefix}:missing_metrics")
     elif not categories:
         if evidence or recommendations or suggested_changes:
@@ -722,24 +848,80 @@ def _validate_failure_sample(sample: object, index: int) -> list[str]:
     else:
         if set(evidence) != set(categories) or set(recommendations) != set(categories):
             errors.append(f"invalid:{prefix}:classification_details")
-        if set(suggested_changes) != set(categories):
+        if set(suggested_changes) != set(categories) or (
+            isinstance(recommendations, Mapping)
+            and isinstance(suggested_changes, Mapping)
+            and suggested_changes != recommendations
+        ):
             errors.append(f"invalid:{prefix}:suggested_changes")
         for category in categories:
             detail = evidence.get(category)
             if not isinstance(detail, Mapping):
                 errors.append(f"invalid:{prefix}:evidence:{category}")
                 continue
+            contract = _EVIDENCE_CONTRACT.get(category)
+            if contract is None:
+                continue
+            if set(detail) != {"metrics", "thresholds", "comparisons"}:
+                errors.append(f"invalid:{prefix}:evidence:{category}")
             detail_metrics = detail.get("metrics")
             detail_thresholds = detail.get("thresholds")
             comparisons = detail.get("comparisons")
-            if not isinstance(detail_metrics, Mapping) or not detail_metrics or any(
-                value is None for value in detail_metrics.values()
+            expected_metrics = contract["metrics"]
+            metrics_valid = isinstance(detail_metrics, Mapping) and set(
+                detail_metrics
+            ) == set(expected_metrics)
+            if not metrics_valid or any(
+                statuses.get(metric) != "available"
+                or detail_metrics.get(metric) != metrics.get(metric)
+                for metric in expected_metrics
             ):
                 errors.append(f"invalid:{prefix}:evidence:{category}:metrics")
-            if not isinstance(detail_thresholds, Mapping) or not detail_thresholds:
+            expected_thresholds = contract["thresholds"]
+            thresholds_valid = isinstance(detail_thresholds, Mapping) and set(
+                detail_thresholds
+            ) == set(expected_thresholds)
+            if not thresholds_valid or any(
+                not _valid_threshold_value(
+                    threshold_name,
+                    detail_thresholds.get(threshold_name),
+                )
+                or not _valid_threshold_mapping(thresholds)
+                or detail_thresholds.get(threshold_name)
+                != thresholds.get(threshold_name)
+                for threshold_name in expected_thresholds
+            ):
                 errors.append(f"invalid:{prefix}:evidence:{category}:thresholds")
-            if not isinstance(comparisons, list) or not comparisons:
+            expected_comparisons = contract["comparisons"]
+            if not isinstance(comparisons, list) or len(comparisons) != len(
+                expected_comparisons
+            ):
                 errors.append(f"invalid:{prefix}:evidence:{category}:comparisons")
+            else:
+                for comparison, (
+                    metric,
+                    operator,
+                    threshold_name,
+                ) in zip(comparisons, expected_comparisons):
+                    comparison_valid = (
+                        isinstance(comparison, Mapping)
+                        and set(comparison)
+                        == {"metric", "value", "operator", "threshold"}
+                        and comparison.get("metric") == metric
+                        and comparison.get("operator") == operator
+                        and comparison.get("value") == metrics.get(metric)
+                        and comparison.get("threshold")
+                        == thresholds.get(threshold_name)
+                        and _comparison_holds(
+                            comparison.get("value"),
+                            comparison.get("operator"),
+                            comparison.get("threshold"),
+                        )
+                    )
+                    if not comparison_valid:
+                        errors.append(
+                            f"invalid:{prefix}:evidence:{category}:comparisons"
+                        )
             if not isinstance(recommendations.get(category), str) or not recommendations[
                 category
             ].strip():

@@ -452,6 +452,8 @@ def validate_article_dna(record: Mapping[str, Any]) -> list[str]:
             if name not in features:
                 errors.append(f"missing:feature:{name}")
         for name, item in features.items():
+            if name not in _FEATURE_NAMES:
+                errors.append(f"unknown:feature:{name}")
             if not isinstance(name, str) or not isinstance(item, Mapping):
                 errors.append(f"invalid:feature:{name}")
                 continue
@@ -468,7 +470,7 @@ def validate_article_dna(record: Mapping[str, Any]) -> list[str]:
 
     if payload.get("evidence_role") != _EVIDENCE_ROLE:
         errors.append("dna_must_be_descriptive_signal_only")
-    if payload.get("fact_proof") is True:
+    if payload.get("fact_proof") is not False:
         errors.append("dna_must_not_be_fact_proof")
     if payload.get("publication_authorization") != PUBLICATION_AUTHORIZATION:
         errors.append("publication_authorization_must_be_not_authorized")

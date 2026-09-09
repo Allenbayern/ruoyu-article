@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 import pytest
@@ -134,6 +135,7 @@ def test_dna_validator_rejects_invalid_feature_source_and_authorization():
                 **dna["payload"]["features"],
                 "platform": {"value": "wechat", "source": "inferred"},
             },
+            "evidence_role": "descriptive_signal_only_extra",
             "publication_authorization": "authorized",
         },
     }
@@ -141,6 +143,7 @@ def test_dna_validator_rejects_invalid_feature_source_and_authorization():
     errors = validate_article_dna(invalid)
 
     assert "invalid:feature:platform" in errors
+    assert "dna_must_be_descriptive_signal_only" in errors
     assert "publication_authorization_must_be_not_authorized" in errors
 
 
@@ -232,21 +235,24 @@ def test_failure_classifier_reports_each_remaining_category_with_evidence(
     assert result["recommendations"][category]
 
 
-def test_good_data_high_risk_with_level_has_non_null_risk_evidence():
+@pytest.mark.parametrize("risk_level", ["high", "critical"])
+def test_good_data_high_risk_requires_numeric_risk_score(risk_level: str):
     result = classify_failure_sample(
         {
             "article_id": "a-010b",
             "impressions": 5000,
             "reads": 1000,
             "completion_rate": 0.8,
-            "risk_level": "high",
+            "risk_level": risk_level,
         }
     )
 
-    assert result["categories"] == ["good_data_high_risk"]
-    detail = result["evidence"]["good_data_high_risk"]
-    assert detail["metrics"]["risk_level"] == "high"
-    assert all(value is not None for value in detail["metrics"].values())
+    assert result["categories"] == ["insufficient_data"]
+    assert result["status"] == "insufficient_data"
+    assert "good_data_high_risk" not in result["evidence"]
+    assert result["metrics"]["risk_score"] is None
+    assert result["metric_status"]["risk_score"] == "unavailable"
+    assert "risk_score" in result["missing_metrics"]
 
 
 def test_complete_non_failure_sample_has_no_categories_and_validates():
@@ -291,6 +297,33 @@ def test_threshold_override_changes_category_and_is_recorded_in_evidence():
     assert stricter_result["thresholds"]["exposure_without_click_max_ctr"] == 0.01
 
 
+@pytest.mark.parametrize(
+    "thresholds",
+    [
+        {"unknown_threshold": 1},
+        {"exposure_without_click_min_impressions": -1},
+        {"exposure_without_click_max_ctr": 1.01},
+        {"good_data_high_risk_min_risk_score": "0.7"},
+    ],
+)
+def test_invalid_threshold_configuration_fails_closed(
+    thresholds: dict[str, object],
+):
+    result = classify_failure_sample(
+        {
+            "article_id": "a-011b",
+            "impressions": 5000,
+            "ctr": 0.01,
+        },
+        thresholds=thresholds,
+    )
+
+    assert result["categories"] == ["insufficient_data"]
+    assert result["status"] == "insufficient_data"
+    assert result["thresholds"] == {}
+    assert result["threshold_errors"]
+
+
 def test_missing_category_metric_returns_only_insufficient_data():
     result = classify_failure_sample(
         {
@@ -307,6 +340,48 @@ def test_missing_category_metric_returns_only_insufficient_data():
     assert result["categories"] == ["insufficient_data"]
     assert result["evidence"] == {}
     assert result["recommendations"] == {}
+
+
+@pytest.mark.parametrize(
+    ("event", "metric"),
+    [
+        (
+            {
+                "article_id": "a-012b",
+                "impressions": 100,
+                "clicks": 200,
+            },
+            "ctr",
+        ),
+        (
+            {
+                "article_id": "a-012c",
+                "impressions": 5000,
+                "reads": 100,
+                "likes": 1000,
+                "completion_rate": 0.8,
+                "revenue": 0.2,
+            },
+            "interaction_rate",
+        ),
+    ],
+)
+def test_out_of_range_derived_rates_are_unavailable(
+    event: dict[str, Any], metric: str
+):
+    result = classify_failure_sample(event)
+
+    assert result["metrics"][metric] is None
+    assert result["metric_status"][metric] == "unavailable"
+    assert metric not in result["derived_metrics"]
+
+    if metric == "interaction_rate":
+        artifact = build_failure_artifact(
+            [event],
+            run_id=RUN_ID,
+            generated_at=GENERATED_AT,
+        )
+        assert validate_failure_artifact(artifact) == []
 
 
 def test_failure_artifact_builds_and_validates_classified_samples():
@@ -334,6 +409,91 @@ def test_failure_artifact_builds_and_validates_classified_samples():
     assert artifact["payload"]["publication_authorization"] == "not_authorized"
     assert artifact["payload"]["auto_apply"] is False
     assert validate_failure_artifact(artifact) == []
+
+
+def test_failure_validator_closes_evidence_to_sample_and_threshold_contract():
+    artifact = build_failure_artifact(
+        [
+            {
+                "article_id": "a-016",
+                "impressions": 5000,
+                "ctr": 0.01,
+                "reads": 300,
+                "completion_rate": 0.2,
+            }
+        ],
+        run_id=RUN_ID,
+        generated_at=GENERATED_AT,
+    )
+    invalid = deepcopy(artifact)
+    sample = invalid["payload"]["samples"][0]
+    sample["thresholds"] = {}
+    for category in sample["categories"]:
+        sample["evidence"][category] = {
+            "metrics": {"x": 1},
+            "thresholds": {"y": 2},
+            "comparisons": [{}],
+        }
+
+    errors = validate_failure_artifact(invalid)
+
+    assert "invalid:sample:0:thresholds" in errors
+    assert any(
+        error.startswith("invalid:sample:0:evidence:") for error in errors
+    )
+
+
+def test_failure_validator_requires_suggested_changes_to_match_recommendations():
+    artifact = build_failure_artifact(
+        [
+            {
+                "article_id": "a-017",
+                "impressions": 5000,
+                "ctr": 0.01,
+                "reads": 300,
+                "completion_rate": 0.2,
+            }
+        ],
+        run_id=RUN_ID,
+        generated_at=GENERATED_AT,
+    )
+    invalid = deepcopy(artifact)
+    sample = invalid["payload"]["samples"][0]
+    category = sample["categories"][0]
+    sample["suggested_changes"][category] = "different change"
+
+    errors = validate_failure_artifact(invalid)
+
+    assert "invalid:sample:0:suggested_changes" in errors
+
+
+@pytest.mark.parametrize("mutation", ["missing", "integer", "string"])
+def test_dna_validator_requires_strict_false_fact_proof(mutation: str):
+    dna = extract_article_dna({"article_id": "a-018"})
+    invalid = deepcopy(dna)
+    if mutation == "missing":
+        invalid["payload"].pop("fact_proof")
+    elif mutation == "integer":
+        invalid["payload"]["fact_proof"] = 1
+    else:
+        invalid["payload"]["fact_proof"] = "false"
+
+    errors = validate_article_dna(invalid)
+
+    assert "dna_must_not_be_fact_proof" in errors
+
+
+def test_dna_validator_rejects_unknown_feature_names():
+    dna = extract_article_dna({"article_id": "a-019"})
+    invalid = deepcopy(dna)
+    invalid["payload"]["features"]["future_feature"] = {
+        "value": "x",
+        "source": "explicit",
+    }
+
+    errors = validate_article_dna(invalid)
+
+    assert "unknown:feature:future_feature" in errors
 
 
 def test_failure_validator_rejects_malformed_sample_and_authorization():
