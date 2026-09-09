@@ -1,0 +1,15 @@
+# Disabled template: enable only after separate controller approval.
+# This unit never publishes, merges, deploys, or changes Hermes/Kanban state.
+
+[Unit]
+Description=Ruoyu Film Daily Codex article evidence runner (disabled template)
+ConditionPathExists=/home/allen/Projects/ruoyu-film-daily/scripts/codex_daily_article_runner.py
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/allen/Projects/ruoyu-film-daily
+Environment=PYTHONPATH=
+ExecStart=/home/allen/Projects/media-intel-aios/.venv/bin/python scripts/codex_daily_article_runner.py --date %i --input /home/allen/Projects/ruoyu-film-daily/runs/input/%i/candidates.jsonl --output-root /home/allen/Projects/ruoyu-film-daily/runs/codex-daily-article/%i
+
+# Deliberately not enabled by this task. Credentials must be provided by the
+# approved runtime environment, never in this unit file.

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from copy import deepcopy
 from itertools import combinations
+import hashlib
+import json
 import math
 from typing import Any, Mapping
 
@@ -23,10 +26,25 @@ _CONTENT_MAP_LABELS = {
     "flow": "flow", "depth": "depth", "evergreen": "evergreen",
     "culture": "culture",
 }
+_ELIGIBLE_CANDIDATE_STATES = {"precheck", "approved"}
 
 
 def _text(value: object) -> str:
     return value.strip() if isinstance(value, str) else ""
+
+
+def _stable_hash(value: object) -> str | None:
+    try:
+        encoded = json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _canonical_content_map(value: object) -> str:
@@ -100,6 +118,12 @@ def _normalize(candidate: Mapping[str, Any]) -> dict[str, Any]:
         result["content_value_score"] = candidate.get("editorial_value_score")
     if not result["traffic_class"]:
         result["traffic_class"] = result["freshness_window"]
+    if "status" in candidate:
+        result["status"] = _text(candidate.get("status")).lower()
+    if "publication_authorization" in candidate:
+        result["publication_authorization"] = _text(
+            candidate.get("publication_authorization")
+        )
     return result
 
 
@@ -170,6 +194,14 @@ def _quality_errors(candidate: Mapping[str, Any]) -> list[str]:
         errors.append("invalid:content_value_score")
     if _text(candidate.get("evidence_readiness")) not in _READINESS_PRIORITY:
         errors.append("invalid:evidence_readiness")
+    if "status" in candidate:
+        status = _text(candidate.get("status")).lower()
+        if status not in _ELIGIBLE_CANDIDATE_STATES:
+            errors.append(f"candidate_not_eligible:{status or 'missing'}")
+    if "publication_authorization" in candidate and candidate.get(
+        "publication_authorization"
+    ) != "not_authorized":
+        errors.append("publication_authorization_must_be_not_authorized")
     return errors
 
 
@@ -209,6 +241,17 @@ def build_daily_portfolio(
         missing.append("missing:flow")
     if not any({"depth", "evergreen"} & role for role in roles):
         missing.append("missing:depth_or_evergreen")
+    history_snapshot = list(history) if _sequence(history) is not None else history
+    input_snapshot = {
+        "candidates": deepcopy(normalized),
+        "history": deepcopy(history_snapshot),
+    }
+    candidate_hash = _stable_hash(input_snapshot["candidates"])
+    history_hash = _stable_hash(input_snapshot["history"])
+    if candidate_hash is None:
+        input_errors.append("invalid:input_hash:candidates")
+    if history_hash is None:
+        input_errors.append("invalid:input_hash:history")
     valid: list[tuple[int, tuple[Mapping[str, Any], Mapping[str, Any]]]] = []
     rejected: list[str] = []
     for index, pair in enumerate(combinations(normalized, 2)):
@@ -236,13 +279,28 @@ def build_daily_portfolio(
         "candidate_count": len(normalized),
         "missing_constraints": list(dict.fromkeys([*input_errors, *missing, *rejected])),
         "publication_authorization": "not_authorized",
+        "input_snapshot": input_snapshot,
     }
-    return new_artifact_envelope(
+    result = new_artifact_envelope(
         "v4-portfolio-plan-v1", run_id, payload, generated_at=planned_at
     )
+    result["input_hashes"] = {
+        key: value
+        for key, value in {
+            "candidates": candidate_hash,
+            "history": history_hash,
+        }.items()
+        if value is not None
+    }
+    return result
 
 
-def validate_portfolio(plan: object) -> list[str]:
+def validate_portfolio(
+    plan: object,
+    *,
+    candidates: object | None = None,
+    history: object | None = None,
+) -> list[str]:
     if not isinstance(plan, Mapping):
         return ["invalid:portfolio"]
     if set(plan) != {"schema_version", "run_id", "generated_at", "input_hashes", "payload"}:
@@ -253,6 +311,35 @@ def validate_portfolio(plan: object) -> list[str]:
     errors = validate_artifact_envelope(
         plan, "v4-portfolio-plan-v1", run_id=plan.get("run_id", "")
     )
+    input_hashes = plan.get("input_hashes")
+    input_snapshot = payload.get("input_snapshot")
+    if not isinstance(input_hashes, Mapping):
+        errors.append("invalid:input_hashes")
+        input_hashes = {}
+    if not isinstance(input_snapshot, Mapping):
+        errors.append("missing:input_snapshot")
+    else:
+        for key in ("candidates", "history"):
+            expected = input_hashes.get(key)
+            actual = _stable_hash(input_snapshot.get(key))
+            if not isinstance(expected, str):
+                errors.append(f"missing:input_hash:{key}")
+            elif actual is None or expected != actual:
+                errors.append(f"mismatch:input_hash:{key}")
+        if candidates is not None:
+            candidate_items = _sequence(candidates)
+            if candidate_items is None or any(
+                not isinstance(item, Mapping) for item in candidate_items
+            ):
+                errors.append("invalid:external_candidates")
+            else:
+                external = [_normalize(item) for item in candidate_items]
+                if _stable_hash(external) != input_hashes.get("candidates"):
+                    errors.append("mismatch:external_candidates")
+        if history is not None:
+            history_snapshot = list(history) if _sequence(history) is not None else history
+            if _stable_hash(history_snapshot) != input_hashes.get("history"):
+                errors.append("mismatch:external_history")
     if payload.get("profile") != "two_article_daily":
         errors.append("invalid:profile")
     authorization = payload.get("publication_authorization")

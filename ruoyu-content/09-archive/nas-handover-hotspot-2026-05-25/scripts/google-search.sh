@@ -3,7 +3,7 @@
 # Usage: ./google-search.sh "关键词" [结果数]
 # Outputs JSON to stdout
 
-API_KEY="AIzaSyB3P_FIXi81KXQOeWKOV6KJd6w61ZSwu8c"
+API_KEY="${GOOGLE_API_KEY:-}"
 CX="418c686055e7342df"
 QUERY="${1:-}"
 NUM="${2:-10}"

@@ -28,6 +28,12 @@ def _graph() -> dict[str, object]:
     }
     nodes["source:src-1"]["source_role"] = "primary"
     nodes["claim:art-001:c-1"]["claim_type"] = "fact"
+    nodes["claim:art-001:c-1"]["locator"] = "fact:claim-1"
+    nodes["material:m-1"]["locator"] = "material:m-1"
+    nodes["title:art-001"]["locator"] = "h1:title"
+    nodes["opening:art-001"]["locator"] = "opening"
+    nodes["paragraph:art-001:p1-s1"]["locator"] = "p1-s1"
+    nodes["review:art-001:r-1"]["locator"] = "review"
     edges = [
         {"from": "claim:art-001:c-1", "to": "source:src-1", "edge_type": "supported_by", "locator": "c-1", "created_at": CREATED_AT},
         {"from": "source:src-1", "to": "material:m-1", "edge_type": "captured_as", "locator": "m-1", "created_at": CREATED_AT},
@@ -113,3 +119,18 @@ def test_malformed_inputs_fail_closed_and_validator_rejects_unsafe_actions():
     errors = validate_recovery_actions(unsafe)
     assert any("action" in error for error in errors)
     assert any("authorization" in error for error in errors)
+
+
+def test_malformed_graph_contract_cannot_generate_recovery_actions():
+    broken = _graph()
+    del broken["payload"]["nodes"]["source:src-1"]["artifact_sha256"]
+
+    actions = derive_recovery_actions(
+        broken,
+        [{"event_type": "high_risk", "evidence_refs": ["risk.json"]}],
+        run_id="run-1",
+        created_at=CREATED_AT,
+    )
+
+    assert actions["payload"]["actions"] == []
+    assert "invalid:graph" in actions["payload"]["errors"]

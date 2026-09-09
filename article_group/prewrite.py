@@ -13,6 +13,8 @@ import re
 from typing import Any
 from urllib.parse import urlparse
 
+from article_group.run_profile import MAX_CJK_CHARS, MIN_CJK_CHARS
+
 
 class PrewriteValidationError(ValueError):
     """Raised when pre-write constraints are not satisfied."""
@@ -129,6 +131,21 @@ def validate_candidate_pool(pool: dict[str, Any]) -> list[str]:
             errors.append(f"candidate_{cid}_future_event_time")
         if candidate_observed is None:
             errors.append(f"candidate_{cid}_invalid_observed_at")
+        elif candidate_observed > _now_utc():
+            errors.append(f"candidate_{cid}_future_observed_at")
+
+        # Freshness is a production gate, not just a task-card field.  Keep
+        # malformed timestamps on their existing error path, then evaluate the
+        # declared window only when both timestamps are parseable.
+        if candidate_event is not None and candidate_observed is not None:
+            freshness_error = classify_freshness(
+                event_time=candidate.get("event_time", ""),
+                observed_at=candidate.get("observed_at", ""),
+                freshness_window=candidate.get("freshness_window", ""),
+                current_trigger=candidate.get("current_trigger", ""),
+            )
+            if freshness_error != "ok":
+                errors.append(f"candidate_{cid}_freshness_{freshness_error}")
 
     # Social-topic compliance (five gates): fail-closed for social candidates.
     try:
@@ -144,26 +161,54 @@ def validate_candidate_pool(pool: dict[str, Any]) -> list[str]:
 def validate_slot_decisions(
     decisions: dict[str, Any],
     candidate_ids: set[str] | None = None,
+    *,
+    slot_labels: tuple[str, ...] | None = None,
 ) -> list[str]:
     """Return deterministic reasons slot assignments cannot proceed.
 
     When ``candidate_ids`` is supplied, every primary and backup id must be present.
     """
     errors: list[str] = []
+    if not isinstance(decisions, dict):
+        return ["slot_decisions_must_be_a_dict"]
+
     slots = decisions.get("slots", [])
-    if len(slots) != 3:
-        return [f"slot_decisions_require_exactly_3_slots_got_{len(slots)}"]
+    if not isinstance(slots, list):
+        return ["slot_decisions_slots_must_be_a_list"]
+    expected_slot_labels = set(slot_labels or ("A", "B", "C"))
+    expected_count = len(expected_slot_labels)
+    if len(slots) != expected_count:
+        return [
+            f"slot_decisions_require_exactly_{expected_count}_slots_got_{len(slots)}"
+        ]
 
     primary_ids: set[str] = set()
     backup_ids: set[str] = set()
     all_ids: set[str] = set()
 
-    for slot in slots:
-        slot_label = slot.get("slot", "unknown")
+    for index, slot in enumerate(slots):
+        if not isinstance(slot, dict):
+            errors.append(f"slot_record_{index}_must_be_a_dict")
+            continue
+
+        raw_slot_label = slot.get("slot", "unknown")
+        slot_label = (
+            raw_slot_label
+            if isinstance(raw_slot_label, str) and raw_slot_label.strip()
+            else "unknown"
+        )
+        if slot_label == "unknown":
+            errors.append(f"slot_{index}_invalid_slot_label")
+
         primary = slot.get("primary_candidate_id", "")
         backup = slot.get("backup_candidate_id", "")
 
-        if not primary or not backup:
+        if (
+            not isinstance(primary, str)
+            or not primary.strip()
+            or not isinstance(backup, str)
+            or not backup.strip()
+        ):
             errors.append(f"slot_{slot_label}_missing_primary_or_backup")
             continue
 
@@ -185,10 +230,16 @@ def validate_slot_decisions(
         all_ids.add(primary)
         all_ids.add(backup)
 
-    expected_slots = {"A", "B", "C"}
-    actual_slots = {slot.get("slot", "") for slot in slots}
-    if actual_slots != expected_slots:
-        errors.append(f"slot_labels_must_be_A_B_C_got_{sorted(actual_slots)}")
+    actual_slots = {
+        slot.get("slot", "")
+        for slot in slots
+        if isinstance(slot, dict) and isinstance(slot.get("slot", ""), str)
+    }
+    if actual_slots != expected_slot_labels:
+        expected_label_text = "_".join(sorted(expected_slot_labels))
+        errors.append(
+            f"slot_labels_must_be_{expected_label_text}_got_{sorted(actual_slots)}"
+        )
 
     if candidate_ids:
         for cid in sorted(all_ids):
@@ -204,9 +255,6 @@ _CANONICAL_SLOT_FIELDS = (
     "candidate_id", "work", "primary_atom", "reader_intent", "angle",
     "content_map", "event_cluster_id", "reader_question",
 )
-_CANONICAL_SLOT_LABELS = {"A", "B", "C"}
-
-
 def _normalized_slot_text(value: object) -> str | None:
     """Normalize only string values; never coerce untrusted structured input."""
     if not isinstance(value, str):
@@ -246,6 +294,8 @@ def validate_slot_contract(
     candidate_pool: dict[str, Any] | None = None,
     slot_decisions: dict[str, Any] | None = None,
     artifact_records: list[dict[str, Any]] | None = None,
+    *,
+    slot_labels: tuple[str, ...] | None = None,
 ) -> list[str]:
     """Return fail-closed errors for slot drift and daily semantic collisions.
 
@@ -257,8 +307,12 @@ def validate_slot_contract(
     slots = contract.get("slots")
     if not isinstance(slots, list):
         return ["slot_contract_slots_must_be_a_list"]
-    if len(slots) != 3:
-        return [f"slot_contract_requires_exactly_3_slots_got_{len(slots)}"]
+    expected_slot_labels = set(slot_labels or ("A", "B", "C"))
+    expected_count = len(expected_slot_labels)
+    if len(slots) != expected_count:
+        return [
+            f"slot_contract_requires_exactly_{expected_count}_slots_got_{len(slots)}"
+        ]
 
     errors: list[str] = []
     slot_by_label: dict[str, dict[str, Any]] = {}
@@ -281,8 +335,11 @@ def validate_slot_contract(
         for field in _CANONICAL_SLOT_FIELDS:
             if _normalized_slot_text(record.get(field)) is None:
                 errors.append(f"slot_{label}_invalid_{field}")
-    if set(slot_by_label) != _CANONICAL_SLOT_LABELS:
-        errors.append(f"slot_contract_labels_must_be_A_B_C_got_{sorted(slot_by_label)}")
+    if set(slot_by_label) != expected_slot_labels:
+        expected_label_text = "_".join(sorted(expected_slot_labels))
+        errors.append(
+            f"slot_contract_labels_must_be_{expected_label_text}_got_{sorted(slot_by_label)}"
+        )
 
     if candidate_pool is not None and slot_decisions is not None:
         expected = build_slot_contract(candidate_pool, slot_decisions).get("slots", [])
@@ -365,8 +422,8 @@ def classify_freshness(
     if hours < 0:
         return "observed_before_event"
 
-    trigger = (current_trigger or "").strip()
-    window = (freshness_window or "").strip()
+    trigger = current_trigger.strip() if isinstance(current_trigger, str) else ""
+    window = freshness_window.strip() if isinstance(freshness_window, str) else ""
 
     if window == "same-day":
         if hours > 24:
@@ -593,8 +650,10 @@ def validate_article_stage(
     # Chinese character count from the actual Markdown file
     md_path = (run_root / article["markdown_path"]).resolve()
     char_count = _article_chinese_char_count(md_path)
-    if not 1500 <= char_count <= 2200:
-        errors.append(f"article_{aid}_character_count_{char_count}_out_of_1500_2200")
+    if not MIN_CJK_CHARS <= char_count <= MAX_CJK_CHARS:
+        errors.append(
+            f"article_{aid}_character_count_{char_count}_out_of_{MIN_CJK_CHARS}_{MAX_CJK_CHARS}"
+        )
 
     # Title length
     title = article.get("title", "")

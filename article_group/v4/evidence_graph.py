@@ -22,10 +22,26 @@ _ALLOWED = {
     ("claim", "materialized_as", "paragraph"), ("title", "reviewed_by", "review"),
     ("opening", "reviewed_by", "review"), ("paragraph", "reviewed_by", "review"),
 }
+_DISCOVERY_SOURCE_ROLES = frozenset(
+    {
+        "discovery_signal",
+        "social_signal",
+        "social",
+        "trending",
+        "hotlist",
+        "hot_search",
+        "heat_signal",
+    }
+)
 
 
 def _text(value: object) -> str:
     return value.strip() if isinstance(value, str) else ""
+
+
+def _is_discovery_source_role(value: object) -> bool:
+    role = _text(value).lower().replace("-", "_").replace(" ", "_")
+    return role in _DISCOVERY_SOURCE_ROLES
 
 
 def _read_json(root: Path, raw_path: object) -> dict[str, Any]:
@@ -397,7 +413,9 @@ def build_evidence_graph(run_root: Path, batch: Mapping[str, Any]) -> dict[str, 
                 if not source: build_errors.append(f"missing:source_manifest:{sid}")
                 source_path = _text(source.get("relative_path") or source.get("path")); role = _text(source.get("role") or source.get("source_role"))
                 _put_node(nodes, _node(root, f"source:{sid}", "source", source_path, source_role=role), build_errors)
-                if support_locator:
+                if support_locator and _is_discovery_source_role(role):
+                    build_errors.append(f"forbidden:discovery_source_support:{sid}")
+                elif support_locator:
                     _edge(edges, cid, "supported_by", f"source:{sid}", support_locator, generated_at)
         pack_path = _text(article.get("material_pack_path")); pack = _read_required(root, pack_path, f"material_pack:{aid}", build_errors)
         if "materials" not in pack or not isinstance(pack.get("materials"), Mapping): build_errors.append(f"invalid:material_pack:materials:{aid}")
@@ -502,6 +520,105 @@ def _validate_input_hashes(
     return source_records
 
 
+def validate_evidence_graph_structure(graph: Mapping[str, Any]) -> list[str]:
+    """Validate graph structure without touching the run filesystem.
+
+    Gap and recovery derivation can be used with an in-memory graph in unit
+    tests, while the full graph validator additionally verifies every file
+    hash against a supplied run root.  This structural gate keeps the former
+    fail-closed instead of accepting a barely-shaped envelope.
+    """
+
+    if not isinstance(graph, Mapping):
+        return ["invalid:graph"]
+    run_id = _text(graph.get("run_id")) or "__missing__"
+    errors = validate_artifact_envelope(graph, _SCHEMA, run_id=run_id)
+    if set(graph) != {"schema_version", "run_id", "generated_at", "input_hashes", "payload"}:
+        errors.append("invalid:top_level")
+    payload = _payload(graph)
+    nodes = payload.get("nodes")
+    edges = payload.get("edges")
+    if not isinstance(nodes, Mapping):
+        errors.append("invalid:nodes")
+        return list(dict.fromkeys(errors))
+    if not nodes:
+        errors.append("invalid:empty_nodes")
+    if not isinstance(edges, list):
+        errors.append("invalid:edges")
+        return list(dict.fromkeys(errors))
+    if not edges:
+        errors.append("invalid:empty_edges")
+    if "publication_authorization" in payload:
+        errors.append("publication_authorization_must_not_be_present")
+    build_errors = payload.get("build_errors")
+    if isinstance(build_errors, list):
+        errors.extend(f"build:{item}" for item in build_errors if isinstance(item, str))
+    elif build_errors is not None:
+        errors.append("invalid:build_errors")
+
+    known: dict[str, Mapping[str, Any]] = {}
+    for key, node in nodes.items():
+        if not isinstance(key, str) or not isinstance(node, Mapping):
+            errors.append("invalid:node")
+            continue
+        for field in _REQUIRED_NODE:
+            if field not in node:
+                errors.append(f"missing:node:{field}:{key}")
+        if node.get("node_id") != key:
+            errors.append(f"mismatch:node_id:{key}")
+        node_type = node.get("node_type")
+        if node_type not in NODE_TYPES:
+            errors.append(f"unknown:node_type:{key}")
+        if node.get("status") not in _STATUSES:
+            errors.append(f"invalid:status:{key}")
+        path = node.get("artifact_path")
+        if not isinstance(path, str) or not path.strip() or Path(path).is_absolute() or ".." in Path(path).parts:
+            errors.append(f"invalid:artifact_path:{key}")
+        digest = node.get("artifact_sha256")
+        if digest is not None and (
+            not isinstance(digest, str)
+            or len(digest) != 64
+            or any(character not in "0123456789abcdefABCDEF" for character in digest)
+        ):
+            errors.append(f"invalid:artifact_sha256:{key}")
+        if node_type == "source" and not _text(node.get("source_role")):
+            errors.append(f"missing:source_role:{key}")
+        if node_type == "claim" and not _text(node.get("claim_type")):
+            errors.append(f"missing:claim_type:{key}")
+        if node_type in {"claim", "material", "title", "opening", "paragraph", "review"} and not _text(node.get("locator")):
+            errors.append(f"missing:locator:{key}")
+        if node_type == "title" and _text(node.get("locator")) and not node["locator"].startswith("h1:"):
+            errors.append(f"invalid:title_locator:{key}")
+        if isinstance(key, str) and isinstance(node_type, str):
+            known[key] = node
+
+    signatures: set[tuple[object, ...]] = set()
+    for index, edge in enumerate(edges):
+        if not isinstance(edge, Mapping):
+            errors.append(f"invalid:edge:{index}")
+            continue
+        for field in _REQUIRED_EDGE:
+            value = edge.get(field)
+            if not isinstance(value, str) or not value.strip():
+                errors.append(f"invalid:edge:{field}:{index}")
+        left, right, kind = edge.get("from"), edge.get("to"), edge.get("edge_type")
+        if not all(isinstance(value, str) and value for value in (left, right, kind)):
+            continue
+        if left not in known or right not in known:
+            errors.append(f"unknown:edge_node:{index}")
+            continue
+        pair = (known[left].get("node_type"), kind, known[right].get("node_type"))
+        if pair not in _ALLOWED:
+            errors.append(f"illegal:edge:{kind}:{index}")
+        if kind == "supported_by" and _is_discovery_source_role(known[right].get("source_role")):
+            errors.append(f"forbidden:discovery_source_support:{right}")
+        signature = tuple(edge.get(field) for field in _REQUIRED_EDGE)
+        if signature in signatures:
+            errors.append(f"duplicate:edge:{index}")
+        signatures.add(signature)
+    return list(dict.fromkeys(errors))
+
+
 def validate_evidence_graph(graph: Mapping[str, Any], run_root: Path) -> list[str]:
     if not isinstance(graph, Mapping): return ["invalid:graph"]
     errors = validate_artifact_envelope(graph, _SCHEMA, run_id=_text(graph.get("run_id")) or "__missing__"); payload = _payload(graph); nodes = payload.get("nodes"); edges = payload.get("edges")
@@ -569,6 +686,12 @@ def validate_evidence_graph(graph: Mapping[str, Any], run_root: Path) -> list[st
         if left not in known or right not in known: errors.append("unknown:edge_node"); continue
         left_type, right_type = known[left].get("node_type"), known[right].get("node_type")
         if not isinstance(left_type, str) or not isinstance(right_type, str) or (left_type, kind, right_type) not in _ALLOWED: errors.append(f"illegal:edge:{kind}"); continue
+        if (
+            kind == "supported_by"
+            and right_type == "source"
+            and _is_discovery_source_role(known[right].get("source_role"))
+        ):
+            errors.append(f"forbidden:discovery_source_support:{right}")
         sig = tuple(edge.get(x) for x in _REQUIRED_EDGE)
         if all(isinstance(value, str) for value in sig):
             if sig in signatures: errors.append("duplicate:edge")

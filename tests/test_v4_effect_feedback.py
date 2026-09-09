@@ -289,3 +289,26 @@ def test_unhashable_controller_and_metric_status_inputs_fail_closed() -> None:
     assert controller_result["reusable"] is False
     assert "invalid:controller_decision" in controller_result["errors"]
     assert validate_metric_event(event)
+
+
+def test_preset_validated_state_cannot_pass_without_current_evidence() -> None:
+    pattern = _adopted_pattern()
+    pattern["state"] = "validated"
+
+    result = advance_pattern_lifecycle(pattern, [])
+
+    assert result["state"] == "candidate"
+    assert result["validation"]["validated"] is False
+    assert result["reusable"] is False
+    assert "state_claim_not_supported" in result["errors"]
+
+
+def test_empty_baseline_cannot_support_validation() -> None:
+    pattern = _adopted_pattern()
+    pattern["baseline"] = {}
+
+    result = advance_pattern_lifecycle(pattern, _three_valid_events())
+
+    assert result["state"] == "measured"
+    assert result["validation"]["validated"] is False
+    assert "invalid:baseline" in result["errors"]

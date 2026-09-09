@@ -1,0 +1,15 @@
+# Disabled template: install or enable only after controller cutover approval.
+[Unit]
+Description=Ruoyu Codex Newrank film/TV evidence watch
+ConditionPathExists=%h/Projects/ruoyu-film-daily/scripts/codex_newrank_watch.py
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Projects/ruoyu-film-daily
+ExecStart=/usr/bin/python3 %h/Projects/ruoyu-film-daily/scripts/codex_newrank_watch.py --days 3 --output-root %h/.codex/runs/newrank-watch
+PassEnvironment=NEWRANK_N_TOKEN
+NoNewPrivileges=yes
+
+# Deliberately no [Install] section: this file is a disabled cutover template.

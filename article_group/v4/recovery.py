@@ -9,8 +9,13 @@ import hashlib
 import json
 from typing import Any
 
-from .contracts import EDGE_TYPES, NODE_TYPES, new_artifact_envelope, validate_artifact_envelope
-from .evidence_graph import invalidate_source, trace_impact
+from .contracts import new_artifact_envelope, validate_artifact_envelope
+from .evidence_graph import (
+    invalidate_source,
+    trace_impact,
+    validate_evidence_graph,
+    validate_evidence_graph_structure,
+)
 
 
 _SCHEMA = "v4-recovery-actions-v1"
@@ -111,34 +116,7 @@ def _valid_graph(graph: object) -> bool:
     run_id = graph.get("run_id")
     if not isinstance(run_id, str) or not run_id.strip():
         return False
-    if validate_artifact_envelope(graph, _GRAPH_SCHEMA, run_id=run_id):
-        return False
-    payload = graph.get("payload")
-    if not isinstance(payload, Mapping):
-        return False
-    nodes = payload.get("nodes")
-    edges = payload.get("edges")
-    if not isinstance(nodes, Mapping) or not isinstance(edges, list) or not nodes:
-        return False
-    for node_id, node in nodes.items():
-        if (
-            not isinstance(node_id, str)
-            or not isinstance(node, Mapping)
-            or node.get("node_id") != node_id
-            or node.get("node_type") not in NODE_TYPES
-            or node.get("status") not in {"present", "missing", "stale"}
-        ):
-            return False
-    for edge in edges:
-        if not isinstance(edge, Mapping):
-            return False
-        if not all(isinstance(edge.get(key), str) and edge[key] for key in ("from", "to", "edge_type")):
-            return False
-        if edge["edge_type"] not in EDGE_TYPES:
-            return False
-        if edge["from"] not in nodes or edge["to"] not in nodes:
-            return False
-    return True
+    return not validate_evidence_graph_structure(graph)
 
 
 def _event_nodes(graph: Mapping[str, Any], event: Mapping[str, Any], event_type: str) -> tuple[list[str], bool]:
@@ -273,6 +251,7 @@ def derive_recovery_actions(
     *,
     run_id: str,
     created_at: str,
+    run_root: object = None,
 ) -> dict[str, Any]:
     """Derive stable, non-authorising recovery actions from graph events."""
 
@@ -282,6 +261,8 @@ def derive_recovery_actions(
     if not _valid_timestamp(created_at):
         errors.append("invalid:created_at")
     if not _valid_graph(graph):
+        errors.append("invalid:graph")
+    elif run_root is not None and validate_evidence_graph(graph, run_root):
         errors.append("invalid:graph")
     elif graph.get("run_id") != run_id:
         errors.append("mismatch:graph_run_id")

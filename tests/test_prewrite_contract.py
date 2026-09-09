@@ -88,6 +88,29 @@ def test_candidate_pool_rejects_future_observed_at():
     assert any("future" in err.lower() or "timestamp" in err.lower() or "time" in err.lower() for err in errors)
 
 
+def test_candidate_freshness_window_is_enforced():
+    from article_group.prewrite import validate_candidate_pool
+
+    pool = valid_candidate_pool()
+    pool["candidates"][0]["event_time"] = "2026-07-22T00:00:00+08:00"
+    pool["candidates"][0]["freshness_window"] = "same-day"
+
+    errors = validate_candidate_pool(pool)
+
+    assert any("freshness" in error and "same_day" in error for error in errors)
+
+
+def test_candidate_future_observed_at_is_rejected():
+    from article_group.prewrite import validate_candidate_pool
+
+    pool = valid_candidate_pool()
+    pool["candidates"][0]["observed_at"] = "2099-01-01T00:00:00+08:00"
+
+    errors = validate_candidate_pool(pool)
+
+    assert "candidate_cand-01_future_observed_at" in errors
+
+
 def test_candidate_pool_requires_timezone():
     from article_group.prewrite import validate_candidate_pool
 
@@ -108,6 +131,25 @@ def test_selected_slots_require_three_distinct_primary_and_backup_ids():
     decisions["slots"][1]["backup_candidate_id"] = "cand-01"
     errors = validate_slot_decisions(decisions)
     assert any("backup" in err.lower() or "overlap" in err.lower() or "duplicate" in err.lower() for err in errors)
+
+
+def test_slot_decisions_reject_malformed_records_without_crashing():
+    from article_group.prewrite import validate_slot_decisions
+
+    decisions = valid_slot_decisions()
+    decisions["slots"][1] = ["not-a-slot"]
+
+    errors = validate_slot_decisions(decisions)
+
+    assert "slot_record_1_must_be_a_dict" in errors
+
+
+def test_slot_decisions_reject_non_list_slots_without_crashing():
+    from article_group.prewrite import validate_slot_decisions
+
+    assert validate_slot_decisions({"slots": {}}) == [
+        "slot_decisions_slots_must_be_a_list"
+    ]
 
 
 def test_primary_cannot_be_another_slots_backup():
@@ -148,6 +190,23 @@ def test_valid_pool_and_decisions_pass():
     decisions = valid_slot_decisions()
     candidate_ids = {card["candidate_id"] for card in pool["candidates"]}
     assert validate_slot_decisions(decisions, candidate_ids=candidate_ids) == []
+
+
+def test_two_article_daily_slot_contract_accepts_only_a_and_b():
+    from article_group.prewrite import validate_slot_decisions
+
+    decisions = {
+        "slots": [
+            {"slot": "A", "primary_candidate_id": "cand-01", "backup_candidate_id": "cand-04"},
+            {"slot": "B", "primary_candidate_id": "cand-02", "backup_candidate_id": "cand-05"},
+        ]
+    }
+
+    assert validate_slot_decisions(
+        decisions,
+        candidate_ids={"cand-01", "cand-02", "cand-04", "cand-05"},
+        slot_labels=("A", "B"),
+    ) == []
 
 
 # --- Slice 3: canonical slot contract and deterministic semantic deduplication ---

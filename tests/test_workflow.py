@@ -78,6 +78,89 @@ def test_valid_synthetic_batch_creates_mechanically_verified_manifest(tmp_path: 
     assert '"network_actions": "none"' in payload
 
 
+def test_two_article_daily_profile_accepts_two_slots():
+    batch = valid_batch()
+    batch["run_profile"] = "two_article_daily"
+    batch["articles"] = batch["articles"][:2]
+    batch["articles"][1]["slot"] = "B"
+
+    assert validate_batch(batch) == []
+
+
+def test_new_profile_contract_requires_explicit_review_surface():
+    batch = valid_batch()
+    batch["run_profile"] = "two_article_daily"
+    batch["run_profile_contract_version"] = "run-profile-v1"
+    batch["articles"] = batch["articles"][:2]
+    batch["articles"][1]["slot"] = "B"
+
+    assert "review_surface_missing" in validate_batch(batch)
+
+
+def test_new_profile_contract_accepts_markdown_review_surface():
+    batch = valid_batch()
+    batch["run_profile"] = "two_article_daily"
+    batch["run_profile_contract_version"] = "run-profile-v1"
+    batch["review_surface"] = "markdown_codex"
+    batch["articles"] = batch["articles"][:2]
+    batch["articles"][1]["slot"] = "B"
+
+    assert validate_batch(batch) == []
+
+
+def test_markdown_review_surface_rejects_preview_mode():
+    batch = valid_batch()
+    batch["run_profile"] = "two_article_daily"
+    batch["run_profile_contract_version"] = "run-profile-v1"
+    batch["review_surface"] = "markdown_codex"
+    batch["preview_mode"] = "local_codex"
+    batch["articles"] = batch["articles"][:2]
+    batch["articles"][1]["slot"] = "B"
+
+    assert "preview_mode_forbidden_for_markdown_surface" in validate_batch(batch)
+
+
+def test_controlled_manifest_preserves_markdown_review_surface(tmp_path: Path):
+    batch = valid_batch()
+    batch["run_profile"] = "two_article_daily"
+    batch["run_profile_contract_version"] = "run-profile-v1"
+    batch["review_surface"] = "markdown_codex"
+    batch["articles"] = batch["articles"][:2]
+    batch["articles"][1]["slot"] = "B"
+    materialize_artifacts(batch, tmp_path)
+
+    target = build_controlled_run(batch, tmp_path)
+    payload = __import__("json").loads(target.read_text(encoding="utf-8"))
+
+    assert payload["review_surface"] == "markdown_codex"
+
+
+def test_new_profile_contract_preserves_preview_mode_in_manifest(tmp_path: Path):
+    batch = valid_batch()
+    batch["run_profile"] = "two_article_daily"
+    batch["run_profile_contract_version"] = "run-profile-v1"
+    batch["preview_mode"] = "local_codex"
+    batch["articles"] = batch["articles"][:2]
+    batch["articles"][1]["slot"] = "B"
+    materialize_artifacts(batch, tmp_path)
+
+    target = build_controlled_run(batch, tmp_path)
+    payload = __import__("json").loads(target.read_text(encoding="utf-8"))
+
+    assert payload["preview_mode"] == "local_codex"
+
+
+def test_invalid_preview_mode_blocks_new_profile_batch():
+    batch = valid_batch()
+    batch["run_profile"] = "two_article_daily"
+    batch["run_profile_contract_version"] = "run-profile-v1"
+    batch["preview_mode"] = "remote"
+    batch["articles"] = batch["articles"][:2]
+    batch["articles"][1]["slot"] = "B"
+
+    assert "preview_mode_invalid:remote" in validate_batch(batch)
+
+
 def test_duplicate_primary_atom_blocks_batch():
     batch = valid_batch()
     batch["articles"][2]["primary_atom"] = batch["articles"][1]["primary_atom"]
@@ -302,6 +385,15 @@ def test_markdown_character_count_is_read_from_artifact(tmp_path: Path):
 
     with pytest.raises(BatchValidationError, match="markdown_character_count_out_of_range:demo-a:1"):
         build_controlled_run(batch, tmp_path)
+
+
+def test_markdown_character_count_accepts_the_flexible_target_band(tmp_path: Path):
+    batch = valid_batch()
+    materialize_artifacts(batch, tmp_path)
+    markdown = tmp_path / batch["articles"][0]["markdown_path"]
+    markdown.write_text("正文中的可验证主张" + "文" * 1490, encoding="utf-8")
+
+    assert validate_batch(batch, tmp_path) == []
 
 
 def test_review_ready_can_return_for_scoped_repair():

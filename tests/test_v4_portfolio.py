@@ -29,6 +29,7 @@ def _candidate(
         "content_value_score": value,
         "evidence_readiness": readiness,
         "freshness_window": freshness_window,
+        "status": "approved",
     }
 
 
@@ -321,3 +322,44 @@ def test_score_must_be_finite_and_between_one_and_five():
         candidates[0]["content_value_score"] = value
         plan = build_daily_portfolio(candidates, [], run_id="r1", planned_at="2026-09-08T10:00:00+08:00")
         assert plan["payload"]["decision"] == "selected"
+
+
+def test_only_precheck_or_approved_candidates_can_enter_the_portfolio():
+    for status in ("idea", "returned", "closed", "unknown"):
+        candidates = _flow_and_depth_candidates()
+        candidates[0]["status"] = status
+        plan = build_daily_portfolio(
+            candidates,
+            [],
+            run_id="r1",
+            planned_at="2026-09-08T10:00:00+08:00",
+        )
+        assert plan["payload"]["decision"] == "needs_controller"
+        assert any("candidate_not_eligible" in error for error in validate_portfolio(plan))
+
+
+def test_portfolio_input_snapshot_and_hashes_detect_tampering():
+    candidates = _flow_and_depth_candidates()
+    plan = build_daily_portfolio(
+        candidates,
+        [],
+        run_id="r1",
+        planned_at="2026-09-08T10:00:00+08:00",
+    )
+    assert set(plan["input_hashes"]) == {"candidates", "history"}
+    assert validate_portfolio(plan, candidates=candidates, history=[]) == []
+
+    plan["payload"]["input_snapshot"]["candidates"][0]["candidate_id"] = "tampered"
+    assert "mismatch:input_hash:candidates" in validate_portfolio(plan)
+
+    clean = build_daily_portfolio(
+        candidates,
+        [],
+        run_id="r1",
+        planned_at="2026-09-08T10:00:00+08:00",
+    )
+    changed_candidates = _flow_and_depth_candidates()
+    changed_candidates[0]["selection_reason"] = "changed"
+    assert "mismatch:external_candidates" in validate_portfolio(
+        clean, candidates=changed_candidates, history=[]
+    )

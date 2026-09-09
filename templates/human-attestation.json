@@ -1,0 +1,12 @@
+{
+  "schema_version": "human-attestation-v3",
+  "article_id": "",
+  "reviewer_kind": "human",
+  "reviewer_role": "human_editor",
+  "reviewer_identity": "",
+  "reviewed_at": "",
+  "decision": "accept",
+  "markdown_path": "drafts/",
+  "markdown_sha256": "",
+  "attestation_ref": ""
+}

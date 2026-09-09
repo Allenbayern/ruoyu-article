@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "topic-card-v1.schema.json",
+  "title": "Editorial Pipeline V3 topic card",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "topic_id",
+    "version",
+    "status",
+    "article_group_owner",
+    "object",
+    "core_question",
+    "target_reader",
+    "article_type",
+    "conflict_or_contrast",
+    "reader_benefit",
+    "freshness",
+    "historical_dedupe",
+    "material_requirements",
+    "out_of_scope",
+    "risk_tags",
+    "acceptance",
+    "deadline",
+    "decided_by",
+    "decided_at"
+  ],
+  "properties": {
+    "schema_version": {"const": "topic-card-v1"},
+    "topic_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^topic-[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "version": {"type": "integer", "minimum": 1},
+    "status": {
+      "enum": [
+        "idea",
+        "precheck",
+        "approved",
+        "researching",
+        "material_ready",
+        "writing",
+        "review",
+        "returned",
+        "closed"
+      ]
+    },
+    "article_group_owner": {"type": "string"},
+    "object": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["work_or_person", "event"],
+      "properties": {
+        "work_or_person": {"type": "string"},
+        "event": {"type": "string"}
+      }
+    },
+    "core_question": {"type": "string"},
+    "target_reader": {"type": "string"},
+    "article_type": {"type": "string"},
+    "conflict_or_contrast": {"type": "string"},
+    "reader_benefit": {"type": "string"},
+    "freshness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "reason"],
+      "properties": {
+        "mode": {
+          "enum": ["same-day", "fermenting-1-3d", "revival"]
+        },
+        "reason": {"type": "string"}
+      }
+    },
+    "historical_dedupe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["same_work", "same_event_cluster", "near_title", "new_angle"],
+      "properties": {
+        "same_work": {"enum": ["pass", "pending", "fail", "override"]},
+        "same_event_cluster": {"enum": ["pass", "pending", "fail", "override"]},
+        "near_title": {"enum": ["pass", "pending", "fail", "override"]},
+        "new_angle": {"type": "string"},
+        "override_reason": {"type": "string"}
+      }
+    },
+    "material_requirements": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "out_of_scope": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "risk_tags": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "acceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["min_concrete_support_types", "opening_support_required"],
+      "properties": {
+        "min_concrete_support_types": {"type": "integer", "minimum": 0},
+        "opening_support_required": {"type": "boolean"}
+      }
+    },
+    "deadline": {"type": "string"},
+    "decided_by": {"type": "string"},
+    "decided_at": {"type": "string"},
+    "return_reasons": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+
+    "card_version": {"type": "string"},
+    "card_type": {"type": "string"},
+    "run_id": {"type": "string"},
+    "article_id": {"type": "string"},
+    "one_sentence_scope": {"type": "string"},
+    "freshness_window": {"type": "string"},
+    "topic_mode": {"type": "string"},
+    "event_cluster_id": {"type": "string"},
+    "remove_timestamp_test": {"type": "string"},
+    "decision": {"type": "string"},
+    "stop_reasons": {"type": "array", "items": {"type": "string"}},
+    "current_trigger_or_evergreen_reason": {"type": "string"},
+    "historical_dedupe_ref": {"type": "string"},
+    "same_work_recent_check": {"type": "string"},
+    "title_near_duplicate_check": {"type": "string"},
+    "new_angle_statement": {"type": "string"},
+    "override_reason": {"type": "string"},
+    "title_promise": {"type": "string"},
+    "title_evidence_ref": {"type": "string"},
+    "opening_fulfillment_plan": {"type": "string"}
+  }
+}

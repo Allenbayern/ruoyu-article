@@ -397,3 +397,17 @@ def test_missing_claim_source_and_material_locators_fail_closed(tmp_path: Path):
     material_broken = build_evidence_graph(tmp_path, batch)
     assert any("material_locator" in error for error in material_broken["payload"].get("build_errors", []))
     assert validate_evidence_graph(material_broken, tmp_path)
+
+
+def test_discovery_source_can_be_retained_but_cannot_prove_a_claim(tmp_path: Path):
+    batch = _minimal_batch(tmp_path)
+    manifest_path = tmp_path / batch["source_manifest_path"]
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["sources"][0]["source_role"] = "discovery_signal"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    graph = build_evidence_graph(tmp_path, batch)
+
+    assert "source:src-1" in graph["payload"]["nodes"]
+    assert any("discovery_source_support" in error for error in graph["payload"].get("build_errors", []))
+    assert validate_evidence_graph(graph, tmp_path)

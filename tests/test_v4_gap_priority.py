@@ -49,6 +49,12 @@ def _graph() -> dict[str, object]:
     }
     nodes["source:src-1"]["source_role"] = "primary"
     nodes["claim:art-001:c-1"]["claim_type"] = "fact"
+    nodes["claim:art-001:c-1"]["locator"] = "fact:claim-1"
+    nodes["material:m-1"]["locator"] = "material:m-1"
+    nodes["title:art-001"]["locator"] = "h1:title"
+    nodes["opening:art-001"]["locator"] = "opening"
+    nodes["paragraph:art-001:p1-s1"]["locator"] = "p1-s1"
+    nodes["review:art-001:r-1"]["locator"] = "review"
     edges = [
         {"from": "claim:art-001:c-1", "to": "source:src-1", "edge_type": "supported_by", "locator": "c-1", "created_at": "2026-09-08T10:00:00+08:00"},
         {"from": "source:src-1", "to": "material:m-1", "edge_type": "captured_as", "locator": "m-1", "created_at": "2026-09-08T10:00:00+08:00"},
@@ -157,3 +163,17 @@ def test_success_resets_consecutive_failures_and_invalid_input_fails_closed():
     assert updated["disposition"] == "resolved"
     assert rank_gap_tasks([{"gap_type": "not-a-gap"}]) == []
     assert derive_gap_tasks({"payload": []}, []) == []
+
+
+def test_malformed_graph_paths_roles_and_edges_block_gap_derivation():
+    missing_path = _graph()
+    del missing_path["payload"]["nodes"]["source:src-1"]["artifact_path"]
+    assert derive_gap_tasks(missing_path, []) == []
+
+    missing_role = _graph()
+    del missing_role["payload"]["nodes"]["source:src-1"]["source_role"]
+    assert derive_gap_tasks(missing_role, []) == []
+
+    missing_edges = _graph()
+    missing_edges["payload"]["edges"] = []
+    assert derive_gap_tasks(missing_edges, []) == []

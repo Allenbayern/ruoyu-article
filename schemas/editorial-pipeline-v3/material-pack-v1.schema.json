@@ -1,0 +1,235 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "material-pack-v1.schema.json",
+  "title": "Editorial Pipeline V3 material pack",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "pack_id",
+    "topic_id",
+    "topic_version",
+    "version",
+    "crawl_task_id",
+    "status",
+    "materials",
+    "claims",
+    "acceptance",
+    "audience_sample",
+    "source_audit",
+    "retry_state",
+    "deliverables",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "schema_version": {"const": "material-pack-v1"},
+    "pack_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^pack-[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "topic_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^topic-[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "topic_version": {"type": "integer", "minimum": 1},
+    "version": {"type": "integer", "minimum": 1},
+    "crawl_task_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^crawl-[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "status": {"enum": ["material_ready", "returned", "closed"]},
+    "materials": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["body_facts", "industry_context", "audience_reactions", "cross_check_facts"],
+      "properties": {
+        "body_facts": {"type": "array", "items": {"$ref": "#/$defs/material"}},
+        "industry_context": {"type": "array", "items": {"$ref": "#/$defs/material"}},
+        "audience_reactions": {"type": "array", "items": {"$ref": "#/$defs/material"}},
+        "cross_check_facts": {"type": "array", "items": {"$ref": "#/$defs/material"}}
+      }
+    },
+    "claims": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["facts", "attributed_views", "audience_reactions", "inferences"],
+      "properties": {
+        "facts": {"type": "array", "items": {"$ref": "#/$defs/claim"}},
+        "attributed_views": {"type": "array", "items": {"$ref": "#/$defs/claim"}},
+        "audience_reactions": {"type": "array", "items": {"$ref": "#/$defs/claim"}},
+        "inferences": {"type": "array", "items": {"$ref": "#/$defs/claim"}}
+      }
+    },
+    "acceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "core_question_preserved",
+        "concrete_support_types",
+        "opening_support_material_ids",
+        "key_facts_traceable",
+        "industry_context_relevant",
+        "audience_sample_scoped",
+        "duplicates_screened",
+        "failed_sources_visible",
+        "gaps",
+        "blocking_gaps",
+        "prohibited_claims"
+      ],
+      "properties": {
+        "core_question_preserved": {"type": "boolean"},
+        "concrete_support_types": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": ["body_facts", "industry_context", "audience_reactions", "cross_check_facts"]
+          }
+        },
+        "opening_support_material_ids": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        },
+        "key_facts_traceable": {"type": "boolean"},
+        "industry_context_relevant": {"type": "boolean"},
+        "audience_sample_scoped": {"type": "boolean"},
+        "duplicates_screened": {"type": "boolean"},
+        "failed_sources_visible": {"type": "boolean"},
+        "gaps": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "blocking_gaps": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "prohibited_claims": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "audience_sample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "observed_at", "generalization_allowed"],
+      "properties": {
+        "scope": {"type": "string", "minLength": 1},
+        "observed_at": {"type": "string", "format": "date-time"},
+        "generalization_allowed": {"const": false}
+      }
+    },
+    "source_audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "failed_sources", "screened_out", "retry_required"],
+      "properties": {
+        "version": {"type": "integer", "minimum": 1},
+        "failed_sources": {"type": "array", "items": {"$ref": "#/$defs/audit_entry"}},
+        "screened_out": {"type": "array", "items": {"$ref": "#/$defs/audit_entry"}},
+        "retry_required": {"type": "boolean"}
+      }
+    },
+    "retry_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "state", "attempts"],
+      "properties": {
+        "version": {"type": "integer", "minimum": 1},
+        "state": {
+          "enum": ["not_required", "in_progress", "required", "exhausted", "complete"]
+        },
+        "attempts": {"type": "integer", "minimum": 0}
+      }
+    },
+    "deliverables": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_audit", "screening_log", "gap_list", "retry_state"],
+      "properties": {
+        "source_audit": {"type": "string", "minLength": 1},
+        "screening_log": {"type": "string", "minLength": 1},
+        "gap_list": {"type": "string", "minLength": 1},
+        "retry_state": {"type": "string", "minLength": 1}
+      }
+    },
+    "return_reasons": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "created_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"}
+  },
+  "$defs": {
+    "material": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "material_id",
+        "category",
+        "title",
+        "source_url",
+        "source_role",
+        "source_level",
+        "captured_at",
+        "locator",
+        "supports",
+        "cannot_support"
+      ],
+      "properties": {
+        "material_id": {"type": "string", "minLength": 1},
+        "category": {
+          "enum": ["body_facts", "industry_context", "audience_reactions", "cross_check_facts"]
+        },
+        "title": {"type": "string", "minLength": 1},
+        "source_url": {"type": "string", "format": "uri"},
+        "source_role": {
+          "enum": [
+            "independent_fact",
+            "industry_context",
+            "audience_reaction",
+            "discovery_signal",
+            "official",
+            "interview",
+            "media_report"
+          ]
+        },
+        "source_level": {
+          "enum": ["fulltext", "excerpt", "title_abstract", "platform_data", "official_asset"]
+        },
+        "published_at": {"type": "string"},
+        "captured_at": {"type": "string", "format": "date-time"},
+        "author": {"type": "string"},
+        "publisher": {"type": "string"},
+        "locator": {"type": "string", "minLength": 1},
+        "supports": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "cannot_support": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "sample_scope": {"type": "string"},
+        "generalization_allowed": {"type": "boolean"}
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claim_id", "text", "material_ids"],
+      "properties": {
+        "claim_id": {"type": "string", "minLength": 1},
+        "text": {"type": "string", "minLength": 1},
+        "material_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "audit_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_id", "reason"],
+      "properties": {
+        "source_id": {"type": "string", "minLength": 1},
+        "reason": {"type": "string", "minLength": 1},
+        "attempts": {"type": "integer", "minimum": 0},
+        "retryable": {"type": "boolean"}
+      }
+    }
+  }
+}

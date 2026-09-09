@@ -9,7 +9,9 @@ Severity model:
 - error   : must be fixed before the article can advance (S5 gate fail)
 - warning : needs controller judgment (e.g. comment-vs-film-fact boundary,
             opening hook without a fact anchor)
-- info    : process hint (e.g. release-date claim needs version cross-check)
+- info    : process hint (e.g. ordinary release-date claims need a current
+            date-source check; explicit release-history wording gets a
+            conditional history hint)
 
 Design principles (from compliance_gate.py heritage):
 - Patterns are precise phrases learned from real negative samples, never bare
@@ -22,8 +24,10 @@ Design principles (from compliance_gate.py heritage):
 
 from __future__ import annotations
 
+import hashlib
 import re
 from html.parser import HTMLParser
+from pathlib import Path
 from typing import Any
 
 # --------------------------------------------------------------------------
@@ -54,6 +58,16 @@ _SOURCE_SELF_CONFESSION: list[tuple[str, str, str]] = [
      "source:媒体在报道中", "来源自证：点名媒体+在报道中转述（新浪财经在报道中评价/北京商报在报道里用了一个词）"),
     (r"[一-龥]{2,8}(财经|商报|新闻|日报|晚报|周刊|快报|电视台)在(梳理|盘点|回顾)[^。！？]{0,12}(时|中)",
      "source:媒体在梳理", "来源自证：点名媒体+在梳理…时转述（荔枝新闻在梳理这场风波时）"),
+    (r"(?:本文|本稿|这篇文章)[^。！？；]{0,24}(?:发布信息|资料介绍)",
+     "source:发布信息自述", "来源自证：文章主体把发布信息/资料介绍写成后台说明"),
+    (r"资料介绍", "source:资料介绍自述", "来源自证：'资料介绍'是素材/流程自述，不是读者内容"),
+]
+
+# Ambiguous editorial framing is a controller warning rather than an automatic
+# error: "行业观察" can be a legitimate column label, but often leaks the
+# writer's backstage framing into a reader-facing sentence.
+_SOURCE_CONTEXT_WARNING: list[tuple[str, str, str]] = [
+    (r"行业观察", "source:行业观察", "可能是后台栏目/审稿框架用语，需改成具体事实或明确观点"),
 ]
 
 # 2) 读后感 / 审稿腔 — reviewer self-talk in reader-facing prose.
@@ -88,6 +102,33 @@ _SELF_REMINDER: list[tuple[str, str, str]] = [
     (r"很容易在(热搜|转发|讨论)里被忘掉", "tone:易被忘掉自白", "自我提醒句：'很容易被忘掉'是写作提醒不是内容"),
 ]
 
+# 2c) 编辑/审核自证 — source and fact-checking workflow language leaked
+#     into reader-facing prose.  This is intentionally a combination rule:
+#     ordinary attribution ("公开报道只确认了…") remains valid, while a
+#     writer/editor subject claiming that the article was audited and released
+#     is an internal production statement, not reader-facing content.
+_EDITORIAL_SELF_ATTESTATION: list[tuple[str, str, str]] = [
+    (
+        r"(?:本文|本稿|本篇文章|这篇文章)[^。！？；]{0,24}"
+        r"(?:来源审计|来源核验|来源审核|事实核查|事实核验|事实审核|证据审计|证据核验)",
+        "tone:editorial-self-attestation",
+        "后台审核自证：文章主体声称已完成来源/事实审核",
+    ),
+    (
+        r"(?:编辑部|新闻室)[^。！？；]{0,24}"
+        r"(?:来源审计|来源核验|来源审核|事实核查|事实核验|事实审核|证据审计|证据核验)",
+        "tone:editorial-self-attestation",
+        "后台审核自证：编辑/新闻室声称已完成来源/事实审核",
+    ),
+    (
+        r"(?:编辑部|新闻室)[^。！？；]{0,24}"
+        r"(?:核验|核查|审核|审计)[^。！？；]{0,16}"
+        r"(?:发布|刊发|出稿|推出)",
+        "tone:editorial-self-attestation",
+        "后台发布自证：编辑/新闻室把审核流程写成发布说明",
+    ),
+]
+
 # 3) 流程标识 — pipeline artifacts must not leak into reader-facing text.
 _PIPELINE_MARKERS: list[tuple[str, str, str]] = [
     (r"候选稿", "pipeline:候选稿", "流程标识：候选稿"),
@@ -108,11 +149,15 @@ _COMMENT_AS_FACT: list[tuple[str, str, str]] = [
     (r"(拉下|拽下|请下)了?神坛|走下神坛", "boundary:神坛修辞", "警告：'走下神坛'类修辞判断，确认是影片事实还是评论观点"),
 ]
 
-# 5) 档期/日期断言 — process hint: release-date claims need version
-#    cross-check (《不想失去你》教训: 海报 6/5 vs 官宣 8/19, 三次定档).
+# 5) 档期/日期断言 — conditional process hints, never a hidden gate.
+#    Ordinary date claims only need the current date source checked. Explicit
+#    release-history wording gets a separate conditional history hint.
 _DATE_CLAIM = re.compile(
     r"(定档|上映|公映|开画)[^。！？]{0,12}?\d{1,2}月\d{1,2}日|"
     r"\d{1,2}月\d{1,2}日[^。！？]{0,12}?(上映|定档|公映)"
+)
+_RELEASE_HISTORY_CLAIM = re.compile(
+    r"(撤档|改档|提档|延期|重定档|反复定档)"
 )
 
 # 5b) 无源断言启发式 — unsourced inference patterns (controlled-016 教训 B4:
@@ -144,10 +189,13 @@ def _compile(table: list[tuple[str, str, str]]) -> list[tuple[re.Pattern, str, s
 
 
 _SOURCE_RULES = _compile(_SOURCE_SELF_CONFESSION)
-_TONE_RULES = _compile(_READING_REPORT_TONE + _SELF_REMINDER)
+_TONE_RULES = _compile(
+    _READING_REPORT_TONE + _SELF_REMINDER + _EDITORIAL_SELF_ATTESTATION
+)
 _PIPELINE_RULES = _compile(_PIPELINE_MARKERS)
 _BOUNDARY_RULES = _compile(_COMMENT_AS_FACT)
 _UNSOURCED_RULES = _compile(_UNSOURCED_CLAIM)
+_SOURCE_CONTEXT_WARNING_RULES = _compile(_SOURCE_CONTEXT_WARNING)
 
 
 class _TextParser(HTMLParser):
@@ -200,6 +248,10 @@ def scan_style(text: str) -> list[dict[str, str]]:
     """Scan visible article text; return all redline hits (triage signal).
 
     Severities: error (must fix), warning (controller judgment), info (hint).
+    Release-specific hints are conditional and info-only: a normal release
+    date claim asks for a current date-source check, while explicit wording
+    about release changes asks for a release-history check. Neither is a
+    general requirement or a final_review pending trigger.
     """
     hits: list[dict[str, str]] = []
     hits.extend(_scan_rules(text, _SOURCE_RULES, "error"))
@@ -207,13 +259,22 @@ def scan_style(text: str) -> list[dict[str, str]]:
     hits.extend(_scan_rules(text, _PIPELINE_RULES, "error"))
     hits.extend(_scan_rules(text, _BOUNDARY_RULES, "warning"))
     hits.extend(_scan_rules(text, _UNSOURCED_RULES, "warning"))
+    hits.extend(_scan_rules(text, _SOURCE_CONTEXT_WARNING_RULES, "warning"))
     date_match = _DATE_CLAIM.search(text)
     if date_match:
         hits.append({
-            "severity": "warning",
+            "severity": "info",
             "rule": "date:release-claim",
-            "reason": "档期断言=档期类最强钩子实例：若本篇 data-hook 最强钩子为档期类，必须做撤档史版本核验（搜该片'定档/撤档/延期'历史，列出每次定档/撤档日期+来源，取最新官宣；海报/票务/旧物料日期不得直接采用）",
+            "reason": "普通上映/定档日期断言：只需核对当前日期来源，不要求撤档史核验",
             "match": date_match.group(0)[:60],
+        })
+    history_match = _RELEASE_HISTORY_CLAIM.search(text)
+    if history_match:
+        hits.append({
+            "severity": "info",
+            "rule": "release-history:claim",
+            "reason": "正文明确出现档期变更历史叙事：提示核对相关历史来源；仅作条件性信息提示，不构成通用门禁",
+            "match": history_match.group(0)[:60],
         })
     return hits
 
@@ -222,8 +283,10 @@ def hook_declaration_check(hook: str, text: str) -> dict[str, Any]:
     """Verify the strongest-hook declaration (P0-3, generalized).
 
     Every article must declare its strongest verification hook — the single
-    fact claim / truth gap most worth checking (撤档史 is only the date-type
-    instance for 不想失去你; each article's own strongest hook differs).
+    fact claim / truth gap most worth checking. The declaration is generic:
+    a release-date mention does not automatically require a release-history
+    declaration; explicit release-history wording is handled by the
+    conditional info hint in ``scan_style``.
     The declaration lives in the <article data-hook="…"> attribute, invisible
     to readers, serving as the audit anchor for reviewers/controller.
 
@@ -236,7 +299,7 @@ def hook_declaration_check(hook: str, text: str) -> dict[str, Any]:
     if not hook:
         return {
             "status": "missing",
-            "reason": "未声明最强钩子（data-hook）：审查无从核验。须声明本篇最值得核查的事实断言/真相缺口（档期类钩子须做撤档史版本核验：定档/撤档/延期史+来源+最新官宣）",
+            "reason": "未声明最强钩子（data-hook）：审查无从核验。须按本篇实际主题声明最值得核查的事实断言/真相缺口；档期/上映日期不会自动要求撤档史核验",
             "hook": "",
         }
     keys = [k for k in re.split(r"[，,、:：;；\s]+", hook) if len(k) >= 2]
@@ -287,7 +350,7 @@ def opening_hook_check(paragraphs: list[str]) -> dict[str, Any]:
     }
 
 
-# 标题缺口信号（P3）：问号 / 悬念词 / 反差结构 / 数字 / 专名。
+# 标题缺口信号（P3）：问号 / 悬念词 / 反差结构 / 数字。
 # Canon 标题原则：标题制造读者想验证的心理缺口（误会/真相/秘密/情绪/悬念），
 # 至少命中一个。
 _TITLE_GAP_SIGNALS = (
@@ -295,7 +358,6 @@ _TITLE_GAP_SIGNALS = (
     r"为什么|怎么|到底|究竟|还能|终于|还在|变了|这次|居然|竟然|意外|反转|难得|稀罕",
     r"不是[^，。]{1,12}，是",
     r"\d",
-    r"[《]",
     r"秘密|真相|悬念|误会|遗憾|错过|可能|或许",
 )
 
@@ -309,7 +371,7 @@ def title_gap_check(title: str) -> dict[str, Any]:
         "status": "ok" if signals else "warning",
         "reason": (f"标题含缺口信号: {signals}"
                    if signals else
-                   "标题无缺口信号（问号/悬念词/反差/数字/专名至少其一）——读者缺少点开理由"),
+                   "标题无缺口信号（问号/悬念词/反差/数字至少其一）——读者缺少点开理由"),
         "title": title[:60],
     }
 
@@ -417,8 +479,12 @@ def validate_batch_style(html_text: str) -> dict[str, Any]:
         heading_match = re.search(r"<h[12][^>]*>(.*?)</h[12]>", article, re.S)
         title = (visible_text(heading_match.group(1)) if heading_match
                  else f"article-{i + 1}")
-        paras_html = re.findall(r"<p[^>]*>(.*?)</p>", body_html, re.S)
-        paras = [visible_text(p) for p in paras_html]
+        paras_html = re.findall(r"<p([^>]*)>(.*?)</p>", body_html, re.S)
+        paras = [
+            visible_text(inner)
+            for attrs, inner in paras_html
+            if not re.search(r'''\bclass\s*=\s*["'][^"']*\bkicker\b''', attrs, re.I)
+        ]
         full = "".join(paras)
         hits = scan_style(full)
         if sources_html:
@@ -429,7 +495,10 @@ def validate_batch_style(html_text: str) -> dict[str, Any]:
             hits.extend(_scan_rules(src_full, _PIPELINE_RULES, "error"))
             hits.extend(_scan_rules(src_full, _BOUNDARY_RULES, "warning"))
         hook = opening_hook_check(paras)
-        hook_match = re.search(r'data-hook="([^"]*)"', attrs)
+        # ``data-hook`` is the canonical hook anchor.  ``data-topic`` remains
+        # accepted for compatibility with the intermediate public-safe runs;
+        # neither attribute may carry internal evidence-ledger names.
+        hook_match = re.search(r'(?:data-hook|data-topic)="([^"]*)"', attrs)
         per_article.append({
             "index": i + 1,
             "title": title,
@@ -456,6 +525,141 @@ def validate_batch_style(html_text: str) -> dict[str, Any]:
     }
 
 
+def _markdown_visible_text(value: str) -> str:
+    """Remove Markdown presentation syntax while retaining reader text."""
+    text = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", value)
+    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+    text = re.sub(r"(?:\*\*|__|~~|\*|_)", "", text)
+    text = re.sub(r"^\s{0,3}(?:[-*+]\s+|>\s+|\d+[.)]\s+)", "", text)
+    return re.sub(r"\s+", "", text)
+
+
+def _markdown_title_and_paragraphs(markdown_text: str) -> tuple[str, list[str], str]:
+    """Return the first H1 title, body paragraphs, and an optional hook marker."""
+    lines = markdown_text.splitlines()
+    title = ""
+    title_index: int | None = None
+    hook = ""
+    content_lines: list[str] = []
+    in_frontmatter = False
+    frontmatter_seen = False
+    for index, raw_line in enumerate(lines):
+        line = raw_line.strip()
+        if index == 0 and line == "---":
+            in_frontmatter = True
+            frontmatter_seen = True
+            continue
+        if in_frontmatter:
+            if line == "---":
+                in_frontmatter = False
+                continue
+            hook_match = re.match(r"(?:hook|data-hook)\s*:\s*(.+)$", line, re.I)
+            if hook_match:
+                hook = hook_match.group(1).strip()
+            continue
+        if not title:
+            heading = re.match(r"^#\s+(.+?)\s*$", raw_line)
+            if heading:
+                title = _markdown_visible_text(heading.group(1))
+                title_index = index
+                continue
+        content_lines.append(raw_line)
+
+    if not title:
+        title = "article-1"
+
+    blocks: list[list[str]] = []
+    current: list[str] = []
+    for raw_line in content_lines:
+        if not raw_line.strip():
+            if current:
+                blocks.append(current)
+                current = []
+            continue
+        if re.match(r"^#{2,6}\s+", raw_line):
+            if current:
+                blocks.append(current)
+                current = []
+            blocks.append([re.sub(r"^#{2,6}\s+", "", raw_line)])
+            continue
+        current.append(raw_line)
+    if current:
+        blocks.append(current)
+
+    paragraphs = [
+        _markdown_visible_text(" ".join(block))
+        for block in blocks
+        if _markdown_visible_text(" ".join(block))
+    ]
+    # ``frontmatter_seen`` is intentionally only a parsing aid; keeping this
+    # local makes the function tolerant of ordinary drafts without metadata.
+    del frontmatter_seen, title_index
+    return title, paragraphs, hook
+
+
+def validate_markdown_text(markdown_text: str, *, hook: str = "") -> dict[str, Any]:
+    """Run the reader-facing style gate on one Markdown article."""
+    title, paragraphs, parsed_hook = _markdown_title_and_paragraphs(markdown_text)
+    declared_hook = hook or parsed_hook
+    full = "".join(paragraphs)
+    hits = scan_style(full)
+    hook = opening_hook_check(paragraphs)
+    title_result = title_gap_check(title)
+    density = fact_density_check(paragraphs)
+    closing = closing_interaction_check(paragraphs)
+    hook_result = hook_declaration_check(declared_hook, full)
+    article = {
+        "index": 1,
+        "title": title,
+        "char_count": len(re.findall(r"[\u3400-\u4dbf\u4e00-\u9fff]", full)),
+        "hits": hits,
+        "hit_count": len(hits),
+        "error_count": sum(1 for hit in hits if hit["severity"] == "error"),
+        "opening_hook": hook,
+        "title_gap": title_result,
+        "fact_density": density,
+        "closing_interaction": closing,
+        "hook_declaration": hook_result,
+    }
+    global_hits = _scan_rules(_markdown_visible_text(markdown_text), _PIPELINE_RULES, "error")
+    errors = [
+        hit for hit in article["hits"] if hit["severity"] == "error"
+    ] + global_hits
+    return {
+        "artifact_type": "markdown",
+        "article_count": 1,
+        "articles": [article],
+        "global_hits": global_hits,
+        "pass": len(errors) == 0,
+        "error_total": len(errors),
+    }
+
+
+def validate_markdown_file(path: Path, *, hook: str = "") -> dict[str, Any]:
+    """Run Markdown style checks and seal the exact bytes that were scanned."""
+    payload = path.read_bytes()
+    result = validate_markdown_text(payload.decode("utf-8"), hook=hook)
+    result["artifact_path"] = str(path.resolve())
+    result["artifact_sha256"] = hashlib.sha256(payload).hexdigest()
+    return result
+
+
+def validate_delivery_file(path: Path) -> dict[str, Any]:
+    """Run the style gate and seal the exact HTML bytes that were scanned.
+
+    The in-memory validator remains path-independent for unit tests and other
+    callers.  The file-level entry point is used by the CLI so final_review can
+    prove that the style report belongs to the frozen delivery artifact rather
+    than to an earlier draft or an untracked copy.
+    """
+    payload = path.read_bytes()
+    result = validate_batch_style(payload.decode("utf-8"))
+    result["artifact_path"] = str(path.resolve())
+    result["artifact_sha256"] = hashlib.sha256(payload).hexdigest()
+    return result
+
+
 if __name__ == "__main__":
     import json
     import sys
@@ -464,6 +668,6 @@ if __name__ == "__main__":
     if len(sys.argv) != 2:
         print("usage: python -m article_group.style_gate <delivery.html>")
         sys.exit(2)
-    result = validate_batch_style(Path(sys.argv[1]).read_text(encoding="utf-8"))
+    result = validate_delivery_file(Path(sys.argv[1]))
     print(json.dumps(result, ensure_ascii=False, indent=2))
     sys.exit(0 if result["pass"] else 1)

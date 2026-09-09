@@ -8,8 +8,12 @@ from datetime import datetime
 import math
 from typing import Any
 
-from .contracts import EDGE_TYPES, GAP_TYPES, NODE_TYPES, validate_artifact_envelope
-from .evidence_graph import trace_impact
+from .contracts import GAP_TYPES
+from .evidence_graph import (
+    trace_impact,
+    validate_evidence_graph,
+    validate_evidence_graph_structure,
+)
 
 
 _GRAPH_SCHEMA = "v4-evidence-graph-v1"
@@ -143,41 +147,17 @@ def _timestamp(value: object, default: str) -> tuple[str, bool]:
     return value, True
 
 
-def _graph_is_valid(graph: object) -> bool:
+def _graph_is_valid(graph: object, run_root: object = None) -> bool:
     if not isinstance(graph, Mapping):
         return False
     run_id = graph.get("run_id")
     if not isinstance(run_id, str) or not run_id.strip():
         return False
-    if validate_artifact_envelope(
-        graph, _GRAPH_SCHEMA, run_id=run_id
-    ):
+    structural_errors = validate_evidence_graph_structure(graph)
+    if structural_errors:
         return False
-    payload = graph.get("payload")
-    if not isinstance(payload, Mapping):
-        return False
-    nodes = payload.get("nodes")
-    edges = payload.get("edges")
-    if not isinstance(nodes, Mapping) or not isinstance(edges, list) or not nodes:
-        return False
-    for node_id, node in nodes.items():
-        if (
-            not isinstance(node_id, str)
-            or not isinstance(node, Mapping)
-            or node.get("node_id") != node_id
-            or node.get("node_type") not in NODE_TYPES
-            or node.get("status") not in {"present", "missing", "stale"}
-        ):
-            return False
-    for edge in edges:
-        if not isinstance(edge, Mapping):
-            return False
-        if not all(isinstance(edge.get(key), str) and edge[key] for key in ("from", "to", "edge_type")):
-            return False
-        if edge["edge_type"] not in EDGE_TYPES:
-            return False
-        if edge["from"] not in nodes or edge["to"] not in nodes:
-            return False
+    if run_root is not None:
+        return not validate_evidence_graph(graph, run_root)
     return True
 
 
@@ -658,10 +638,15 @@ def _prepare_gap(gap: object) -> tuple[dict[str, Any] | None, list[str]]:
     return result, []
 
 
-def derive_gap_tasks(graph: Mapping[str, Any], audits: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+def derive_gap_tasks(
+    graph: Mapping[str, Any],
+    audits: Sequence[Mapping[str, Any]],
+    *,
+    run_root: object = None,
+) -> list[dict[str, Any]]:
     """Derive only auditable V4 gap tasks from a closed evidence graph and audits."""
 
-    if not _graph_is_valid(graph):
+    if not _graph_is_valid(graph, run_root):
         return []
     records, valid = _audit_records(audits)
     if not valid:

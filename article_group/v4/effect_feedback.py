@@ -261,9 +261,24 @@ def _valid_baseline(value: object) -> bool:
     )
 
 
+def _usable_baseline(value: object) -> bool:
+    """A baseline must contain a non-empty, serialisable reference."""
+
+    return (
+        isinstance(value, str)
+        and bool(value.strip())
+    ) or (
+        isinstance(value, Mapping)
+        and bool(value)
+    )
+
+
 def _baseline_for_events(events: Sequence[Mapping[str, Any]]) -> tuple[object, bool]:
     values = [_baseline_value(event) for event in events]
-    if any(not _valid_baseline(value) for value in values):
+    if any(
+        value is not None and not _usable_baseline(value)
+        for value in values
+    ):
         return None, False
     present = [value for value in values if value is not None]
     if not present:
@@ -437,10 +452,10 @@ def _pattern_baseline(
 ) -> tuple[object, bool]:
     if "baseline" in pattern:
         value = pattern.get("baseline")
-        return (deepcopy(value), _valid_baseline(value) and value is not None)
+        return (deepcopy(value), _usable_baseline(value))
     if "baseline_reference" in pattern:
         value = pattern.get("baseline_reference")
-        return (deepcopy(value), _valid_baseline(value) and value is not None)
+        return (deepcopy(value), _usable_baseline(value))
     return _baseline_for_events(events)
 
 
@@ -507,7 +522,7 @@ def _lifecycle_payload(
             for metric in _CORE_METRICS
         )
         and bool(valid_events),
-        "baseline_present": baseline is not None and baseline_ok,
+        "baseline_present": _usable_baseline(baseline) and baseline_ok,
         "baseline_confirmed": baseline_confirmed,
         "validated": False,
     }
@@ -530,9 +545,6 @@ def _lifecycle_payload(
         pattern.get(key) is True
         for key in ("adopted", "adoption_confirmed")
     )
-    if raw_state == "candidate" and explicit_adoption and not pattern_errors and not event_errors:
-        state = "adopted"
-
     has_valid_evidence = not event_errors
     evidence_ready = (
         summary["unique_article_count"] >= 3
@@ -541,25 +553,36 @@ def _lifecycle_payload(
         and result["validation"]["baseline_present"]
         and baseline_confirmed
     )
-    if state in {"adopted", "measured"} and has_valid_evidence and not pattern_errors:
-        if valid_events:
-            state = "measured"
-        if state == "measured" and evidence_ready and not errors:
-            state = "validated"
-    elif state == "validated" and errors and not has_valid_evidence:
-        state = "validated"
+    # Recompute the lifecycle from the current evidence. A caller cannot
+    # promote a record merely by setting its input state to validated or
+    # reusable_pattern.
+    if raw_state == "candidate":
+        state = "adopted" if explicit_adoption and not pattern_errors else "candidate"
+    elif raw_state == "adopted":
+        state = "measured" if valid_events and not pattern_errors else "adopted"
+    elif raw_state == "measured":
+        state = "measured"
+    elif raw_state in {"validated", "reusable_pattern"}:
+        state = "measured" if valid_events else "candidate"
+        if raw_state == "reusable_pattern" and controller_decision != "approve_reuse":
+            errors.append("reuse_requires_controller_decision")
 
+    if raw_state in {"validated", "reusable_pattern"} and not evidence_ready:
+        errors.append("state_claim_not_supported")
+
+    if state == "adopted" and valid_events and not pattern_errors:
+        state = "measured"
+    if state == "measured" and evidence_ready and not errors and not pattern_errors:
+        state = "validated"
     if state == "validated":
-        result["validation"]["validated"] = evidence_ready or raw_state == "validated"
-        if (
-            controller_decision == "approve_reuse"
-            and not errors
-        ):
+        result["validation"]["validated"] = evidence_ready and not errors
+        if controller_decision == "approve_reuse" and not errors:
             state = "reusable_pattern"
     elif state == "reusable_pattern":
-        result["validation"]["validated"] = True
-
-    if state == "candidate" and raw_state == "candidate" and not explicit_adoption:
+        # This branch is intentionally unreachable without the explicit
+        # controller decision above, but retain a defensive false value.
+        result["validation"]["validated"] = False
+    else:
         result["validation"]["validated"] = False
 
     result["state"] = state

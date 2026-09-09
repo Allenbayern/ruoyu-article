@@ -23,6 +23,7 @@ REQUIRED_INFRA_PATHS: tuple[str, ...] = (
     "article_group/git_hygiene.py",
     "article_group/toutiao_capture.py",
     "article_group/toutiao_cli.py",
+    "article_group/editorial_pipeline_v3.py",
     "tests/test_workflow.py",
     "tests/test_prewrite_contract.py",
     "tests/test_source_and_article_gates.py",
@@ -32,11 +33,15 @@ REQUIRED_INFRA_PATHS: tuple[str, ...] = (
     "tests/test_timestamp_freshness.py",
     "tests/test_toutiao_capture.py",
     "tests/test_toutiao_cli.py",
+    "tests/test_editorial_pipeline_v3.py",
     "templates/controlled-first-run-brief.md",
     "templates/candidate-card.md",
     "templates/delivery-checklist.md",
     "templates/evidence-pack.md",
     "templates/writing-brief.md",
+    "schemas/editorial-pipeline-v3/topic-card-v1.schema.json",
+    "schemas/editorial-pipeline-v3/crawl-task-v1.schema.json",
+    "schemas/editorial-pipeline-v3/material-pack-v1.schema.json",
 )
 
 _DAILY_RUN_RE = re.compile(
@@ -49,6 +54,7 @@ _INFRA_PREFIXES = (
     "tests/",
     "templates/",
     "docs/",
+    "schemas/",
 )
 _INFRA_ROOT_FILES = {
     "pyproject.toml",

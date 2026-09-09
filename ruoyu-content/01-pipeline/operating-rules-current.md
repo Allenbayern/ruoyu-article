@@ -1,8 +1,8 @@
 # 若雨随影生产链运行规则（current）
 
-> 本文件是日更生产链 cron（`ruoyu-daily-article-production`）的唯一规则载体：
-> cron 每次运行前读取本文件的最新版本；所有 L0 微调（口径、样式、重试策略）
-> 直接修改本文件并记入「变更日志」，不修改 cron prompt 本体。
+> 本文件保留日更生产链的本地执行规则和历史变更记录。
+> 当前 Codex 任务先读项目 AGENTS.md、Vault 规范及下述当前执行口径；
+> 历史 cron/Kanban 记录不表示当前任务已配置或必须依赖这些服务。
 > 结构性改动（新闸门、发布授权变更、代码架构）必须先经 Allen 确认。
 >
 > 规则基线：`docs/retrospective-013-020.md`（2026-08-16 复盘，M0 产出）
@@ -14,14 +14,21 @@
 > - 🟢 **[MAY] 经验**——参考技法，不阻断不强制；发布回填按实证升级/降级
 > - 候选观察一律 🟢 起步，验证后可升 🟡；不得以 research_only 证据写 MUST
 
+## 当前执行口径（2026-09-05）
+
+- 用户已确认：日常两篇、Markdown 成品、无需发布；沿用现有 `two_article_daily`、`markdown_codex` 与 `CONTENT_READY` 检查。内容交付与 R8 治理分别判断，不因没有发布授权要求用户完成发布流程。明确要求 HTML 的任务才执行 HTML 冻结和预览要求。
+- 标题、选题历史、首屏兑现和自然表达的执行方法见 `docs/codex/editorial-learning-playbook.md`；本次复盘证据见 `runs/2026-09-05/editorial-retrospective/`。
+- 下方历史日志中的问句提评论率、固定反转和传播效果推断属于候选观察。使用与否由本篇材料决定，不作为成品合格门槛，不把模型评分当传播数据。
+- 本次仅对齐项目说明和模板，不修改机器闸门或推广状态。Vault 两份长期规则已于 2026-09-06 获用户明确批准并按提案写回；验证见 `runs/2026-09-05/editorial-retrospective/vault-writeback-2026-09-06/verification.json`。
+
 ## 0. 硬约束（不可违反）
 
-1. 🔴 [MUST] 发布永远手动：`publication_authorization=not_authorized`，止步交付预览，预览 URL 用 `http://192.168.100.168:8765/`（LAN）。
+1. 🔴 [MUST] 发布永远手动：`publication_authorization=not_authorized`。新批次默认 `review_surface=markdown_codex`，止步 Markdown 审阅/交接；不生成 HTML、不依赖预览服务。只有明确选择历史/专门 HTML 交付时才使用 `review_surface=html_delivery`，并按需声明 `preview_mode=local_codex | canonical_http`，其 canonical URL 为 `http://192.168.100.168:8765/`。
 2. 🟡 [SHOULD] 每批目标 2 篇成品；选题失败走「应急单篇」路径（见 §6），不污染正式批次。
 3. 🟡 [SHOULD] 每环节重试 ≤1 次；重试仍失败则该环节 fail，记台账，不硬闯。
-4. 🟡 [SHOULD] kanban 派发 workspace 必须绝对路径 `dir:/home/allen/Projects/ruoyu-film-daily/runs/<date>/controlled-NNN`；`--skill ruoyu-controlled-production` 仅用于已注册该 skill 的 worker profile。
+4. 🟡 [SHOULD] Codex 执行使用明确的项目/run 绝对路径和当前可用技能。历史 Kanban workspace/worker profile 仅用于已明确选择且实际可用的历史运行环境，不是当前任务依赖。
 5. 🔴 [MUST] 未修改 `v2_contract/` 与 `article_group/` 核心代码（本文件外的流程规则变更需 Allen 确认）。
-6. 🔴 [MUST] 成品禁：来源自证、审稿腔、流程标识、自我提醒句、无源断言；档期断言须做撤档史版本核验。
+6. 🔴 [MUST] 成品禁：来源自证、审稿腔、流程标识、自我提醒句、无源断言；🟡 [SHOULD] 普通档期/上映日期核对当前权威来源，只有正文明确涉及撤档、改档、提档、延期、重定档或档期反复主线时才触发档期历史专项记录，该专项不单独 BLOCKED。
 
 ## 1. 批次命名（H4 · run_id 唯一化）
 
@@ -30,22 +37,24 @@
 - 🟡 [SHOULD] 应急单篇：`controlled-<序号>-emergency`（见 §6）。
 - 🔴 [MUST] 目录：`runs/<YYYY-MM-DD>/<batch-id>/`；批次内 `batch.json` 的 `run_id` 与目录名逐字一致。
 - 🟡 [SHOULD] 素材同步：选题雷达/candidate 素材落入 `sources/`，并将 `sources/cand-*.md` 同步到 `evidence/`（021 教训：evidence/ 为空则 final_review 证据链观感缺失）。
-- 🟡 [SHOULD] 预览 URL：同日多批用 `-a`/`-b` 后缀区分（`ruoyu-art-001-2026-08-16-b.html`，022 教训）；**预览服务一律经 systemd 单元 `ruoyu-preview.service` 管理**（更新 ExecStart 指向 serve_preview.py 后 `daemon-reload && restart`），禁止手工 nohup 启动（端口抢占已复现 2 次）。
-- 🔴 [MUST] **预览单元指向「全量映射控制面」**（026 教训升级 025 条目）：单元 ExecStart 必须指向**包含最近全部批次 + 单篇映射的全量 serve_preview.py**（当前 = `niulai-guo-shen/serve_preview.py`），不是「最新批次」自己的脚本——「指向当批」会让后续批次 / 单篇 / 历史批次 URL 404（025 批改指 controlled-025 后实测单篇/020/024 全 404）。映射变更后必须 **curl 全量回归**（本批 7 条 URL 全 200 才收口）；serve_preview.py 行内路径必须带日期段（`ROOT/"2026-08-16"/"<batch>"/"review"/"frozen"/…`，漏日期段即 404）。
+- 🟡 [SHOULD] `review_surface=markdown_codex` 时，`review/markdown-review-evidence.json` 必须绑定每篇当前 Markdown 的相对路径、字节数、SHA-256 与 CJK 计数；Markdown 改动即使只改一个字也必须重生成证据、style report、评分卡绑定和终审结果。
+- 🟡 [SHOULD when html_delivery] `preview_mode=local_codex` 时，逐路由冻结文件路径、字节数、正文 SHA-256、CSS SHA-256 与本地预览证据一致；不因 canonical LAN 未注册而阻断普通 Codex 审阅。
+- 🟡 [SHOULD when html_delivery] `preview_mode=canonical_http` 时，同日多批 URL 用 `-a`/`-b` 后缀区分（`ruoyu-art-001-2026-08-16-b.html`，022 教训）；**预览服务一律经 systemd 单元 `ruoyu-preview.service` 管理**（更新 ExecStart 指向全量映射脚本后 `daemon-reload && restart`），禁止手工 nohup 启动（端口抢占已复现 2 次）。
+- 🔴 [MUST when canonical_http] **预览单元指向「全量映射控制面」**（026 教训升级 025 条目）：单元 ExecStart 必须指向**包含最近全部批次 + 单篇映射的全量 serve_preview.py**，不是「最新批次」自己的脚本；映射变更后必须 curl 全量回归，逐路由 HTTP 200 且正文哈希匹配才收口；serve_preview.py 行内路径必须带日期段（漏日期段会造成 404）。
 - 🔴 [MUST] 禁止：不同日期目录下出现同名批次（`controlled-020` 双目录为历史教训，见复盘 D6）。
 
 ## 2. 字数口径（H2 · 统一）
 
-- 🟡 [SHOULD] **官方口径 = style_gate 的 CJK 计数**（`len(re.findall(r"[\u3400-\u4dbf\u4e00-\u9fff]", full))`），目标区间 1500–2200 字。
+- 🟡 [SHOULD] **官方口径 = style_gate 的 CJK 计数**（`len(re.findall(r"[\u3400-\u4dbf\u4e00-\u9fff]", full))`）；1500–2200 字是常用目标，按内容完整性允许上下约 500 字弹性（有效接受带 1000–2700）。
 - 🟢 [MAY] prose_pilot 输出仅 advisory：不改变任何 gate 状态、不阻断、不参与字数判定；report 中标注与 style_gate 的计数差异（如有）。
 - 🟡 [SHOULD] 任务卡、预检、台账中所有字数一律写 style_gate 口径并注明。
 
 ## 3. 冻结规范（H3 · 只留最终版）
 
-- 🔴 [MUST] 冻结动作只发生在最终稿：`review/frozen/<name>.<sha256前12>.html` + `review/sha256-manifest.txt`。
+- 🔴 [MUST when html_delivery] HTML 冻结动作只发生在明确选择 HTML 交付的最终稿：`review/frozen/<name>.<sha256前12>.html` + `review/sha256-manifest.txt`。Markdown 默认路径不冻结 HTML。
 - 🟡 [SHOULD] 冻结前所有迭代副本移入 `review/work/`（不删、不进 frozen、不计入 manifest）。
 - 🟡 [SHOULD] frozen 目录每批最终 ≤3 个文件（2 篇成品 + 可选 bundle）；>3 即视为违规，记台账。
-- 🔴 [MUST] 冻结副本必须逐字节校验（sha256 重算 MATCH）后才可映射预览。
+- 🔴 [MUST when html_delivery] 冻结副本必须逐字节校验（sha256 重算 MATCH）后才可映射预览；Markdown 批次改用当前草稿证据清单。
 
 ## 4. prose_pilot 版本管理（H7）
 
@@ -67,8 +76,8 @@
 ### 5.1 批次验收（M2 起每批必跑）
 
 - 🔴 [MUST] 每批收尾执行：`python -m article_group.final_review --batch runs/<date>/controlled-NNN`
-- 🔴 [MUST] **收尾链路（L2 教训定）**：冻结后 → 对最终 frozen HTML 重跑 `style_gate.py <frozen.html>` 覆盖落盘 `style-gate-art-00X.json`（draft 有修改就必须重跑，禁用手工复制旧报告）→ 再跑 final_review。evidence 时间戳必须晚于冻结时间戳。
-- 🔴 [MUST] 验收标准：`PUBLISHABLE` 才允许进入交付预览映射；`BLOCKED` 记台账并回修复环节；`PENDING` 挂人工判定（每周六判定会）。
+- 🔴 [MUST] **收尾链路（L2 教训定）**：Markdown 默认路径在当前草稿上重跑 Markdown style gate，生成 `style-gate-markdown-*.json` 并绑定 `artifact_path` + `artifact_sha256`，同时重生成 Markdown evidence、评分卡绑定和 final_review；明确 HTML 交付的历史路径才对 frozen HTML 重跑并走 preview contract。任何稿件修改都禁止手工复制旧报告。
+- 🔴 [MUST] 内容交付依据当前 `content-delivery.json` 的 `CONTENT_READY` 与对应稿件证据；内容缺陷仍须修复。`final_review` 的 `PUBLISHABLE/BLOCKED/PENDING` 属于其治理判定，保留并分别报告，不手工改写。明确 HTML 交付的预览映射继续遵守相应验收要求；普通 Markdown 任务不因治理待判定而追加未请求的发布工作。
 - 🟢 [MAY] 参考基线（2026-08-16 定）：**丢失文件/证据链不完整的批次无参考意义**（001–012 缺 review/、013–018 无 batch.json、020 编号冲突），不作为对照基线；只有证据完整批次（019/020 少量 + 021 起全部新批）参与对照。
 
 ### 5.2 M2 修复节奏（每 5 轮一个 checkpoint）
@@ -105,5 +114,8 @@
 | 2026-08-16 | 爆文视角复核候选观察（026 两篇，research_only 待发布数据验证，见 `docs/reviews/viral-lens-026.md`）：① 数据型选题挂载人物/影片后潜力回升**双例同向**（022 裸数据=低 → 026 花开锦绣挂剧+角色+反差问=中 → 026 龙餐馆全程挂人物+制作故事=中高，三级递进）；② **候选观察⑦（结尾互动问句）连续两批空转**（021-025 十篇未执行 + 026 两篇未执行）——仅入规则日志不足驱动执行，须把⑦纳入 style_gate/final_review 机械检查点或任务卡写作要求；③ 情绪密度与人物锚「人物原话优先」原则得第 2-3 批次同向证据（龙餐馆有沈腾原话=中高 vs 花开锦绣纯设定拆解=中）；④ 标题问句若正文全收束则张力平（花开锦绣问「口碑为何两极」→ 结尾完全解答无留白，可留 2-3 成悬念或反抛读者侧问题）；⑤ 026 两篇首屏信息差/标题反转/数据挂载全部落地，022 裸数据盲区未重现 | 流程（候选观察） | docs/reviews/viral-lens-026.md 两篇 frozen 版通读评估 |
 | 2026-08-16 | **cross_batch 去重盲区修复**（026 final_review BLOCKED 实证 + Allen 确认 A 方案）：① `collect_history` 只收 `ruoyu-articles-*.html`（016 及以前整批合并命名），021 起 frozen 为 `ruoyu-art-00*.html` 单篇 → **021+ 整段漏窗、跨批去重从未生效**（H6 盲区机器侧根源）；修复为优先根目录交付副本、否则聚合 review/frozen 下 `ruoyu-articles-*.html`+`ruoyu-art-00*.html` 全部指纹。② h2 标题反衬句式（「撞上了空降的《欢迎来龙餐馆》」）被 `_extract_titles` 误当专文作品 → 新增 `_split_title_segments` 按反衬连接词（撞上/碰上/空降/同期/对比/让位等）切段，反衬段整体排除，仅主语段作品计入 works。③ final_review 新增控制器豁免注记通道 `_match_adjudication_waiver`：portfolio-gate-report.json 的 `controller_adjudication`（adjudicated=True + 含 confirmed_new_angle/确认豁免 + candidate 匹配）命中时 error 降级为已裁决记录放行（result.adjudicated_waivers）——**人机一致：机器尊重已落盘的控制器裁决，未裁决重复仍 BLOCKED**。④ 教训：批次命名契约变更（整批合并包→单篇 frozen）必须同步审计所有按文件名收集历史的消费者；跨批指纹的 works 必须是「专文主角」不是「标题提及」。测试 535 全绿（含新增用例），026 重跑 PUBLISHABLE，窗口 10 批覆盖 021–025 实证。 | 代码修复 | 026 BLOCKED → 修复后 PUBLISHABLE；窗口 [025..015] 10 批含 021–025 |
 | 2026-08-16 | **候选观察⑦落地为机械检查点**（L0 代码）：① `style_gate.closing_interaction_check`——文章末段（不含 .sources）读者互动问句检测（「你会…吗/你还会…吗/大家…？」= ok；结论性收尾 = info 建议不阻断；设问/内容性问号不误判为互动）；② writing-brief 新增 `ending_interaction_question` 字段（任务卡模板要求写明「读者互动问句 | 结论性收尾（写明理由）」）；③ style_gate 每次运行自动产出 `closing_interaction` 单篇字段，final_review 汇总可见 | L0 代码 | 026 复核⑦空转实证 → Allen 确认落地（测试 20 passed） |
+
+| 2026-08-20 | 窄领域门禁分层：普通档期/上映日期只核对当前权威来源；撤档/改档/延期史仅在正文主张触及时触发 info，未完成或不适用不得单独阻断验收、预览或交付 | L0 规则修订 | Allen 指出“是否完成撤档史核验”不应成为通用门禁；代码/测试与 canonical 同步 |
+| 2026-08-26 | 预览模式分层：默认 `local_codex`，以当前冻结文件的逐路由 hash 证据支持 Codex 审阅；`canonical_http` 改为显式局域网交付模式，仍保留 HTTP 200/正文 hash 硬门禁；不改服务、不改发布授权 | L0 流程修订 | Allen 确认采用本地 Codex 预览为默认流程 |
 
 （后续 L0 微调在此追加，保留历史行，不覆盖。）

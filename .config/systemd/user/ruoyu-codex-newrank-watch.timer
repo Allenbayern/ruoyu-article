@@ -1,0 +1,10 @@
+# Disabled template: do not enable before migration acceptance and recovery-point review.
+[Unit]
+Description=Schedule the Ruoyu Codex Newrank evidence watch
+
+[Timer]
+OnCalendar=*-*-* 09:00:00
+Persistent=false
+Unit=ruoyu-codex-newrank-watch.service
+
+# Deliberately no [Install] section: this timer is not enabled by this repository.

@@ -1,8 +1,9 @@
-"""Offline, synthetic-only gates for a three-slot article batch.
+"""Offline, synthetic-only gates for profile-declared article batches.
 
 This module never fetches sources, drafts reader content, renders HTML, sends messages,
-or publishes. It validates controller-supplied records and creates a review-ready
-manifest for a first controlled production run.
+or publishes. It validates controller-supplied records and creates a mechanically
+verified manifest for a controlled production run. Historical callers without an
+explicit profile retain the legacy A/B/C contract.
 """
 
 from __future__ import annotations
@@ -12,6 +13,21 @@ from pathlib import Path
 from typing import Any
 import json
 import re
+
+from article_group.run_profile import (
+    MAX_CJK_CHARS,
+    MIN_CJK_CHARS,
+    RUN_PROFILES,
+    validate_batch_profile,
+)
+from article_group.preview_contract import (
+    validate_batch_preview_mode,
+    resolve_preview_mode,
+)
+from article_group.review_surface import (
+    resolve_review_surface,
+    validate_batch_review_surface,
+)
 
 SLOTS = ("A", "B", "C")
 EDITORIAL_READY = "R7 editorial-ready"
@@ -181,9 +197,34 @@ def validate_batch(batch: dict[str, Any], artifact_root: Path | None = None) -> 
         errors.append("controlled_run_must_not_authorize_publication")
     errors.extend(validate_delivery_authorization(batch))
 
+    profile_errors = validate_batch_profile(
+        batch,
+        require_explicit=(
+            batch.get("run_profile_contract_version") == "run-profile-v1"
+            or batch.get("run_profile_required") is True
+        ),
+    )
+    errors.extend(profile_errors)
+    modern_contract = (
+        batch.get("run_profile_contract_version") == "run-profile-v1"
+        or batch.get("run_profile_required") is True
+    )
+    errors.extend(
+        validate_batch_review_surface(
+            batch,
+            require_explicit=modern_contract and "preview_mode" not in batch,
+        )
+    )
+    errors.extend(validate_batch_preview_mode(batch, require_explicit=False))
+
     articles = batch.get("articles", [])
-    if len(articles) != 3:
+    profile_name = batch.get("run_profile")
+    normalized_profile_name = profile_name.strip() if isinstance(profile_name, str) else None
+    profile = RUN_PROFILES.get(normalized_profile_name) if normalized_profile_name else None
+    if profile_name is None and len(articles) != 3:
         return errors + ["batch_must_contain_exactly_three_articles"]
+    if profile_name is not None and profile is None:
+        return errors
 
     seen: dict[str, set[str]] = {
         "slot": set(), "work": set(), "primary_atom": set(), "reader_intent": set(), "angle": set()
@@ -226,8 +267,10 @@ def validate_batch(batch: dict[str, Any], artifact_root: Path | None = None) -> 
                     continue
                 if field == "markdown_path":
                     character_count = _chinese_character_count(text)
-                    if not 1500 <= character_count <= 2200:
-                        errors.append(f"markdown_character_count_out_of_range:{article_id}:{character_count}")
+                    if not MIN_CJK_CHARS <= character_count <= MAX_CJK_CHARS:
+                        errors.append(
+                            f"markdown_character_count_out_of_range:{article_id}:{character_count}"
+                        )
         errors.extend(_require(article, ("title", "claim_coverage", "claim_mappings", "concrete_support_types"), f"missing_gate:{article_id}"))
         errors.extend(validate_claim_inventory(article, markdown_text))
         if article.get("claim_coverage") != "complete":
@@ -248,8 +291,13 @@ def validate_batch(batch: dict[str, Any], artifact_root: Path | None = None) -> 
         if article.get("publication_authorization", "not_authorized") != "not_authorized":
             errors.append(f"article_publication_not_authorized:{article_id}")
 
-    if seen["slot"] != set(SLOTS):
-        errors.append("slots_must_be_A_B_C")
+    expected_slots = set(profile.slot_labels) if profile else set(SLOTS)
+    if seen["slot"] != expected_slots:
+        errors.append(
+            "slots_must_be_" + "_".join(sorted(expected_slots))
+            if profile
+            else "slots_must_be_A_B_C"
+        )
     return errors
 
 
@@ -257,13 +305,18 @@ def build_controlled_run(batch: dict[str, Any], output_dir: Path) -> Path:
     """Write a local mechanically-verified manifest after deterministic gates pass.
 
     This never emits R8. R8 requires ``promote_to_review_ready`` with Sol approve
-    and an explicit controller acceptance value.
+    and an explicit controller acceptance value; the profile remains in the manifest
+    when a new batch declares one.
     """
     errors = validate_batch(batch, output_dir)
     if errors:
         raise BatchValidationError(";".join(errors))
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    profile_raw = batch.get("run_profile")
+    normalized_profile_name = (
+        profile_raw.strip() if isinstance(profile_raw, str) else None
+    )
     articles = []
     for article in batch["articles"]:
         record = dict(article)
@@ -277,9 +330,15 @@ def build_controlled_run(batch: dict[str, Any], output_dir: Path) -> Path:
         "publication_authorization": "not_authorized",
         "delivery_state": "withheld_pending_independent_review_and_controller_acceptance",
         "network_actions": "none",
-        "article_count": 3,
+        "article_count": len(articles),
         "articles": articles,
     }
+    if normalized_profile_name:
+        manifest["run_profile"] = normalized_profile_name
+    if "review_surface" in batch:
+        manifest["review_surface"] = resolve_review_surface(batch.get("review_surface"))
+    if "preview_mode" in batch:
+        manifest["preview_mode"] = resolve_preview_mode(batch.get("preview_mode"))
     target = output_dir / "controlled-run-manifest.json"
     target.write_text(json.dumps(manifest, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
     return target

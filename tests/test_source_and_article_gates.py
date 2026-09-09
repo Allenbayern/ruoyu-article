@@ -449,4 +449,4 @@ def test_article_short_draft_is_rejected_by_article_stage(tmp_path: Path):
         "publication_authorization": "not_authorized",
     }
     errors = validate_article_stage(article, set(), tmp_path)
-    assert any("count" in err.lower() or "character" in err.lower() or "1500" in err for err in errors)
+    assert any("count" in err.lower() or "character" in err.lower() or "1000" in err for err in errors)

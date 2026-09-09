@@ -33,7 +33,7 @@ from pathlib import Path
 
 H1_RE = re.compile(r"^#\s+(.+)$", re.M)
 H2_RE = re.compile(r"^##\s+(.+)$", re.M)
-ARTICLE_ATTR_RE = re.compile(r'<article[^>]*data-hook="([^"]*)"')
+ARTICLE_ATTR_RE = re.compile(r'<article[^>]*(?:data-hook|data-topic)="([^"]*)"')
 STOPWORDS = {
     "的", "了", "在", "是", "和", "与", "及", "把", "被", "让", "对", "为", "从",
     "到", "于", "之", "而", "就", "都", "也", "很", "还", "再", "又", "更", "能",

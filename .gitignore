@@ -23,6 +23,12 @@ venv/
 runs/
 reviews/
 docs/
+!docs/
+docs/*
+!docs/codex/
+docs/codex/*
+!docs/codex/skill-tool-migration.md
+!docs/codex/viral-library-migration.md
 ARTICLE_GROUP_OPERATING_CONTRACT_v1_DRAFT.md
 
 # Local scratch (never daily-commit material)
@@ -32,6 +38,13 @@ ARTICLE_GROUP_OPERATING_CONTRACT_v1_DRAFT.md
 # Discarded per user instruction: keep on disk but untracked (audit/workspace hygiene)
 briefs/
 scripts/
+!scripts/
+scripts/*
+!scripts/codex_newrank_watch.py
+!scripts/codex_daily_article_runner.py
+!scripts/codex_review_audit.py
+!scripts/codex_skill_inventory.py
+!scripts/codex_viral_library_index.py
 references/learning-samples/
 
 # media-intel-aios dormant backup (2026-08-07, SOL-ABSORB-003 fix): backup scripts/docs
@@ -48,3 +61,22 @@ projects/media-intel-aios/scripts/__pycache__/
 # Hermes desktop attachment cache (local only, never commit)
 .hermes/
 
+
+# Local task handoff state (preserved on disk)
+/workspaces/
+/handover-hotspot/
+
+# Reusable editorial execution documents and audit entrypoints
+!docs/codex/*.md
+!docs/superpowers/
+docs/superpowers/*
+!docs/superpowers/specs/
+docs/superpowers/specs/*
+!docs/superpowers/specs/2026-09-08-editorial-pipeline-v4-design.md
+!scripts/codex_viral_library_reader.py
+!scripts/codex_viral_library_context.py
+!scripts/markdown_review_audit.py
+!scripts/markdown_style_audit.py
+!scripts/content_delivery_audit.py
+!scripts/preview_route_audit.py
+!scripts/worker_dispatch_preflight.py

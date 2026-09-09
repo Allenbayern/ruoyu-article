@@ -4,7 +4,55 @@
 >
 > 硬规则：**总分 < 75 不发布；真实性与证据 < 15 或 原创判断 < 15 → 一票否决，无论总分。**
 >
-> 用法：每篇在 S6 通过 style_gate 后填写。机械项由 style_gate/portfolio_gate 输出自动带入；人工项由主编（Allen）逐篇填写。评分卡存档至批次目录 `review/scoring/`。
+> 用法：每篇在 S6 通过 style_gate 后填写。机械项由 style_gate/portfolio_gate 输出自动带入；人工项只能由真实人工编辑逐篇填写。评分卡存档至批次目录 `review/scoring/`。评分卡中的 `human_editor_attestation` 只是兼容字段，不能替代独立签字文件。
+
+## 机器消费合同
+
+每篇必须保存为 `review/scoring/<article_id>.json`。新批次默认绑定当前 Markdown；终审会拒绝缺失、不可解析或与当前审阅面不一致的评分卡。评分卡是质量证据，不是发布授权。
+
+```json
+{
+  "total_score": 87,
+  "evidence_score": 20,
+  "original_judgment_score": 18,
+  "information_gain_score": 17,
+  "structure_score": 13,
+  "title_value_score": 9,
+  "readability_score": 5,
+  "compliance_score": 5,
+  "markdown_path": "drafts/art-001.md",
+  "markdown_sha256": "<64-char-lowercase-sha256>",
+  "title_promise": "标题承诺的具体读者收益",
+  "first_screen_value": "首屏给出的信息差或阅读理由",
+  "reader_takeaway": "读者读完能复述的判断",
+  "body_fulfillment": "正文兑现标题承诺的具体位置或方式",
+  "review_status": "controller_evidence_only",
+  "evidence_prepared_by": "controller"
+}
+```
+
+`total_score` 必须等于其余七项之和；总分至少 75，真实性与证据至少 15，原创判断至少 15。Markdown 批次的路径必须是本篇文章当前 `markdown_path`，且必须是安全的批次内相对路径；`markdown_sha256` 必须与当前 Markdown 字节一致。`markdown_sha256` 与 `artifact_sha256` 只能二选一。历史或明确选择 `html_delivery` 的批次仍按 HTML 绑定规则校验：冻结 HTML 必须含完整 `article_id` 标识，合并 bundle 不能作为逐篇评分卡目标。
+
+## 独立人工签字（M2 起必需）
+
+评分卡通过后，人工编辑必须另存一份 `review/attestation/<article_id>.human.json`。该文件必须由人工编辑填写，不能由 controller、Codex、Luna、Sol、Terra 或其他模型代填；新批次绑定当前 Markdown 的路径与 SHA-256。
+
+```json
+{
+  "schema_version": "human-attestation-v3",
+  "article_id": "art-001",
+  "reviewer_kind": "human",
+  "reviewer_role": "human_editor",
+  "reviewer_identity": "填写真实编辑身份",
+  "reviewed_at": "YYYY-MM-DDThh:mm:ss+08:00",
+  "decision": "accept",
+  "markdown_path": "drafts/art-001.md",
+  "markdown_sha256": "<64-char-lowercase-sha256>",
+  "attestation_ref": "人工复核记录或工单编号"
+}
+```
+
+M2 的 `final_review` 同时要求：独立人工签字、独立复核状态、controller acceptance、当前 Markdown 绑定，以及存在动态事实时的出版前 `revalidation.json`。历史 HTML 批次继续要求当前 HTML 绑定。这些证据彼此不能互相冒充。
 
 ## 一、机械项（自动带入）
 
@@ -12,8 +60,8 @@
 |---|---|---|---|
 | 真实性与证据 (25) | style_gate `error_total` = 0 | 达标；>0 直接红灯 | verdict.error_total |
 | 真实性与证据 (25) | `fact_density` ≥ 1/3（锚点段落占比） | 达标 | articles[i].fact_density |
-| 真实性与证据 (25) | `hits` 无未核验断言（`date:release-claim` 等须附撤档史核验记录） | 已核验/未核验 | articles[i].hits |
-| 主题与结构 (15) | `opening_hook`/`hook_declaration` ok；无 h3；TOC=3 篇 | 全 ok | articles[i].* |
+| 真实性与证据 (25) | `hits` 中的专项提示按正文主张处理：普通日期核对当前来源；只有明确涉及撤档/改档/延期等历史叙事时才查档期历史；不适用或未完成不得单独阻断 | 已核验/不适用/待补 | articles[i].hits |
+| 主题与结构 (15) | `opening_hook`/`hook_declaration` ok；无 h3；TOC 与当前 `run_profile` 文章数一致 | 全 ok | articles[i].* |
 | 标题与用户价值 (10) | `title_gap` ok（题文一致机械面） | ok | articles[i].title_gap |
 | 语言与阅读体验 (5) | `char_count` ∈ [1500, 2200]；风险词扫描 0 命中 | 达标 | articles[i].char_count |
 | 合规与标识 (5) | 涉时政/社会事件 → 文末"来源"行存在（正文不招供原则下）；非涉政题材 N/A | 有/无/N/A | 人工核 |

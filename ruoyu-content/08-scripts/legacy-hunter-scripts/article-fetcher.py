@@ -393,7 +393,7 @@ class ArticleFetcher:
         """使用 Google Custom Search 查找影视文章"""
         print("  📡 Google搜索...", end=" ")
 
-        api_key = "AIzaSyB3P_FIXi81KXQOeWKOV6KJd6w61ZSwu8c"
+        api_key = os.environ.get("GOOGLE_API_KEY", "")
         cx = "418c686055e7342df"
         all_items = []
 

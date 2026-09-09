@@ -1,0 +1,13 @@
+# Disabled template: this file is declarative only. No systemctl action is
+# performed by the Codex/Linux scheduling slice.
+
+[Unit]
+Description=Ruoyu Film Daily Codex article evidence timer (disabled template)
+
+[Timer]
+OnCalendar=*-*-* 17:00:00 Asia/Shanghai
+Persistent=false
+Unit=ruoyu-film-daily-codex-article@%i.service
+
+[Install]
+WantedBy=timers.target

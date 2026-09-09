@@ -1,0 +1,18 @@
+{
+  "schema_version": "revalidation-v1",
+  "article_id": "",
+  "checked_at": "",
+  "decision": "pass",
+  "claims": [
+    {
+      "claim_id": "",
+      "status": "confirmed",
+      "max_age_hours": 24,
+      "source_snapshot": {
+        "path": "sources/revalidation/",
+        "sha256": "",
+        "locator": ""
+      }
+    }
+  ]
+}

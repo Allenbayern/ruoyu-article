@@ -1,0 +1,14 @@
+# Disabled template: monthly audit is read-only and never authorizes publication.
+# Do not enable until controller cutover approval and recovery review.
+
+[Unit]
+Description=Ruoyu Codex monthly review audit snapshot (disabled template)
+ConditionPathExists=/home/allen/Projects/ruoyu-film-daily/scripts/codex_review_audit.py
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/allen/Projects/ruoyu-film-daily
+ExecStart=/usr/bin/python3 scripts/codex_review_audit.py --month %Y-%m --output-root /home/allen/Projects/ruoyu-film-daily/runs/codex-review-audit
+
+# The audit reads rules, schema, and recent run structure. It writes only the
+# immutable monthly JSON snapshot and its digest manifest under Codex runs.

@@ -11,11 +11,14 @@ from pathlib import Path
 from article_group.style_gate import (
     scan_style,
     validate_batch_style,
+    validate_delivery_file,
     opening_hook_check,
     title_gap_check,
     fact_density_check,
     hook_declaration_check,
     closing_interaction_check,
+    validate_markdown_file,
+    validate_markdown_text,
 )
 
 NEGATIVE_SAMPLES = [
@@ -45,6 +48,12 @@ NEGATIVE_SAMPLES = [
     "购票平台的 9.4 分，反映的正是这批真实观众的满意度，新浪财经在报道中评价这部电影说……",
     "有媒体用了一个词来形容，北京商报在报道里用了一个词：'现象级'。",
     "荔枝新闻在梳理这场风波时提到，观众的不满主要集中在排片。",
+    # 后台审核/发布自证（不能进入读者面正文）
+    "本文经过来源审计，编辑部核验后发布。",
+    "本稿已由新闻室完成事实核查。",
+    # 来源/流程自述变体（controlled-035 优化日志）
+    "本文只是整理了一下发布信息，行业观察还在继续。",
+    "这篇资料介绍了项目的基本情况。",
 ]
 
 POSITIVE_SAMPLES = [
@@ -91,6 +100,48 @@ def test_source_self_confession_vs_safe_framing():
                 if h["rule"] == "source:公开报道还"]
 
 
+def test_editorial_self_attestation_is_blocked_but_attribution_survives():
+    """Audit/release workflow claims are blocked; normal attribution is safe."""
+    for sample in [
+        "本文经过来源审计，编辑部核验后发布。",
+        "本稿已由新闻室完成事实核查。",
+        "编辑部审核材料后刊发本文。",
+    ]:
+        hits = scan_style(sample)
+        assert any(
+            h["severity"] == "error"
+            and h["rule"] == "tone:editorial-self-attestation"
+            for h in hits
+        ), sample
+
+    for sample in [
+        "公开报道只确认了动作和日期，没有披露片方内部怎么算这笔账。",
+        "有媒体用了一个词来形容这部影片。",
+        "影片上映后，相关报道继续增加。",
+    ]:
+        assert not [
+            h for h in scan_style(sample)
+            if h["rule"] == "tone:editorial-self-attestation"
+        ], sample
+
+
+def test_source_confession_variants_have_explicit_severity():
+    direct = scan_style("本文只是整理了一下发布信息。")
+    assert any(
+        h["severity"] == "error" and h["rule"] == "source:发布信息自述"
+        for h in direct
+    )
+    ambiguous = scan_style("行业观察显示，横店正在增加游客体验项目。")
+    assert any(
+        h["severity"] == "warning" and h["rule"] == "source:行业观察"
+        for h in ambiguous
+    )
+    assert not [
+        h for h in scan_style("横店的行业变化，首先体现在游客可以直接购买一小时体验。")
+        if h["rule"] == "source:行业观察"
+    ]
+
+
 def test_comment_as_fact_warning():
     """Comment judgment written as film fact is a warning, not an error."""
     hits = scan_style("影片也重新定义了“仙”的内涵：不是刀枪不入、长生不老。")
@@ -117,6 +168,25 @@ def test_opening_hook_check():
         ["它不是一部传统的仙侠片，而是把八个神仙写成了普通人。"])["status"] == "ok"
 
 
+def test_validate_batch_style_ignores_kicker_metadata_for_opening():
+    delivery = """
+    <article>
+      <p class="kicker">若雨随影 · 2026年8月19日 · 电影文化观察</p>
+      <h2>城市电影观察</h2>
+      <p>散场时，最舍不得的常常不是灯光。</p>
+    </article>
+    """
+    article = validate_batch_style(delivery)["articles"][0]
+    assert article["opening_hook"]["status"] == "warning"
+    assert article["opening_hook"]["first_40"] == "散场时，最舍不得的常常不是灯光。"
+
+
+def test_canonical_hook_metadata_can_anchor_hook():
+    delivery = '<article data-hook="《新片》 命案"><h2>《新片》为什么要查命案？</h2><p>《新片》于8月25日上映，命案把两个人推到一起。</p></article>'
+    article = validate_batch_style(delivery)["articles"][0]
+    assert article["hook_declaration"]["status"] == "ok"
+
+
 CLEAN_DELIVERY = """
 <article data-hook="《八仙！》档期与口碑"><h2>《八仙！》最稀罕的，不是神仙，是八个不完美的人</h2>
 <p>《八仙！》刻画了八个有私欲、有缺点的市井小人物。</p>
@@ -133,15 +203,16 @@ CLEAN_DELIVERY = """
 def test_hook_declaration_three_states():
     """P0-3 generalized: every article must declare its strongest hook.
 
-    撤档史 is only the date-type instance; the mechanism is generic.
+    The mechanism is generic; release dates do not automatically require a
+    release-history declaration.
     missing / mismatch / ok are the three states (warning severity).
     """
     assert hook_declaration_check("", "任何正文")["status"] == "missing"
     assert hook_declaration_check("票房纪录", "正文只谈口碑")["status"] == "mismatch"
-    ok = hook_declaration_check("撤档史核验：三次档", "它定过三次档：2月14日、6月5日、8月19日")
+    ok = hook_declaration_check("档期核验：三次档", "它定过三次档：2月14日、6月5日、8月19日")
     assert ok["status"] == "ok"
     # 部分匹配（钩子含正文未出现的补充词）仍视为可锚定
-    partial = hook_declaration_check("撤档史核验：8月19日", "电影计划于2026年8月19日上映")
+    partial = hook_declaration_check("档期核验：8月19日", "电影计划于2026年8月19日上映")
     assert partial["status"] == "ok"
     assert partial["reason"] and "未匹配" in partial["reason"]
 
@@ -159,20 +230,26 @@ def test_comment_as_fact_word_family():
         assert all(h["severity"] == "warning" for h in boundary)
 
 
-def test_date_claim_triggers_release_history_verification():
-    """A release-date claim must surface the strongest verification hook.
-
-    Any 档期/上映 claim triggers the date:release-claim warning — the
-    controller must verify the film's release history (定档/撤档/延期)
-    before accepting the batch. This is the P0-3 lesson from 不想失去你:
-    poster dates (6/5) differed from the latest official date (8/19).
-    """
+def test_date_claim_is_current_source_info_only():
+    """A normal release-date claim is an info-only current-source hint."""
     result = scan_style("电影《不想失去你》计划于2026年8月19日全国上映。")
     claims = [h for h in result if h["rule"] == "date:release-claim"]
     assert len(claims) == 1
-    assert claims[0]["severity"] == "warning"
-    assert "撤档" in claims[0]["reason"]
-    assert "海报" in claims[0]["reason"]
+    assert claims[0]["severity"] == "info"
+    assert "当前日期来源" in claims[0]["reason"]
+    assert "不要求撤档史" in claims[0]["reason"]
+    assert not [h for h in result if h["rule"] == "release-history:claim"]
+
+
+def test_release_history_claim_is_conditional_info():
+    """Explicit release-change history gets its own info-only hint."""
+    result = scan_style(
+        "该片曾撤档，随后改档并延期，后来重定档，档期一度反复定档。"
+    )
+    claims = [h for h in result if h["rule"] == "release-history:claim"]
+    assert len(claims) == 1
+    assert claims[0]["severity"] == "info"
+    assert "历史" in claims[0]["reason"]
 
 
 def test_validate_batch_style_on_clean_delivery():
@@ -181,6 +258,18 @@ def test_validate_batch_style_on_clean_delivery():
     assert result["pass"] is True
     assert result["error_total"] == 0
     assert result["article_count"] == 3
+
+
+def test_validate_delivery_file_seals_scanned_bytes(tmp_path):
+    path = tmp_path / "frozen.html"
+    path.write_text(CLEAN_DELIVERY, encoding="utf-8")
+
+    result = validate_delivery_file(path)
+
+    assert result["artifact_path"] == str(path.resolve())
+    assert result["artifact_sha256"] == __import__("hashlib").sha256(
+        path.read_bytes()
+    ).hexdigest()
 
 
 def test_validate_batch_style_uses_h1_for_single_article_title():
@@ -247,6 +336,7 @@ def test_title_gap_check():
     assert title_gap_check("电影散场以后，一张票根还能把人带到哪里")["status"] == "ok"
     assert title_gap_check("暑期档国产动画观察")["status"] == "warning"
     assert title_gap_check("城市电影政策介绍")["status"] == "warning"
+    assert title_gap_check("《密档》把暗战藏进市井：红色题材如何拍出日常质感")["status"] == "warning"
 
 
 def test_fact_density_check():
@@ -334,3 +424,91 @@ def test_chinese_numeral_fact_anchors():
     assert fact_density_check(thin)["status"] == "warning"
     assert opening_hook_check(["夏夜的风穿过放映厅，银幕亮起。",
                                "一部电影的命运就此展开。"])["status"] == "warning"
+
+
+def test_markdown_style_audit_cli_writes_current_bound_reports(tmp_path: Path):
+    from scripts.markdown_style_audit import main
+
+    drafts = tmp_path / "drafts"
+    drafts.mkdir()
+    articles = []
+    for article_id in ("art-001", "art-002"):
+        relative = f"drafts/{article_id}.md"
+        (tmp_path / relative).write_text(
+            "---\n"
+            f"hook: {article_id} 命案\n"
+            "---\n"
+            f"# 《{article_id}》为什么要查命案？\n\n"
+            f"《{article_id}》于8月25日上映，一桩命案把两位搭档推到一起。\n\n"
+            + "故事把人物选择放进同一座城市，线索不断改变判断。" * 90
+            + "\n\n你会先看命案，还是先看搭档？\n",
+            encoding="utf-8",
+        )
+        articles.append({"article_id": article_id, "markdown_path": relative})
+    (tmp_path / "batch.json").write_text(
+        __import__("json").dumps({
+            "review_surface": "markdown_codex",
+            "articles": articles,
+        }),
+        encoding="utf-8",
+    )
+
+    assert main(["--run-dir", str(tmp_path)]) == 0
+    reports = sorted((tmp_path / "review").glob("style-gate-markdown-*.json"))
+    assert [path.name for path in reports] == [
+        "style-gate-markdown-art-001.json",
+        "style-gate-markdown-art-002.json",
+    ]
+    assert all(
+        __import__("json").loads(path.read_text(encoding="utf-8"))["artifact_type"] == "markdown"
+        for path in reports
+    )
+
+
+def test_markdown_style_gate_extracts_title_paragraphs_and_scans_redlines():
+    markdown = (
+        "# 《新片》为什么要查命案？\n\n"
+        "《新片》于8月25日上映，一桩命案把两位搭档推到一起。\n\n"
+        "本文经过来源审计，编辑部核验后发布。\n"
+    )
+
+    result = validate_markdown_text(markdown)
+
+    assert result["artifact_type"] == "markdown"
+    assert result["article_count"] == 1
+    article = result["articles"][0]
+    assert article["title"] == "《新片》为什么要查命案？"
+    assert article["opening_hook"]["status"] == "ok"
+    assert any(hit["rule"] == "tone:editorial-self-attestation" for hit in article["hits"])
+    assert result["pass"] is False
+
+
+def test_markdown_style_gate_seals_exact_file_bytes(tmp_path: Path):
+    path = tmp_path / "draft.md"
+    path.write_text(
+        "# 《新片》为什么要查命案？\n\n"
+        "《新片》于8月25日上映，一桩命案把两位搭档推到一起。\n\n"
+        "你会先看命案，还是先看搭档？\n",
+        encoding="utf-8",
+    )
+
+    result = validate_markdown_file(path)
+
+    assert result["artifact_type"] == "markdown"
+    assert result["artifact_path"] == str(path.resolve())
+    assert result["artifact_sha256"] == __import__("hashlib").sha256(
+        path.read_bytes()
+    ).hexdigest()
+    assert result["articles"][0]["title"] == "《新片》为什么要查命案？"
+
+
+def test_markdown_style_gate_accepts_audit_hook_from_batch_metadata():
+    markdown = (
+        "# 《新片》为什么要查命案？\n\n"
+        "《新片》于8月25日上映，一桩命案把两位搭档推到一起。\n\n"
+        "你会先看命案，还是先看搭档？\n"
+    )
+
+    result = validate_markdown_text(markdown, hook="《新片》 命案")
+
+    assert result["articles"][0]["hook_declaration"]["status"] == "ok"

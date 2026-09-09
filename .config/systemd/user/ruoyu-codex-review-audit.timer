@@ -1,0 +1,11 @@
+# Disabled template: declarative only. No systemctl action is performed here.
+
+[Unit]
+Description=Schedule the Ruoyu Codex monthly review audit snapshot
+
+[Timer]
+OnCalendar=*-*-01 03:30:00 Asia/Shanghai
+Persistent=false
+Unit=ruoyu-codex-review-audit.service
+
+# Deliberately no [Install] section: this timer is not enabled by this repository.
