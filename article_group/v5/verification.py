@@ -413,6 +413,7 @@ def _verification_report(
         name: _digest_bytes(_canonical_bytes(artifact))
         for name, artifact in artifacts.items()
     }
+    output_hashes["v5-verification.json"] = ""
     checks = {
         name: {
             "status": "PASS" if not details["errors"] else "BLOCKED",
@@ -431,6 +432,9 @@ def _verification_report(
         "manual_escalations": manual,
         "content_status": "CONTENT_BLOCKED" if blocked else "CONTENT_READY",
         "output_hashes": output_hashes,
+        "hash_basis": {
+            "v5-verification.json": "canonical_envelope_with_self_hash_blank"
+        },
         "read_back": True,
         "output_files": list(ARTIFACT_FILES),
         "synthetic_fixture": True,
@@ -438,12 +442,18 @@ def _verification_report(
         "auto_apply": False,
         "publication_authorization": PUBLICATION_AUTHORIZATION,
     }
-    return new_artifact_envelope(
+    report = new_artifact_envelope(
         _ARTIFACT_SCHEMAS["v5-verification.json"],
         fixture.run_id,
         payload,
         generated_at=fixture.generated_at,
     )
+    basis = deepcopy(report)
+    basis["payload"]["output_hashes"]["v5-verification.json"] = ""
+    report["payload"]["output_hashes"]["v5-verification.json"] = _digest_bytes(
+        _canonical_bytes(basis)
+    )
+    return report
 
 
 def run_v5_verification(run_dir: Path, *, output_path: Path) -> dict[str, Any]:
