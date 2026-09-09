@@ -468,6 +468,11 @@ def run_v5_verification(run_dir: Path, *, output_path: Path) -> dict[str, Any]:
     for name, artifact in artifacts.items():
         module_checks[name] = {"errors": validate_v5_artifact(name, artifact, fixture.run_dir)}
     report = _verification_report(fixture, artifacts, module_checks, output_dir)
+    report_errors = validate_v5_artifact(
+        "v5-verification.json", report, fixture.run_dir
+    )
+    if report_errors:
+        raise VerificationError("artifact_invalid:" + ";".join(report_errors))
     all_artifacts = {**artifacts, "v5-verification.json": report}
     destinations_by_name: dict[str, Path] = {}
     for name in all_artifacts:
