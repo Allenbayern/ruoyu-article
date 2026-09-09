@@ -121,4 +121,3 @@ def test_verify_is_idempotent_but_refuses_different_content(tmp_path: Path):
     assert json.loads(final.read_text(encoding="utf-8"))["payload"][
         "test_marker"
     ] == "different-content"
-
