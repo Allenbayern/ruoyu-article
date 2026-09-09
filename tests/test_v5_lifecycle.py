@@ -405,3 +405,196 @@ def test_lifecycle_validation_rejects_authorization_escalation():
     assert "publication_authorization_must_be_not_authorized" in (
         validate_lifecycle_record(invalid)
     )
+
+
+def test_mixed_valid_and_invalid_observation_batch_cannot_advance():
+    valid = _observation("rising", "metrics/rising-mixed-valid.json")
+    invalid = _observation("stable", "metrics/stable-mixed-invalid.json")
+    invalid["observed_at"] = "not-a-time"
+
+    result = advance_content_lifecycle(_published(), [valid, invalid])
+
+    assert result["payload"]["state"] == "published"
+    assert "observation_event_invalid" in result["payload"]["blockers"]
+
+
+@pytest.mark.parametrize("state", ["observing", "stable", "rising", "decaying"])
+def test_builder_only_constructs_draft(state: str):
+    with pytest.raises(ValueError):
+        _record(state)
+
+
+def test_advance_persists_structured_publication_evidence():
+    result = advance_content_lifecycle(_draft(), [_publication_event()])
+
+    assert result["payload"]["publication_evidence"] == {
+        "article_id": ARTICLE_ID,
+        "published_at": "2026-09-09T09:00:00+08:00",
+        "platform": "toutiao",
+        "ref": "publication-001",
+    }
+    assert validate_lifecycle_record(result) == []
+
+
+def test_advance_persists_structured_observation_evidence_and_trend_binding():
+    result = advance_content_lifecycle(_published(), _rising_events())
+
+    assert result["payload"]["observation_evidence"] == [
+        {
+            "article_id": ARTICLE_ID,
+            "timestamp": "2026-09-09T12:00:00+08:00",
+            "ref": "metrics/rising-001.json",
+            "metrics": {
+                "window": {
+                    "start": "2026-09-09T09:00:00+08:00",
+                    "end": "2026-09-09T12:00:00+08:00",
+                },
+                "impressions": 1000,
+                "clicks": 100,
+            },
+            "trend": "rising",
+        }
+    ]
+    assert result["payload"]["observation_trend"] == "rising"
+    assert result["payload"]["observation_trend_ref"] == (
+        "metrics/rising-001.json"
+    )
+    assert validate_lifecycle_record(result) == []
+
+
+def test_validator_rejects_published_record_with_only_fake_evidence_ref():
+    invalid = {
+        **_draft(),
+        "payload": {
+            **_draft()["payload"],
+            "state": "published",
+            "next_action": "record_observations",
+            "evidence_refs": ["fake-ref"],
+            "transition": {
+                "from": "draft",
+                "to": "published",
+                "reason": "fabricated",
+            },
+        },
+    }
+
+    assert validate_lifecycle_record(invalid)
+
+
+def test_validator_rejects_observation_state_without_structured_evidence():
+    invalid = {
+        **_draft(),
+        "payload": {
+            **_draft()["payload"],
+            "state": "rising",
+            "next_action": "append_related_content",
+            "evidence_refs": ["fake-ref"],
+            "transition": {
+                "from": "published",
+                "to": "rising",
+                "reason": "fabricated",
+            },
+            "publication_evidence": {
+                "article_id": ARTICLE_ID,
+                "published_at": "2026-09-09T09:00:00+08:00",
+                "platform": "toutiao",
+                "ref": "fake-ref",
+            },
+        },
+    }
+
+    assert "observation_state_requires_observation_evidence" in (
+        validate_lifecycle_record(invalid)
+    )
+
+
+@pytest.mark.parametrize("field", ["article_id", "timestamp", "ref", "metrics"])
+def test_validator_rejects_malformed_observation_evidence(field: str):
+    valid = advance_content_lifecycle(_published(), _rising_events())
+    evidence = valid["payload"]["observation_evidence"][0]
+    if field == "article_id":
+        evidence[field] = "article-999"
+    elif field == "timestamp":
+        evidence[field] = "not-a-time"
+    elif field == "ref":
+        evidence[field] = "fake-ref"
+    else:
+        evidence.pop(field)
+
+    errors = validate_lifecycle_record(valid)
+    if field == "ref":
+        assert "evidence_refs_missing_structured_evidence" in errors
+        assert "evidence_refs_not_backed_by_structured_evidence" in errors
+    else:
+        assert "invalid:observation_evidence" in errors
+
+
+def test_validator_requires_observation_trend_state_and_reference_to_match():
+    rising = advance_content_lifecycle(_published(), _rising_events())
+
+    wrong_state = {
+        **rising,
+        "payload": {
+            **rising["payload"],
+            "observation_trend": "stable",
+        },
+    }
+    wrong_ref = {
+        **rising,
+        "payload": {
+            **rising["payload"],
+            "observation_trend_ref": "fake-ref",
+        },
+    }
+
+    assert "observation_trend_state_mismatch" in validate_lifecycle_record(
+        wrong_state
+    )
+    assert "observation_trend_ref_mismatch" in validate_lifecycle_record(
+        wrong_ref
+    )
+
+
+def test_forward_only_observation_does_not_overwrite_current_trend_metadata():
+    rising = advance_content_lifecycle(_published(), _rising_events())
+    result = advance_content_lifecycle(rising, _stable_events())
+
+    assert result["payload"]["state"] == "rising"
+    assert result["payload"]["observation_trend"] == "rising"
+    assert result["payload"]["observation_trend_ref"] == (
+        "metrics/rising-001.json"
+    )
+    assert validate_lifecycle_record(result) == []
+
+
+def test_archived_mismatched_controller_decision_preserves_valid_metadata():
+    archived = advance_content_lifecycle(
+        _published(), [], controller_decision="archive"
+    )
+    previous_transition = archived["payload"]["transition"]
+
+    result = advance_content_lifecycle(
+        archived, [], controller_decision="approve_evergreen"
+    )
+
+    assert result["payload"]["state"] == "archived"
+    assert result["payload"]["controller_decision"] == "archive"
+    assert result["payload"]["transition"] == previous_transition
+    assert "controller_decision_mismatch" in result["payload"]["blockers"]
+    assert validate_lifecycle_record(result) == []
+
+
+def test_evergreen_can_explicitly_transition_to_archived():
+    evergreen = advance_content_lifecycle(
+        advance_content_lifecycle(_published(), _rising_events()),
+        _stable_events(),
+        controller_decision="approve_evergreen",
+    )
+
+    result = advance_content_lifecycle(
+        evergreen, [], controller_decision="archive"
+    )
+
+    assert result["payload"]["state"] == "archived"
+    assert result["payload"]["controller_decision"] == "archive"
+    assert validate_lifecycle_record(result) == []

@@ -143,11 +143,11 @@ def _complete_publication_event(
 def _publication_evidence(
     events: Sequence[object],
     article_id: str,
-) -> tuple[bool, bool, list[str]]:
+) -> tuple[bool, bool, list[dict[str, str]]]:
     publication_seen = False
     complete = False
-    references: list[str] = []
-    for index, event in enumerate(events):
+    evidence: list[dict[str, str]] = []
+    for event in events:
         if not isinstance(event, Mapping) or _event_type(event) != "published":
             continue
         publication_seen = True
@@ -155,8 +155,15 @@ def _publication_evidence(
         if _complete_publication_event(event, article_id):
             complete = True
             if reference is not None:
-                references.append(reference)
-    return publication_seen, complete, references
+                evidence.append(
+                    {
+                        "article_id": article_id,
+                        "published_at": event["published_at"],
+                        "platform": _text(event.get("platform")),
+                        "ref": reference,
+                    }
+                )
+    return publication_seen, complete, evidence
 
 
 def _observation_trend(
@@ -197,13 +204,26 @@ def _observation_timestamp(event: Mapping[str, Any]) -> datetime | None:
     return parsed[0]
 
 
+def _observation_timestamp_value(event: Mapping[str, Any]) -> str | None:
+    for key in ("observed_at", "timestamp"):
+        if key in event and isinstance(event.get(key), str):
+            return event[key]
+    return None
+
+
 def _valid_observation_event(
     event: Mapping[str, Any], article_id: str
-) -> tuple[bool, datetime | None, str | None, str | None]:
+) -> tuple[
+    bool,
+    datetime | None,
+    str | None,
+    str | None,
+    str | None,
+]:
     if _event_type(event) not in _OBSERVATION_EVENT_TYPES:
-        return False, None, None, None
+        return False, None, None, None, None
     if _text(event.get("article_id")) != article_id:
-        return False, None, None, None
+        return False, None, None, None, None
 
     timestamp = _observation_timestamp(event)
     reference = _event_reference(event)
@@ -212,7 +232,7 @@ def _valid_observation_event(
         for key in ("metrics", "window", "observation_window")
     )
     if timestamp is None or reference is None or not has_metrics:
-        return False, None, None, None
+        return False, None, None, None, None
 
     trend, trend_present = _observation_trend(event)
     if trend_present and (
@@ -220,25 +240,64 @@ def _valid_observation_event(
         or not isinstance(trend, str)
         or trend not in _OBSERVATION_STATES
     ):
-        return False, None, None, None
-    return True, timestamp, trend if isinstance(trend, str) else None, reference
+        return False, None, None, None, None
+    return (
+        True,
+        timestamp,
+        trend if isinstance(trend, str) else None,
+        reference,
+        _observation_timestamp_value(event),
+    )
+
+
+def _observation_evidence_record(
+    event: Mapping[str, Any],
+    *,
+    article_id: str,
+    timestamp: str,
+    reference: str,
+    trend: str | None,
+) -> dict[str, Any]:
+    evidence: dict[str, Any] = {
+        "article_id": article_id,
+        "timestamp": timestamp,
+        "ref": reference,
+    }
+    for key in ("metrics", "window", "observation_window"):
+        value = event.get(key)
+        if not _non_empty_record(value):
+            continue
+        evidence["window" if key == "observation_window" else key] = deepcopy(
+            value
+        )
+    if trend is not None:
+        evidence["trend"] = trend
+    return evidence
 
 
 def _observation_evidence(
     events: Sequence[object],
     article_id: str,
-) -> tuple[bool, str | None, str | None, list[str], bool]:
+) -> tuple[
+    bool,
+    str | None,
+    str | None,
+    list[str],
+    bool,
+    list[dict[str, Any]],
+]:
     observed = False
     candidates: list[tuple[datetime, int, str | None, str]] = []
     references: list[str] = []
+    evidence: list[dict[str, Any]] = []
     invalid_observation = False
 
     for index, event in enumerate(events):
         if not isinstance(event, Mapping) or _event_type(event) == "published":
             continue
 
-        valid, timestamp, trend, reference = _valid_observation_event(
-            event, article_id
+        valid, timestamp, trend, reference, timestamp_value = (
+            _valid_observation_event(event, article_id)
         )
         if not valid:
             if (
@@ -262,13 +321,26 @@ def _observation_evidence(
             continue
 
         observed = True
-        if timestamp is None or reference is None:
+        if (
+            timestamp is None
+            or timestamp_value is None
+            or reference is None
+        ):
             continue
         references.append(reference)
+        evidence.append(
+            _observation_evidence_record(
+                event,
+                article_id=article_id,
+                timestamp=timestamp_value,
+                reference=reference,
+                trend=trend,
+            )
+        )
         candidates.append((timestamp, index, trend, reference))
 
     if not candidates:
-        return observed, None, None, references, invalid_observation
+        return observed, None, None, references, invalid_observation, evidence
 
     def sort_key(
         candidate: tuple[datetime, int, str | None, str]
@@ -277,7 +349,93 @@ def _observation_evidence(
         return timestamp, index
 
     _, _, trend, reference = max(candidates, key=sort_key)
-    return observed, trend, reference, references, invalid_observation
+    return observed, trend, reference, references, invalid_observation, evidence
+
+
+def _evidence_records(value: object) -> list[Mapping[str, Any]] | None:
+    if isinstance(value, Mapping):
+        return [value]
+    if isinstance(value, list) and all(
+        isinstance(item, Mapping) for item in value
+    ):
+        return list(value)
+    return None
+
+
+def _publication_evidence_payload(
+    evidence: Sequence[Mapping[str, Any]],
+) -> object:
+    if not evidence:
+        return []
+    if len(evidence) == 1:
+        return deepcopy(dict(evidence[0]))
+    return deepcopy([dict(item) for item in evidence])
+
+
+def _valid_publication_evidence(
+    value: object,
+    article_id: str,
+) -> tuple[bool, set[str]]:
+    records = _evidence_records(value)
+    if records is None:
+        return False, set()
+    refs: set[str] = set()
+    valid = True
+    for evidence in records:
+        reference = _text(evidence.get("ref"))
+        item_valid = (
+            _text(evidence.get("article_id")) == article_id
+            and _parse_rfc3339(evidence.get("published_at")) is not None
+            and bool(_text(evidence.get("platform")))
+            and bool(reference)
+            and _PSEUDO_EVENT_REFERENCE.fullmatch(reference) is None
+        )
+        if not item_valid:
+            valid = False
+            continue
+        refs.add(reference)
+    return valid, refs
+
+
+def _valid_observation_evidence(
+    value: object,
+    article_id: str,
+) -> tuple[bool, set[str], dict[str, set[str]]]:
+    records = _evidence_records(value)
+    if records is None:
+        return False, set(), {}
+    refs: set[str] = set()
+    trends: dict[str, set[str]] = {}
+    valid = True
+    for evidence in records:
+        reference = _text(evidence.get("ref"))
+        timestamp = evidence.get("timestamp", evidence.get("observed_at"))
+        has_metrics = any(
+            _non_empty_record(evidence.get(key))
+            for key in ("metrics", "window", "observation_window")
+        )
+        trend = evidence.get("trend")
+        item_valid = (
+            _text(evidence.get("article_id")) == article_id
+            and _parse_rfc3339(timestamp) is not None
+            and bool(reference)
+            and _PSEUDO_EVENT_REFERENCE.fullmatch(reference) is None
+            and has_metrics
+            and (
+                trend is None
+                or (
+                    isinstance(trend, str)
+                    and trend in _OBSERVATION_STATES
+                )
+            )
+        )
+        if not item_valid:
+            valid = False
+            continue
+        refs.add(reference)
+        if isinstance(trend, str):
+            trends.setdefault(reference, set()).add(trend)
+    return valid, refs, trends
 
 
 def _record_result(
@@ -319,6 +477,8 @@ def build_content_lifecycle(
         raise ValueError("invalid_lifecycle_state")
     if state in _GATED_STATES:
         raise ValueError("gated_lifecycle_state_requires_transition")
+    if state != "draft":
+        raise ValueError("observation_lifecycle_state_requires_transition")
 
     payload = {
         "article_id": article_id,
@@ -327,6 +487,8 @@ def build_content_lifecycle(
         "evidence_refs": [],
         "next_action": _next_action(state),
         "publication_authorization": PUBLICATION_AUTHORIZATION,
+        "publication_evidence": [],
+        "observation_evidence": [],
     }
     return new_artifact_envelope(
         _SCHEMA_VERSION,
@@ -374,8 +536,56 @@ def validate_lifecycle_record(record: Mapping[str, Any]) -> list[str]:
     if payload.get("publication_authorization") != PUBLICATION_AUTHORIZATION:
         errors.append("publication_authorization_must_be_not_authorized")
 
+    publication_evidence = payload.get("publication_evidence")
+    publication_evidence_valid, publication_refs = _valid_publication_evidence(
+        publication_evidence,
+        _text(payload.get("article_id")),
+    )
+    if publication_evidence is not None and not publication_evidence_valid:
+        errors.append("invalid:publication_evidence")
+
+    observation_evidence = payload.get("observation_evidence")
+    (
+        observation_evidence_valid,
+        observation_refs,
+        observation_trends,
+    ) = _valid_observation_evidence(
+        observation_evidence,
+        _text(payload.get("article_id")),
+    )
+    if observation_evidence is not None and not observation_evidence_valid:
+        errors.append("invalid:observation_evidence")
+
+    evidence_refs = payload.get("evidence_refs")
+    if _valid_evidence_refs(evidence_refs):
+        evidence_ref_set = set(evidence_refs)
+        structured_refs = publication_refs | observation_refs
+        if structured_refs - evidence_ref_set:
+            errors.append("evidence_refs_missing_structured_evidence")
+        if evidence_ref_set - structured_refs:
+            errors.append("evidence_refs_not_backed_by_structured_evidence")
+    else:
+        evidence_ref_set = set()
+
+    if state_valid and state != "draft":
+        if not publication_evidence_valid or not publication_refs:
+            errors.append("published_state_requires_publication_evidence")
+
+    if state_valid and state in _OBSERVATION_STATES:
+        if not observation_evidence_valid or not observation_refs:
+            errors.append("observation_state_requires_observation_evidence")
+        if state in {"stable", "rising", "decaying"}:
+            if payload.get("observation_trend") != state:
+                errors.append("observation_trend_state_mismatch")
+            trend_reference = _text(payload.get("observation_trend_ref"))
+            if (
+                not trend_reference
+                or trend_reference not in observation_refs
+                or state not in observation_trends.get(trend_reference, set())
+            ):
+                errors.append("observation_trend_ref_mismatch")
+
     if state_valid and state in _GATED_STATES:
-        evidence_refs = payload.get("evidence_refs")
         if not _valid_evidence_refs(evidence_refs) or not evidence_refs:
             errors.append("gated_state_requires_evidence")
 
@@ -450,9 +660,20 @@ def advance_content_lifecycle(
     evidence_refs = (
         list(existing_refs) if _valid_evidence_refs(existing_refs) else []
     )
+    existing_publication_evidence = _evidence_records(
+        source_payload.get("publication_evidence")
+    ) or []
+    existing_observation_evidence = _evidence_records(
+        source_payload.get("observation_evidence")
+    ) or []
     article_id = _text(source_payload.get("article_id"))
-    publication_seen, publication_complete, publication_refs = _publication_evidence(
-        event_items, article_id
+    (
+        publication_seen,
+        publication_complete,
+        publication_evidence,
+    ) = _publication_evidence(
+        event_items,
+        article_id,
     )
     (
         observed,
@@ -460,16 +681,48 @@ def advance_content_lifecycle(
         trend_reference,
         observation_refs,
         invalid_observation,
+        observation_evidence,
     ) = _observation_evidence(event_items, article_id)
+    all_publication_evidence = [
+        *existing_publication_evidence,
+        *publication_evidence,
+    ]
+    all_observation_evidence = [
+        *existing_observation_evidence,
+        *observation_evidence,
+    ]
     evidence_refs = _unique(
-        [*evidence_refs, *publication_refs, *observation_refs]
+        [
+            *evidence_refs,
+            *[
+                _text(item.get("ref"))
+                for item in publication_evidence
+            ],
+            *observation_refs,
+        ]
     )
     if invalid_observation:
         blockers.append("observation_event_invalid")
 
     target_state = state
     reason = "no_supported_transition"
-    can_advance = not record_errors and events_valid and decision_valid
+    terminal_decision_mismatch = (
+        state == "archived"
+        and controller_decision not in (None, "archive")
+    ) or (
+        state == "evergreen"
+        and controller_decision not in (None, "approve_evergreen", "archive")
+    )
+    if terminal_decision_mismatch:
+        blockers.append("controller_decision_mismatch")
+
+    can_advance = (
+        not record_errors
+        and events_valid
+        and decision_valid
+        and not invalid_observation
+        and not terminal_decision_mismatch
+    )
 
     if can_advance and controller_decision == "archive":
         if state != "archived":
@@ -521,14 +774,23 @@ def advance_content_lifecycle(
                 blockers.append("observation_trend_required")
                 reason = "observation_trend_required"
 
-    if trend is not None:
-        payload["observation_trend"] = trend
-    if trend_reference is not None:
-        payload["observation_trend_ref"] = trend_reference
+    if can_advance and trend is not None and trend_reference is not None:
+        if (
+            state in _GATED_STATES
+            or _STATE_INDEX[trend] >= _STATE_INDEX[state]
+        ):
+            payload["observation_trend"] = trend
+            payload["observation_trend_ref"] = trend_reference
 
     payload["state"] = target_state
     payload["blockers"] = _unique(blockers)
     payload["evidence_refs"] = evidence_refs
+    payload["publication_evidence"] = _publication_evidence_payload(
+        all_publication_evidence
+    )
+    payload["observation_evidence"] = deepcopy(
+        [dict(item) for item in all_observation_evidence]
+    )
     payload["next_action"] = _next_action(target_state)
     previous_transition = payload.get("transition")
     if (
@@ -544,7 +806,7 @@ def advance_content_lifecycle(
             "reason": reason,
         }
     payload["publication_authorization"] = PUBLICATION_AUTHORIZATION
-    if controller_decision is not None:
+    if controller_decision is not None and not terminal_decision_mismatch:
         payload["controller_decision"] = controller_decision
 
     return _record_result(record, payload, event_items)
