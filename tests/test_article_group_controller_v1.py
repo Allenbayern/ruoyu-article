@@ -22,6 +22,8 @@ def test_append_is_jsonl(tmp_path):
 def test_candidate_approval_requires_card():
     assert validate_controller_transition("candidate","approved")==["missing:topic_card"]
 
-def test_verify_context_reads_layers(tmp_path):
+def test_verify_context_rejects_bare_pass(tmp_path):
     root=tmp_path/"v5"; root.mkdir(); (root/"v5-verification.json").write_text(json.dumps({"payload":{"status":"PASS","decision":"eligible_for_article_group_review"}}))
-    result=verify_context(v5_run_dir=root); assert result["status"]=="PASS" and result["content_status"]=="CONTENT_READY"
+    result=verify_context(v5_run_dir=root)
+    assert result["status"] == "BLOCKED"
+    assert result["content_status"] == "CONTENT_BLOCKED"

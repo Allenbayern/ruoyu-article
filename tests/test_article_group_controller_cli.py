@@ -6,4 +6,4 @@ def test_cli_init_record_verify(tmp_path):
  assert subprocess.run([sys.executable,"scripts/article_group_controller.py","init","--run-dir",str(root),"--input",str(inp),"--output",str(out)]).returncode==0
  d=tmp_path/"d.json"; d.write_text(json.dumps({"schema_version":"controller-stage-decision-v1","topic_id":"t","from_state":"idea","to_state":"precheck","decision":"pass","decided_at":"x"}))
  assert subprocess.run([sys.executable,"scripts/article_group_controller.py","record","--run-dir",str(root),"--input",str(d)]).returncode==0
- assert subprocess.run([sys.executable,"scripts/article_group_controller.py","verify","--run-dir",str(root),"--input",str(d)]).returncode==0
+ assert subprocess.run([sys.executable,"scripts/article_group_controller.py","verify","--run-dir",str(root)]).returncode==1
