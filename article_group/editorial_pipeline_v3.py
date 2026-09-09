@@ -899,5 +899,34 @@ def validate_v4_transition_context(
     return _unique_errors(errors)
 
 
+def validate_v5_transition_context(
+    from_state: str,
+    to_state: str,
+    *,
+    experiment_record: Mapping[str, Any] | None = None,
+    lifecycle_record: Mapping[str, Any] | None = None,
+    dna_record: Mapping[str, Any] | None = None,
+    failure_report: Mapping[str, Any] | None = None,
+    quota_plan: Mapping[str, Any] | None = None,
+    strategy_library: Mapping[str, Any] | None = None,
+    resource_plan: Mapping[str, Any] | None = None,
+) -> list[str]:
+    """Lazily delegate V5 gates while keeping the V3 module dependency-free."""
+
+    from article_group.v5.integration import validate_v5_transition_context as _delegate
+
+    return _delegate(
+        from_state,
+        to_state,
+        experiment_record=experiment_record,
+        lifecycle_record=lifecycle_record,
+        dna_record=dna_record,
+        failure_report=failure_report,
+        quota_plan=quota_plan,
+        strategy_library=strategy_library,
+        resource_plan=resource_plan,
+    )
+
+
 def _unique_errors(errors: list[str]) -> list[str]:
     return list(dict.fromkeys(errors))
