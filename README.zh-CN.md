@@ -204,3 +204,15 @@ V4 只处理文章组已经确定的选题：组合计划、证据图、缺口�
 ```
 
 验收结果会分别列出 `PASS`、缺失来源角色、重试要求、人工升级项、`content_status` 和 `publication_authorization`。`CONTENT_READY` 只是 Markdown 可交给真人处理，发布授权始终为 `not_authorized`。详细字段和各子命令见 [`docs/codex/editorial-pipeline-v4.md`](docs/codex/editorial-pipeline-v4.md)。
+
+## 文章组 V5 自适应反馈层
+
+V5 在 V4 的证据、调度和反馈基础上增加实验记录、内容生命周期、文章 DNA、失败样本、四周动态配额、版本化策略库和资源预算建议。它回答“为什么表现好或不好、下一篇具体改变什么”，但不自动选题、换题、发布或把相关性升级成因果结论。
+
+```bash
+.venv/bin/python scripts/article_group_v5.py verify \
+  --run-dir tests/fixtures/v5/controlled-001 \
+  --output-dir runs/2026-09-09/v5/controlled-001
+```
+
+该命令只读取显式运行根，写出八个 JSON 并逐一读回；输出拒绝不同内容覆盖，不生成 HTML，不保存凭据。受控 fixture 是合成测试输入。报告独立列出 `PASS`、缺失来源角色、重试要求、人工升级项和 `content_status`；`CONTENT_READY` 只代表交给文章组/controller 复核，`publication_authorization` 始终为 `not_authorized`。完整字段、生命周期、失败分类、配额边界和策略状态见 [`docs/codex/editorial-pipeline-v5.md`](docs/codex/editorial-pipeline-v5.md)。
