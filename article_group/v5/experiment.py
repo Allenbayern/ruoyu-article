@@ -26,6 +26,23 @@ _CONTROLLED_FIELDS = (
     "publish_window",
     "distribution_conditions",
 )
+_FIELD_ALIASES = {
+    "topic": ("topic_id", "topic"),
+    "topic_id": ("topic_id", "topic"),
+    "topic_type": ("topic_type", "type"),
+    "type": ("topic_type", "type"),
+    "platform": ("platform",),
+    "publish_window": ("publish_window", "window"),
+    "window": ("publish_window", "window"),
+    "distribution_conditions": (
+        "distribution_conditions",
+        "distribution",
+    ),
+    "distribution": (
+        "distribution_conditions",
+        "distribution",
+    ),
+}
 _REQUIRED_PAYLOAD_FIELDS = (
     "experiment_id",
     "topic_id",
@@ -59,6 +76,21 @@ def _string_list(value: object, *, non_empty: bool = True) -> bool:
     return all(isinstance(item, str) and item.strip() for item in items)
 
 
+def _has_duplicates(value: object) -> bool:
+    items = _sequence(value)
+    return bool(items) and len(items) != len(set(items))
+
+
+def _canonical_field(value: object) -> str:
+    field = value.strip() if isinstance(value, str) else ""
+    return {
+        "topic": "topic_id",
+        "type": "topic_type",
+        "window": "publish_window",
+        "distribution": "distribution_conditions",
+    }.get(field, field)
+
+
 def _valid_date(value: object) -> bool:
     if not isinstance(value, str) or value != value.strip():
         return False
@@ -80,27 +112,23 @@ def _frozen(value: object) -> object:
 
 
 def _observation_value(observation: Mapping[str, Any], field: str) -> object:
-    aliases = {
-        "topic_id": ("topic_id",),
-        "topic_type": ("topic_type", "type"),
-        "platform": ("platform",),
-        "publish_window": ("publish_window", "window"),
-        "distribution_conditions": (
-            "distribution_conditions",
-            "distribution",
-        ),
-    }
-    for key in aliases[field]:
+    aliases = _FIELD_ALIASES.get(_canonical_field(field), (field,))
+    for key in aliases:
         if key in observation:
             return observation[key]
     return None
 
 
 def _observation_id(observation: Mapping[str, Any]) -> object:
-    for key in ("article_id", "observation_id", "id"):
-        if key in observation:
-            return observation[key]
-    return None
+    present = [
+        observation[key]
+        for key in ("article_id", "observation_id", "id")
+        if key in observation
+    ]
+    if len(present) != 1:
+        return None
+    value = present[0]
+    return value if isinstance(value, str) and value.strip() else None
 
 
 def _observation_arm(
@@ -109,16 +137,13 @@ def _observation_arm(
     control_ids: set[str],
 ) -> str | None:
     observation_id = _observation_id(observation)
-    if isinstance(observation_id, str):
-        if observation_id in treatment_ids:
-            return "treatment"
-        if observation_id in control_ids:
-            return "control"
+    if not isinstance(observation_id, str):
         return None
-    if observation_id is not None:
+    in_treatment = observation_id in treatment_ids
+    in_control = observation_id in control_ids
+    if in_treatment == in_control:
         return None
-    arm = observation.get("arm", observation.get("group"))
-    return arm if arm in _ARMS else None
+    return "treatment" if in_treatment else "control"
 
 
 def build_experiment_record(
@@ -193,12 +218,22 @@ def validate_experiment_record(record: Mapping[str, Any]) -> list[str]:
     if isinstance(topic_version, bool) or not isinstance(topic_version, int) or topic_version <= 0:
         errors.append("invalid:topic_version")
 
-    if not _string_list(payload.get("controls")):
+    controls = payload.get("controls")
+    controls_valid = _string_list(controls)
+    if not controls_valid:
         errors.append("invalid:controls")
+    elif _has_duplicates([_canonical_field(item) for item in controls]):
+        errors.append("duplicate:controls")
     if not _string_list(payload.get("metrics")):
         errors.append("invalid:metrics")
     if payload.get("design") not in EXPERIMENT_DESIGNS:
         errors.append("invalid:design")
+
+    changed_variable = payload.get("changed_variable")
+    if controls_valid and _text(changed_variable):
+        canonical_controls = {_canonical_field(item) for item in controls}
+        if _canonical_field(changed_variable) in canonical_controls:
+            errors.append("overlap:changed_variable_controls")
 
     treatment_ids = payload.get("treatment_ids")
     control_ids = payload.get("control_ids")
@@ -206,6 +241,10 @@ def validate_experiment_record(record: Mapping[str, Any]) -> list[str]:
         errors.append("invalid:treatment_ids")
     if not _string_list(control_ids):
         errors.append("invalid:control_ids")
+    if _string_list(treatment_ids) and _has_duplicates(treatment_ids):
+        errors.append("duplicate:treatment_ids")
+    if _string_list(control_ids) and _has_duplicates(control_ids):
+        errors.append("duplicate:control_ids")
     if _string_list(treatment_ids) and _string_list(control_ids):
         if set(treatment_ids) & set(control_ids):
             errors.append("overlap:treatment_control_ids")
@@ -223,29 +262,99 @@ def validate_experiment_record(record: Mapping[str, Any]) -> list[str]:
     return list(dict.fromkeys(errors))
 
 
+def _constraint_matches(
+    declared: Mapping[str, Any],
+    actual: object,
+) -> bool:
+    if _frozen(declared) == _frozen(actual):
+        return True
+    if isinstance(actual, Mapping) or len(declared) != 1:
+        return False
+    key, value = next(iter(declared.items()))
+    if str(key) not in {
+        "label",
+        "mode",
+        "name",
+        "value",
+        "window",
+        "publish_window",
+        "distribution",
+        "distribution_conditions",
+    }:
+        return False
+    return _frozen(value) == _frozen(actual)
+
+
 def _confounders(
     observations: list[tuple[str, Mapping[str, Any]]],
-    expected_topic_id: object,
+    payload: Mapping[str, Any],
 ) -> tuple[list[str], bool]:
     confounders: list[str] = []
     complete_controls = True
-    for field in _CONTROLLED_FIELDS:
-        values_by_arm: dict[str, list[object]] = {arm: [] for arm in _ARMS}
-        for arm, observation in observations:
-            value = _observation_value(observation, field)
+    checked_fields: set[str] = set()
+
+    def add_confounder(field: str) -> None:
+        if field not in confounders:
+            confounders.append(field)
+
+    def check_field(
+        observation_field: str,
+        report_field: str,
+        *,
+        expected: object = None,
+        has_expected: bool = False,
+    ) -> None:
+        nonlocal complete_controls
+        values: list[object] = []
+        for _arm, observation in observations:
+            value = _observation_value(observation, observation_field)
             if value is None:
                 complete_controls = False
-            else:
-                values_by_arm[arm].append(_frozen(value))
+                continue
+            values.append(_frozen(value))
 
-        if field == "topic_id":
-            if any(value != expected_topic_id for values in values_by_arm.values() for value in values):
-                confounders.append(field)
-        elif values_by_arm["control"] and values_by_arm["treatment"]:
-            if set(values_by_arm["control"]) != set(values_by_arm["treatment"]):
-                confounders.append(field)
+        if len(set(values)) > 1:
+            add_confounder(report_field)
+        if has_expected and any(value != _frozen(expected) for value in values):
+            add_confounder(report_field)
 
-    return list(dict.fromkeys(confounders)), complete_controls
+        checked_fields.add(_canonical_field(observation_field))
+
+    for field in _CONTROLLED_FIELDS:
+        check_field(
+            field,
+            field,
+            expected=payload.get("topic_id"),
+            has_expected=field == "topic_id",
+        )
+
+    controls = payload.get("controls", ())
+    for declared_field in controls:
+        canonical_field = _canonical_field(declared_field)
+        if canonical_field in checked_fields:
+            continue
+        check_field(
+            canonical_field,
+            declared_field.strip(),
+            expected=payload.get("topic_id"),
+            has_expected=canonical_field == "topic_id",
+        )
+
+    for record_field, observation_field in (
+        ("fixed_publish_window", "publish_window"),
+        ("distribution_conditions", "distribution_conditions"),
+    ):
+        declared_value = payload.get(record_field)
+        if not isinstance(declared_value, Mapping) or not declared_value:
+            continue
+        for _arm, observation in observations:
+            actual_value = _observation_value(observation, observation_field)
+            if actual_value is None:
+                complete_controls = False
+            elif not _constraint_matches(declared_value, actual_value):
+                add_confounder(observation_field)
+
+    return confounders, complete_controls
 
 
 def assess_experiment(
@@ -280,11 +389,21 @@ def assess_experiment(
 
     treatment_ids = set(payload["treatment_ids"])
     control_ids = set(payload["control_ids"])
-    assigned: list[tuple[str, Mapping[str, Any]]] = []
+    assigned_candidates: list[tuple[str, str, Mapping[str, Any]]] = []
     for observation in items:
+        observation_id = _observation_id(observation)
         arm = _observation_arm(observation, treatment_ids, control_ids)
-        if arm is not None:
-            assigned.append((arm, observation))
+        if arm is not None and isinstance(observation_id, str):
+            assigned_candidates.append((observation_id, arm, observation))
+
+    occurrences: dict[str, int] = {}
+    for observation_id, _arm, _observation in assigned_candidates:
+        occurrences[observation_id] = occurrences.get(observation_id, 0) + 1
+    assigned = [
+        (arm, observation)
+        for observation_id, arm, observation in assigned_candidates
+        if occurrences[observation_id] == 1
+    ]
 
     counts = {arm: sum(1 for assigned_arm, _ in assigned if assigned_arm == arm) for arm in _ARMS}
     result["observations_per_arm"] = counts
@@ -292,7 +411,7 @@ def assess_experiment(
         result["errors"] = ["insufficient:both_arms"]
         return result
 
-    confounders, complete_controls = _confounders(assigned, payload["topic_id"])
+    confounders, complete_controls = _confounders(assigned, payload)
     result["confounders"] = confounders
     if confounders:
         result["attribution_status"] = "confounded"
