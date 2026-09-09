@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+import pytest
+
 from article_group.v5.quota import derive_dynamic_quotas, validate_quota_plan
 from article_group.v5.strategy import (
     advance_strategy_state,
@@ -57,7 +59,7 @@ def _testing_strategy() -> dict[str, object]:
         run_id=RUN_ID,
         applicable_topic_types=["人物"],
         hypothesis="具体关系冲突提高完成率",
-        evidence_samples=["seed-001"],
+        evidence_samples=["sample-1", "sample-2", "sample-3"],
         success_conditions=["completion_rate >= 0.60"],
         failure_boundary=["risk_score >= 0.70"],
         last_validated_at="2026-09-08T10:00:00+08:00",
@@ -259,6 +261,97 @@ def test_quota_detects_boolean_high_risk_and_trailing_failures_without_precomput
     assert recommendation["consecutive_failure_downweight"] == 0.7
 
 
+def test_insufficient_high_risk_history_retains_baseline_and_validates():
+    plan = derive_dynamic_quotas(
+        [_history_row("risk-1", "2026-09-08", risk_score=0.90)],
+        {"人物": {"share": 0.50}},
+        run_id=RUN_ID,
+        generated_at=GENERATED_AT,
+    )
+
+    recommendation = plan["payload"]["recommendations"][0]
+
+    assert recommendation["recommended_share"] == 0.50
+    assert "baseline_retained_data_insufficient" in recommendation["reasons"]
+    assert "high_risk_cap_deferred_data_insufficient" in recommendation["reasons"]
+    assert "high_risk_cap_applied" not in recommendation["reasons"]
+    assert validate_quota_plan(plan) == []
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "base_quotas", "error"),
+    [
+        ({"min_share": 0.80, "max_share": 0.20}, {"人物": {"share": 0.50}}, "min_share"),
+        (
+            {"min_share": 0.05, "max_share": 0.60, "high_risk_cap": 0.01},
+            {"人物": {"share": 0.50}},
+            "high_risk_cap",
+        ),
+        ({}, {"人物": {"share": 0.90}}, "baseline_share"),
+        ({}, {"人物": {"share": 0.40, "baseline_share": 0.50}}, "baseline_share"),
+    ],
+)
+def test_quota_rejects_conflicting_or_illegal_bounds(kwargs, base_quotas, error):
+    with pytest.raises(ValueError, match=error):
+        derive_dynamic_quotas(
+            [],
+            base_quotas,
+            run_id=RUN_ID,
+            generated_at=GENERATED_AT,
+            **kwargs,
+        )
+
+
+def test_quota_counts_unique_sample_ids_for_the_sample_floor():
+    history = [
+        _history_row("same", "2026-09-01"),
+        _history_row("same", "2026-09-08"),
+        _history_row("same", "2026-09-08"),
+    ]
+
+    plan = derive_dynamic_quotas(
+        history,
+        {"人物": {"share": 0.50}},
+        run_id=RUN_ID,
+        generated_at=GENERATED_AT,
+    )
+
+    recommendation = plan["payload"]["recommendations"][0]
+
+    assert recommendation["sample_ids"] == ["same"]
+    assert recommendation["sample_count"] == 1
+    assert recommendation["week_count"] == 1
+    assert recommendation["data_sufficiency"] == "insufficient"
+    assert validate_quota_plan(plan) == []
+
+
+def test_quota_validator_closes_window_dates_and_count_relationships():
+    plan = derive_dynamic_quotas(
+        _four_week_history(),
+        {"人物": {"share": 0.50}},
+        run_id=RUN_ID,
+        generated_at=GENERATED_AT,
+    )
+
+    missing_window = deepcopy(plan)
+    missing_window["payload"].pop("lookback_start")
+    missing_window["payload"].pop("lookback_end")
+    errors = validate_quota_plan(missing_window)
+    assert "missing:payload:lookback_start" in errors
+    assert "missing:payload:lookback_end" in errors
+
+    outside_window = deepcopy(plan)
+    outside_window["payload"]["included_dates"] = ["1900-01-01"]
+    assert "invalid:payload:included_dates" in validate_quota_plan(outside_window)
+
+    mismatched_counts = deepcopy(plan)
+    mismatched_counts["payload"]["recommendations"][0]["sample_count"] = 1
+    mismatched_counts["payload"]["recommendations"][0]["week_count"] = 1
+    errors = validate_quota_plan(mismatched_counts)
+    assert "mismatch:recommendation:0:sample_count" in errors
+    assert "mismatch:recommendation:0:week_count" in errors
+
+
 def test_quota_validation_rejects_controller_boundary_mutation():
     plan = derive_dynamic_quotas(
         _four_week_history(),
@@ -323,9 +416,22 @@ def test_strategy_cannot_become_supported_from_correlation_alone():
     result = advance_strategy_state(_testing_strategy(), _successful_correlations())
 
     assert result["payload"]["state"] == "testing"
-    assert result["payload"]["recommended_state"] == "supported"
+    assert result["payload"]["recommended_state"] == "testing"
     assert result["payload"]["evidence_summary"]["usable_sample_count"] == 3
     assert result["payload"]["evidence_summary"]["week_count"] >= 2
+
+
+def test_correlation_only_evidence_cannot_be_supported_with_controller_approval():
+    result = advance_strategy_state(
+        _testing_strategy(),
+        _successful_correlations(),
+        controller_decision="approve_support",
+    )
+
+    assert result["payload"]["state"] == "testing"
+    assert result["payload"]["recommended_state"] == "testing"
+    assert "observational_only_evidence_cannot_support" in result["payload"]["blockers"]
+    assert "observational_only_evidence_cannot_support" in result["payload"]["errors"]
 
 
 def test_controller_approval_and_cross_week_samples_support_strategy():
@@ -365,7 +471,7 @@ def test_strategy_state_changes_require_explicit_controller_decisions():
     assert held["payload"]["state"] == "provisional"
     assert testing["payload"]["state"] == "testing"
     assert held_supported["payload"]["state"] == "testing"
-    assert held_supported["payload"]["recommended_state"] == "supported"
+    assert held_supported["payload"]["recommended_state"] == "testing"
 
 
 def test_start_testing_explicitly_updates_recommended_state():
@@ -416,6 +522,43 @@ def test_strategy_rejects_ambiguous_evidence_identity():
 
     assert result["payload"]["state"] == "testing"
     assert "missing:evidence:0:sample_id" in result["payload"]["errors"]
+
+
+def test_strategy_rejects_evidence_not_declared_by_strategy():
+    evidence = [
+        {"sample_id": "outside-1", "date": "2026-08-25", "usable": True},
+        {"sample_id": "outside-2", "date": "2026-08-26", "usable": True},
+        {"sample_id": "outside-3", "date": "2026-09-08", "usable": True},
+    ]
+
+    result = advance_strategy_state(
+        _testing_strategy(), evidence, controller_decision="approve_support"
+    )
+
+    assert result["payload"]["state"] == "testing"
+    assert result["payload"]["recommended_state"] == "testing"
+    assert "unbound:evidence:outside-1" in result["payload"]["errors"]
+    assert "evidence_not_declared_by_strategy" in result["payload"]["blockers"]
+
+
+def test_strategy_library_builder_rejects_invalid_members():
+    with pytest.raises(ValueError, match="invalid_strategy_member:0"):
+        build_strategy_library(["not-a-record"], run_id=RUN_ID, generated_at=GENERATED_AT)
+
+
+def test_strategy_library_validator_closes_auxiliary_state_fields():
+    library = build_strategy_library(
+        [_testing_strategy()], run_id=RUN_ID, generated_at=GENERATED_AT
+    )
+    invalid = deepcopy(library)
+    invalid_strategy = invalid["payload"]["strategies"][0]["payload"]
+    invalid_strategy["recommended_state"] = "published"
+    invalid_strategy["transition"] = {"from": "testing", "to": "published"}
+
+    errors = validate_strategy_library(invalid)
+
+    assert "strategy:0:invalid:recommended_state" in errors
+    assert "strategy:0:invalid:transition:to" in errors
 
 
 def test_strategy_library_rejects_duplicate_versions_and_authorization_escalation():

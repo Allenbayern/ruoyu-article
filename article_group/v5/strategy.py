@@ -24,6 +24,18 @@ _MINIMUM_WEEKS = 2
 _CONTROLLER_DECISIONS = frozenset(
     {"start_testing", "approve_support", "deprecate", "retire"}
 )
+_VALID_TRANSITIONS = frozenset(
+    {
+        (state, state)
+        for state in STRATEGY_STATES
+    }
+    | {
+        ("provisional", "testing"),
+        ("testing", "supported"),
+        ("supported", "deprecated"),
+        ("deprecated", "retired"),
+    }
+)
 _EVIDENCE_ID_FIELDS = ("sample_id", "evidence_id", "article_id", "id")
 _EVIDENCE_DATE_FIELDS = (
     "date",
@@ -32,6 +44,12 @@ _EVIDENCE_DATE_FIELDS = (
     "published_at",
     "measured_at",
     "timestamp",
+)
+_OBSERVATIONAL_FIELDS = (
+    "evidence_type",
+    "design",
+    "attribution_status",
+    "evidence_status",
 )
 
 
@@ -143,6 +161,32 @@ def _strategy_errors(
         errors.append("invalid:last_validated_at")
     if payload.get("state") not in STRATEGY_STATES:
         errors.append("invalid:state")
+    if "recommended_state" in payload:
+        if payload.get("recommended_state") not in STRATEGY_STATES:
+            errors.append("invalid:recommended_state")
+    if "transition" in payload:
+        transition = payload.get("transition")
+        if not isinstance(transition, Mapping):
+            errors.append("invalid:transition")
+        else:
+            from_state = transition.get("from")
+            to_state = transition.get("to")
+            if from_state not in STRATEGY_STATES:
+                errors.append("invalid:transition:from")
+            if to_state not in STRATEGY_STATES:
+                errors.append("invalid:transition:to")
+            if (
+                from_state in STRATEGY_STATES
+                and to_state in STRATEGY_STATES
+                and (from_state, to_state) not in _VALID_TRANSITIONS
+            ):
+                errors.append("invalid:transition")
+            if to_state in STRATEGY_STATES and to_state != payload.get("state"):
+                errors.append("invalid:transition:to")
+    if "controller_decision" in payload:
+        decision = payload.get("controller_decision")
+        if not isinstance(decision, str) or decision not in _CONTROLLER_DECISIONS:
+            errors.append("invalid:controller_decision")
     if payload.get("controller_only") is not True:
         errors.append("controller_only_must_be_true")
     if payload.get("auto_apply") is not False:
@@ -223,10 +267,30 @@ def _evidence_usable(evidence: Mapping[str, Any]) -> bool:
     return _evidence_id(evidence) is not None and _evidence_date(evidence) is not None
 
 
+def _is_observational_only(evidence: Mapping[str, Any]) -> bool:
+    if evidence.get("correlation") is True or evidence.get("observational_only") is True:
+        return True
+    if evidence.get("causal") is False:
+        return True
+    observational_values = {
+        "observational",
+        "observational_only",
+        "observational-only",
+        "correlation",
+        "correlational",
+    }
+    return any(
+        _text(evidence.get(field)).casefold() in observational_values
+        for field in _OBSERVATIONAL_FIELDS
+    )
+
+
 def _summarise_evidence(
     evidence: Sequence[Mapping[str, Any]],
+    declared_sample_ids: Sequence[str],
 ) -> tuple[dict[str, Any], list[str]]:
     errors: list[str] = []
+    declared_ids = set(declared_sample_ids)
     if isinstance(evidence, (str, bytes, bytearray)) or not isinstance(evidence, Sequence):
         return (
             {
@@ -240,12 +304,18 @@ def _summarise_evidence(
                 "sample_requirement_met": False,
                 "week_requirement_met": False,
                 "support_requirements_met": False,
+                "declared_sample_ids": sorted(declared_ids),
+                "bound_sample_ids": [],
+                "unbound_sample_ids": [],
+                "observational_only_sample_ids": [],
             },
             ["invalid:evidence"],
         )
     items = list(evidence)
     accepted: list[tuple[str, date, Mapping[str, Any]]] = []
     seen_ids: set[str] = set()
+    unbound_ids: set[str] = set()
+    observational_ids: set[str] = set()
     for index, item in enumerate(items):
         if not isinstance(item, Mapping):
             errors.append(f"invalid:evidence:{index}")
@@ -262,6 +332,12 @@ def _summarise_evidence(
             errors.append(f"duplicate:evidence:{sample_id}")
             continue
         seen_ids.add(sample_id)
+        if sample_id not in declared_ids:
+            unbound_ids.add(sample_id)
+            errors.append(f"unbound:evidence:{sample_id}")
+            continue
+        if _is_observational_only(item):
+            observational_ids.add(sample_id)
         if _evidence_usable(item):
             accepted.append((sample_id, sample_date, item))
     weeks = sorted(
@@ -287,6 +363,10 @@ def _summarise_evidence(
             sample_count >= _MINIMUM_USABLE_SAMPLES
             and week_count >= _MINIMUM_WEEKS
         ),
+        "declared_sample_ids": sorted(declared_ids),
+        "bound_sample_ids": sample_ids,
+        "unbound_sample_ids": sorted(unbound_ids),
+        "observational_only_sample_ids": sorted(observational_ids),
     }
     return summary, errors
 
@@ -324,8 +404,12 @@ def advance_strategy_state(
     result, original_payload = _result_envelope(strategy)
     payload = deepcopy(dict(original_payload))
     validation_errors = _strategy_errors(strategy)
-    summary, evidence_errors = _summarise_evidence(evidence)
+    declared_sample_ids = _copy_strings(payload.get("evidence_samples"))
+    summary, evidence_errors = _summarise_evidence(evidence, declared_sample_ids)
     errors = list(dict.fromkeys(validation_errors + evidence_errors))
+    observational_only = bool(summary["observational_only_sample_ids"])
+    if observational_only:
+        errors.append("observational_only_evidence_cannot_support")
     current_state = payload.get("state")
     if current_state not in STRATEGY_STATES:
         current_state = "provisional"
@@ -333,15 +417,24 @@ def advance_strategy_state(
         error.startswith("invalid:evidence")
         or error.startswith("missing:evidence")
         or error.startswith("duplicate:evidence")
+        or error.startswith("unbound:evidence")
         for error in evidence_errors
-    )
+    ) and not observational_only and not validation_errors
     recommended_state = current_state
-    if current_state == "testing" and support_ready:
+    if (
+        current_state == "testing"
+        and support_ready
+        and controller_decision == "approve_support"
+    ):
         recommended_state = "supported"
 
     blockers: list[str] = []
     if current_state == "testing" and not support_ready:
         blockers.append("insufficient_usable_evidence")
+    if current_state == "testing" and summary["unbound_sample_ids"]:
+        blockers.append("evidence_not_declared_by_strategy")
+    if current_state == "testing" and observational_only:
+        blockers.append("observational_only_evidence_cannot_support")
     if current_state == "testing" and support_ready:
         blockers.append("controller_approval_required")
     if current_state == "supported" and not support_ready:
@@ -353,6 +446,9 @@ def advance_strategy_state(
     ):
         errors.append("invalid:controller_decision")
         decision = None
+
+    if errors:
+        recommended_state = current_state
 
     next_state = current_state
     if not errors:
@@ -402,11 +498,20 @@ def build_strategy_library(
 ) -> dict[str, Any]:
     """Build a closed strategy library without selecting or publishing a strategy."""
 
-    items = (
-        [deepcopy(dict(strategy)) for strategy in strategies if isinstance(strategy, Mapping)]
-        if isinstance(strategies, Sequence) and not isinstance(strategies, (str, bytes, bytearray))
-        else []
-    )
+    if isinstance(strategies, (str, bytes, bytearray)) or not isinstance(strategies, Sequence):
+        raise ValueError("invalid_strategies")
+    items: list[dict[str, Any]] = []
+    for index, strategy in enumerate(strategies):
+        if not isinstance(strategy, Mapping):
+            raise ValueError(
+                f"invalid_strategy_member:{index}:invalid:strategy:{index}"
+            )
+        member_errors = _strategy_errors(strategy)
+        if member_errors:
+            raise ValueError(
+                f"invalid_strategy_member:{index}:{member_errors[0]}"
+            )
+        items.append(deepcopy(dict(strategy)))
     payload = {
         "strategies": items,
         "strategy_count": len(items),
