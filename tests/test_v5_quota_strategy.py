@@ -389,6 +389,49 @@ def test_quota_validation_checks_recommendation_bounds_and_positive_requirements
     assert "invalid:recommendation:0:share_bounds" in errors
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "error"),
+    [
+        ("min_samples", None, "invalid:recommendation:0:min_samples"),
+        ("min_weeks", None, "invalid:recommendation:0:min_weeks"),
+        ("sample_count", None, "invalid:recommendation:0:sample_count"),
+        ("sample_count", "bad", "invalid:recommendation:0:sample_count"),
+    ],
+)
+def test_quota_validator_fails_closed_on_invalid_relationship_types(field, value, error):
+    plan = derive_dynamic_quotas(
+        _four_week_history(),
+        {"人物": {"share": 0.5}},
+        run_id=RUN_ID,
+        generated_at=GENERATED_AT,
+    )
+    invalid = deepcopy(plan)
+    invalid["payload"]["recommendations"][0][field] = value
+
+    errors = validate_quota_plan(invalid)
+
+    assert error in errors
+
+
+def test_quota_validator_fails_closed_on_unhashable_state_values():
+    plan = derive_dynamic_quotas(
+        _four_week_history(),
+        {"人物": {"share": 0.5}},
+        run_id=RUN_ID,
+        generated_at=GENERATED_AT,
+    )
+    invalid = deepcopy(plan)
+    invalid["payload"]["data_sufficiency"] = {}
+    invalid["payload"]["recommendations"][0]["risk_level"] = []
+    invalid["payload"]["recommendations"][0]["data_sufficiency"] = {}
+
+    errors = validate_quota_plan(invalid)
+
+    assert "invalid:payload:data_sufficiency" in errors
+    assert "invalid:recommendation:0:risk_level" in errors
+    assert "invalid:recommendation:0:data_sufficiency" in errors
+
+
 def test_strategy_record_has_complete_fields_and_validates_through_library():
     strategy = _testing_strategy()
     library = build_strategy_library([strategy], run_id=RUN_ID, generated_at=GENERATED_AT)

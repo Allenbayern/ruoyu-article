@@ -777,7 +777,12 @@ def validate_quota_plan(plan: Mapping[str, Any]) -> list[str]:
         or (end - start).days + 1 != weeks * 7
     ):
         errors.append("invalid:payload:window")
-    if payload.get("data_sufficiency") not in {"sufficient", "partial", "insufficient"}:
+    payload_data_sufficiency = payload.get("data_sufficiency")
+    if not isinstance(payload_data_sufficiency, str) or payload_data_sufficiency not in (
+        "sufficient",
+        "partial",
+        "insufficient",
+    ):
         errors.append("invalid:payload:data_sufficiency")
     reasons = payload.get("insufficiency_reasons")
     if not isinstance(reasons, list) or any(not isinstance(reason, str) for reason in reasons):
@@ -1012,7 +1017,12 @@ def validate_quota_plan(plan: Mapping[str, Any]) -> list[str]:
             lower=0,
             upper=1,
         )
-        if recommendation.get("risk_level") not in {"low", "medium", "high"}:
+        recommendation_risk_level = recommendation.get("risk_level")
+        if not isinstance(recommendation_risk_level, str) or recommendation_risk_level not in (
+            "low",
+            "medium",
+            "high",
+        ):
             errors.append(f"invalid:{prefix}:risk_level")
         if (
             recommendation.get("risk_level") == "high"
@@ -1050,7 +1060,12 @@ def validate_quota_plan(plan: Mapping[str, Any]) -> list[str]:
             if recommendation.get("week_count") != derived_week_count:
                 errors.append(f"mismatch:{prefix}:week_count")
                 errors.append(f"invalid:{prefix}:week_count_relationship")
-            if recommendation.get("sample_count", 0) < len(parsed_dates):
+            recommendation_sample_count = recommendation.get("sample_count")
+            if (
+                isinstance(recommendation_sample_count, int)
+                and not isinstance(recommendation_sample_count, bool)
+                and recommendation_sample_count < len(parsed_dates)
+            ):
                 errors.append(f"invalid:{prefix}:sample_count_relationship")
         failure_counts = recommendation.get("failure_counts")
         if not isinstance(failure_counts, Mapping) or any(
@@ -1066,22 +1081,34 @@ def validate_quota_plan(plan: Mapping[str, Any]) -> list[str]:
         ):
             errors.append(f"invalid:{prefix}:reasons")
         data_sufficiency = recommendation.get("data_sufficiency")
-        if data_sufficiency not in {"sufficient", "insufficient"}:
+        if not isinstance(data_sufficiency, str) or data_sufficiency not in (
+            "sufficient",
+            "insufficient",
+        ):
             errors.append(f"invalid:{prefix}:data_sufficiency")
         else:
             recommendation_statuses.append(data_sufficiency)
             min_samples = recommendation.get("min_samples")
             min_weeks = recommendation.get("min_weeks")
-            expected = (
-                "sufficient"
-                if isinstance(recommendation.get("sample_count"), int)
+            valid_relationship_inputs = (
+                isinstance(recommendation.get("sample_count"), int)
+                and not isinstance(recommendation.get("sample_count"), bool)
                 and isinstance(recommendation.get("week_count"), int)
-                and recommendation["sample_count"] >= min_samples
-                and recommendation["week_count"] >= min_weeks
-                else "insufficient"
+                and not isinstance(recommendation.get("week_count"), bool)
+                and isinstance(min_samples, int)
+                and not isinstance(min_samples, bool)
+                and isinstance(min_weeks, int)
+                and not isinstance(min_weeks, bool)
             )
-            if data_sufficiency != expected:
-                errors.append(f"invalid:{prefix}:data_sufficiency_relationship")
+            if valid_relationship_inputs:
+                expected = (
+                    "sufficient"
+                    if recommendation["sample_count"] >= min_samples
+                    and recommendation["week_count"] >= min_weeks
+                    else "insufficient"
+                )
+                if data_sufficiency != expected:
+                    errors.append(f"invalid:{prefix}:data_sufficiency_relationship")
             if data_sufficiency == "insufficient" and _is_number(recommendation.get("baseline_share")) and _is_number(recommendation.get("recommended_share")) and recommendation["recommended_share"] != recommendation["baseline_share"]:
                 errors.append(f"invalid:{prefix}:baseline_retention")
 
