@@ -1,6 +1,8 @@
 # Article Group 1.0 总控层
 
-Article Group 1.0 是文章组总控层；定向抓取 V5 是其研究子系统。
+Article Group 1.0 按三层运行：Article Group 管理批次，Article Task 管理单篇文章，Crawl Task 管理该篇文章的研究。定向抓取 V3/V4/V5 只属于 Crawl Task。
+
+`article_group.article_task_v1` 提供三层状态与契约校验：`validate_group_manifest`、`validate_article_task`、`validate_crawl_task`、`validate_task_binding` 和 `validate_completion`。它不改变现有抓取状态机。
 
 ## 使用
 
