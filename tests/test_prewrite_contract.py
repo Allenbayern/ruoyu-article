@@ -192,6 +192,24 @@ def test_valid_pool_and_decisions_pass():
     assert validate_slot_decisions(decisions, candidate_ids=candidate_ids) == []
 
 
+def test_title_skeleton_is_optional_discovery_signal_not_writing_requirement():
+    from article_group.prewrite import validate_candidate_pool
+
+    pool = valid_candidate_pool()
+    del pool["candidates"][0]["title_skeleton"]
+
+    assert validate_candidate_pool(pool) == []
+
+
+def test_title_directions_are_not_allowed_in_discovery_candidates():
+    from article_group.prewrite import validate_candidate_pool
+
+    pool = valid_candidate_pool()
+    pool["candidates"][0]["title_directions"] = [{"title": "发现层不应生成标题方向"}]
+
+    assert any("title_directions" in error for error in validate_candidate_pool(pool))
+
+
 def test_two_article_daily_slot_contract_accepts_only_a_and_b():
     from article_group.prewrite import validate_slot_decisions
 

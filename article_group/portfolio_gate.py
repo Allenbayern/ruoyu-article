@@ -285,22 +285,48 @@ def collect_history(limit: int = CROSS_BATCH_WINDOW, exclude_run: str = "") -> l
                     + list(frozen_dir.glob("ruoyu-art-00*.html")),
                     key=lambda p: p.stat().st_mtime, reverse=True,
                 )
-        if not htmls:
-            continue
         titles: list[str] = []
         works: list[str] = []
         for h in htmls:  # 单篇命名（021+）下需聚合整批全部文章指纹
             t, w = _extract_titles(h)
             titles.extend(t)
             works.extend(w)
-        if not titles:
+        reader_questions: list[str] = []
+        content_fingerprints: list[str] = []
+        batch_path = batch_dir / "batch.json"
+        try:
+            batch = json.loads(batch_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            batch = {}
+        batch_articles = batch.get("articles") if isinstance(batch, dict) else None
+        if isinstance(batch_articles, list):
+            for article in batch_articles:
+                if not isinstance(article, dict):
+                    continue
+                question = _field(article, "reader_question").strip()
+                core_object = _field(article, "core_object").strip() or _field(article, "work").strip()
+                primary_atom = _field(article, "primary_atom").strip()
+                article_work_names = re.findall(r"《([^》]{1,20})》", core_object)
+                works.extend(article_work_names or ([core_object] if core_object else []))
+                article_title = _field(article, "title").strip()
+                if article_title:
+                    titles.append(article_title)
+                if question:
+                    reader_questions.append(question)
+                    content_fingerprints.append(question)
+                for value in (core_object, primary_atom):
+                    if value and value not in content_fingerprints:
+                        content_fingerprints.append(value)
+        if not titles and not content_fingerprints and not works:
             continue
         batches.append(
             {
                 "batch_dir": batch_dir.name,
-                "path": str(htmls[0]),
+                "path": str(htmls[0] if htmls else batch_path),
                 "titles": titles,
                 "works": works,
+                "reader_questions": reader_questions,
+                "content_fingerprints": content_fingerprints,
             }
         )
         if len(batches) >= limit:
@@ -345,16 +371,93 @@ def _split_title_segments(t: str) -> list[str]:
         yield seg
 
 
-def check_cross_batch(selected: list[dict], history: list[dict]) -> list[dict]:
+def interpret_history_input(value: object) -> dict:
+    """Distinguish unloaded history from a loaded window that happens to be empty.
+
+    A bare empty list is not proof that history was checked. Callers must record
+    an attempted load before claiming ``empty_history``.
+    """
+    if isinstance(value, list):
+        if value:
+            return {"history_status": "loaded", "batches": value, "attempted": True}
+        return {"history_status": "not_loaded", "batches": [], "attempted": False}
+    if isinstance(value, dict):
+        status = value.get("history_status")
+        batches = value.get("batches", [])
+        attempted = value.get("attempted") is True
+        if status == "empty_history" and attempted and batches == []:
+            return {"history_status": "empty_history", "batches": [], "attempted": True}
+        if status == "loaded" and isinstance(batches, list) and batches:
+            return {"history_status": "loaded", "batches": batches, "attempted": True}
+        if status == "not_loaded":
+            return {"history_status": "not_loaded", "batches": [], "attempted": attempted}
+    return {"history_status": "not_loaded", "batches": [], "attempted": False}
+
+
+def validate_cross_batch_report(report: object) -> list[str]:
+    if not isinstance(report, dict):
+        return ["cross_batch_report_invalid"]
+    errors: list[str] = []
+    status = report.get("history_status")
+    if report.get("checked") is True and status not in {"loaded", "empty_history"}:
+        errors.append("cross_batch_checked_without_loaded_history")
+    return sorted(set(errors))
+
+
+def check_cross_batch(
+    selected: list[dict],
+    history: list[dict],
+    *,
+    history_status: str | None = None,
+) -> list[dict]:
     issues: list[dict] = []
-    if not history:
+    if history_status is None:
+        history_status = "loaded" if history else "not_loaded"
+    if history_status == "not_loaded" or (history_status == "loaded" and not history):
+        issues.append(
+            {
+                "level": "error",
+                "id": "portfolio.cross_batch.history_not_loaded",
+                "candidate": None,
+                "message": "跨批历史未加载，不能宣称去重通过",
+            }
+        )
+        return issues
+    if history_status == "empty_history":
+        issues.append(
+            {
+                "level": "info",
+                "id": "portfolio.cross_batch.no_history",
+                "candidate": None,
+                "message": "已加载跨批历史，近窗内没有可比对批次",
+            }
+        )
+        return issues
+    if history_status != "loaded":
+        issues.append(
+            {
+                "level": "error",
+                "id": "portfolio.cross_batch.history_status_invalid",
+                "candidate": None,
+                "message": f"跨批历史状态无效：{history_status}",
+            }
+        )
         return issues
     for cand in selected:
         cid = cand.get("candidate_id")
         work = _field(cand, "work").strip()
         question = _field(cand, "reader_question").strip()
+        content_fingerprints = [
+            value
+            for value in (
+                question,
+                _field(cand, "core_object").strip(),
+                _field(cand, "primary_atom").strip(),
+            )
+            if value
+        ]
         work_names = re.findall(r"《([^》]{1,20})》", work) or ([work] if work else [])
-        if not work_names and not question:
+        if not work_names and not content_fingerprints:
             issues.append(
                 {
                     "level": "info",
@@ -365,15 +468,20 @@ def check_cross_batch(selected: list[dict], history: list[dict]) -> list[dict]:
             )
             continue
         for h in history:
-            matched_works = [w for w in h["works"] if any(wn == w for wn in work_names)]
+            matched_works = [w for w in h.get("works", []) if any(wn == w for wn in work_names)]
             best_sim = 0.0
-            best_title = ""
-            if question:
-                for t in h["titles"]:
-                    sim = SequenceMatcher(None, question, t).ratio()
-                    if sim > best_sim:
-                        best_sim, best_title = sim, t
+            best_fingerprint = ""
+            history_fingerprints = h.get("content_fingerprints", [])
+            if isinstance(history_fingerprints, list):
+                for current in content_fingerprints:
+                    for previous in history_fingerprints:
+                        if not isinstance(previous, str) or not previous.strip():
+                            continue
+                        sim = SequenceMatcher(None, current, previous).ratio()
+                        if sim > best_sim:
+                            best_sim, best_fingerprint = sim, previous
             if matched_works:
+                historical_title = (h.get("titles") or ["历史交付"])[0]
                 level = "error" if h["recent3"] else "warning"
                 issues.append(
                     {
@@ -381,7 +489,7 @@ def check_cross_batch(selected: list[dict], history: list[dict]) -> list[dict]:
                         "id": "portfolio.cross_batch.same_work.recent" if level == "error" else "portfolio.cross_batch.same_work",
                         "candidate": cid,
                         "message": (
-                            f"《{matched_works[0]}》批次 {h['batch_dir']} 已写（{h['titles'][0][:38]}…）；"
+                            f"《{matched_works[0]}》批次 {h['batch_dir']} 已写（{historical_title[:38]}…）；"
                             "须确认实质新角度/新数据"
                             + ("；近 3 批内重复，视为连续翻炒（红灯）" if level == "error" else "（黄灯）")
                         ),
@@ -394,7 +502,7 @@ def check_cross_batch(selected: list[dict], history: list[dict]) -> list[dict]:
                         "level": "error",
                         "id": "portfolio.cross_batch.title_near_duplicate",
                         "candidate": cid,
-                        "message": f"reader_question 与批次 {h['batch_dir']} 标题高度相似（sim={best_sim:.2f}）：{best_title[:38]}…",
+                        "message": f"正文问题/对象与批次 {h['batch_dir']} 内容指纹高度相似（sim={best_sim:.2f}）：{best_fingerprint[:38]}…",
                         "batch": h["batch_dir"],
                     }
                 )
@@ -404,7 +512,7 @@ def check_cross_batch(selected: list[dict], history: list[dict]) -> list[dict]:
                         "level": "warning",
                         "id": "portfolio.cross_batch.title_similar",
                         "candidate": cid,
-                        "message": f"reader_question 与批次 {h['batch_dir']} 标题相似（sim={best_sim:.2f}）：{best_title[:38]}…",
+                        "message": f"正文问题/对象与批次 {h['batch_dir']} 内容指纹相似（sim={best_sim:.2f}）：{best_fingerprint[:38]}…",
                         "batch": h["batch_dir"],
                     }
                 )
@@ -434,10 +542,12 @@ def run_checks(pool_path: str, cross_batch_window: int = 0) -> tuple[dict, int]:
     if cross_batch_window > 0 and not fatal:
         current_run = Path(pool_path).resolve().parent.name
         history = collect_history(limit=cross_batch_window, exclude_run=current_run)
-        cross_issues = check_cross_batch(selected, history)
+        history_status = "loaded" if history else "empty_history"
+        cross_issues = check_cross_batch(selected, history, history_status=history_status)
         issues.extend(cross_issues)
         cross_batch = {
             "checked": True,
+            "history_status": history_status,
             "window_batches": len(history),
             "batches": [h["batch_dir"] for h in history],
             "matches": cross_issues,

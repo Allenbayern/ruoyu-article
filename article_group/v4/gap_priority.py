@@ -193,6 +193,17 @@ def _default_node_ids(
     return sorted(result)
 
 
+def _graph_has_title_stage(graph: Mapping[str, Any]) -> bool:
+    """A title gap is meaningful only after a title node exists."""
+
+    payload = graph.get("payload", {})
+    nodes = payload.get("nodes", {}) if isinstance(payload, Mapping) else {}
+    return isinstance(nodes, Mapping) and any(
+        isinstance(node, Mapping) and node.get("node_type") == "title"
+        for node in nodes.values()
+    )
+
+
 def _source_ids(record: Mapping[str, Any]) -> tuple[list[str], bool]:
     candidates: list[object] = []
     for key in ("failed_source_ids", "source_ids", "failed_source_id", "source_id"):
@@ -339,6 +350,10 @@ def _make_gap(
 ) -> dict[str, Any] | None:
     gap_type = _canonical_gap_type(record.get("gap_type"))
     if gap_type not in GAP_TYPES:
+        return None
+    if gap_type == "title_core_fact" and not _graph_has_title_stage(graph):
+        # A title gap is a title-packaging concern.  Do not let an eager audit
+        # turn a not-yet-created title into a content-stage blocker.
         return None
     defaults = _DEFAULTS[gap_type]
     article_id = _text(record.get("article_id"))
@@ -529,6 +544,34 @@ def _graph_structural_gaps(graph: Mapping[str, Any]) -> list[dict[str, Any]]:
             )
         )
     for node_id, node in sorted(nodes.items()):
+        if not isinstance(node, Mapping) or node.get("node_type") != "opening":
+            continue
+        if node.get("status") in {"missing", "stale"}:
+            continue
+        has_claim_support = any(
+            edge.get("edge_type") == "materialized_as"
+            and isinstance(edge.get("from"), str)
+            and isinstance(known_parent := nodes.get(edge.get("from")), Mapping)
+            and known_parent.get("node_type") == "claim"
+            for edge in incoming.get(node_id, [])
+            if isinstance(edge, Mapping)
+        )
+        if has_claim_support:
+            continue
+        result.append(
+            _make_gap(
+                graph,
+                {
+                    "gap_type": "opening_support",
+                    "gap_id": f"gap:opening_support:{node_id}",
+                    "affected_nodes": [node_id],
+                    "reason": "opening has no supporting claim edge",
+                    "created_at": graph.get("generated_at", _EPOCH),
+                },
+                len(result),
+            )
+        )
+    for node_id, node in sorted(nodes.items()):
         if not isinstance(node, Mapping) or node.get("node_type") != "claim":
             continue
         supported = [
@@ -654,6 +697,8 @@ def derive_gap_tasks(
     gaps: list[dict[str, Any]] = _graph_source_gaps(graph)
     gaps.extend(_graph_structural_gaps(graph))
     for index, record in enumerate(records):
+        if record.get("gap_type") == "title_core_fact" and not _graph_has_title_stage(graph):
+            continue
         item = _make_gap(graph, record, index)
         if item is None:
             return []

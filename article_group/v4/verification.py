@@ -19,6 +19,7 @@ from .contracts import (
     new_artifact_envelope,
     parse_json_object,
     safe_relative_path,
+    sha256_file,
     validate_artifact_envelope,
 )
 from .effect_feedback import aggregate_effects, advance_pattern_lifecycle
@@ -27,6 +28,14 @@ from .gap_priority import derive_gap_tasks
 from .portfolio import build_daily_portfolio, validate_portfolio
 from .recovery import derive_recovery_actions, validate_recovery_actions
 from .template_guard import analyze_template_signals, validate_template_signals
+from ..article_first import (
+    ARTICLE_FIRST_CONTRACT_VERSION,
+    is_article_first_record,
+    validate_phase_field_boundary,
+)
+from ..content_fidelity import content_body_path, evaluate_content_fidelity
+from ..delivery import compose_delivery_markdown, validate_body_draft, validate_delivery_markdown
+from ..title_pack_fidelity import evaluate_title_pack, evaluate_title_review
 
 
 ARTIFACT_FILES = {
@@ -303,7 +312,13 @@ def _candidate_for_template(run_dir: Path) -> dict[str, Any]:
     batch = _batch(run_dir)
     articles = batch.get("articles")
     article = articles[0] if isinstance(articles, list) and articles and isinstance(articles[0], Mapping) else {}
-    draft_path = _text(article.get("draft_path") or article.get("markdown_path"))
+    draft_path = _text(
+        article.get("body_draft_path")
+        or article.get("body_path")
+        or article.get("draft_path")
+        or article.get("delivery_path")
+        or article.get("markdown_path")
+    )
     body = ""
     if draft_path:
         path = safe_relative_path(run_dir, draft_path)
@@ -539,6 +554,171 @@ def _content_status(run_dir: Path) -> tuple[str, list[str]]:
     )
     batch = _batch(run_dir)
     manifest = _load_object(run_dir, "run-manifest.json")
+    articles = batch.get("articles") if isinstance(batch, Mapping) else None
+    modern_batch = bool(
+        isinstance(batch, Mapping)
+        and (
+            batch.get("article_first_contract_version") == ARTICLE_FIRST_CONTRACT_VERSION
+            or (
+                isinstance(articles, list)
+                and any(
+                    isinstance(article, Mapping)
+                    and (
+                        is_article_first_record(article)
+                        or any(
+                            field in article
+                            for field in (
+                                "body_draft_path",
+                                "body_path",
+                                "content_fidelity_path",
+                                "content_fidelity_record_path",
+                                "title_pack_path",
+                                "title_review_path",
+                                "delivery_path",
+                            )
+                        )
+                    )
+                    for article in articles
+                )
+            )
+        )
+    )
+
+    def modern_ready_errors() -> list[str]:
+        if not modern_batch or not isinstance(articles, list):
+            return []
+        result: list[str] = []
+        for article in articles:
+            if not isinstance(article, Mapping):
+                result.append("batch_article_invalid")
+                continue
+            aid = _text(article.get("article_id")) or "?"
+            result.extend(
+                f"{aid}:{error}"
+                for error in validate_phase_field_boundary(article, "title")
+            )
+            body_raw = _text(article.get("body_draft_path") or article.get("body_path"))
+            body_path = safe_relative_path(run_dir, body_raw)
+            if body_path is None or not body_path.is_file():
+                result.append(f"{aid}:body_draft_missing_or_unsafe")
+                body_text = ""
+            else:
+                try:
+                    body_text = body_path.read_text(encoding="utf-8")
+                except (OSError, UnicodeError):
+                    result.append(f"{aid}:body_draft_unreadable")
+                    body_text = ""
+            body_errors = validate_body_draft(body_text) if body_text else ["body_draft_empty"]
+            result.extend(f"{aid}:{error}" for error in body_errors)
+
+            content_raw = _text(
+                article.get("content_fidelity_path")
+                or article.get("content_fidelity_record_path")
+            )
+            content_path = safe_relative_path(run_dir, content_raw)
+            content = (
+                _load_json(run_dir, content_raw)
+                if content_path is not None and content_path.is_file()
+                else None
+            )
+            if content is None:
+                result.append(f"{aid}:content_fidelity_missing_or_unreadable")
+            else:
+                content_report = evaluate_content_fidelity(content, body_text=body_text)
+                if content_report.get("status") != "pass":
+                    result.extend(
+                        f"{aid}:content_fidelity:{error}"
+                        for error in content_report.get("errors", [])
+                    )
+                    if not content_report.get("errors"):
+                        result.append(f"{aid}:content_fidelity_result_not_pass")
+                if content_body_path(content) != body_raw:
+                    result.append(f"{aid}:content_fidelity_body_path_mismatch")
+
+            title_raw = _text(article.get("title_pack_path"))
+            title_path = safe_relative_path(run_dir, title_raw)
+            title_pack = _load_json(run_dir, title_raw) if title_path is not None and title_path.is_file() else None
+            if title_pack is None:
+                result.append(f"{aid}:title_pack_missing_or_unreadable")
+            else:
+                title_report = evaluate_title_pack(title_pack, body_text=body_text)
+                if title_report.get("status") != "selected":
+                    result.extend(
+                        f"{aid}:title_pack:{error}"
+                        for error in title_report.get("errors", [])
+                    )
+                    if not title_report.get("errors"):
+                        result.append(f"{aid}:title_pack_result_not_selected")
+                if title_pack.get("body_path") != body_raw:
+                    result.append(f"{aid}:title_pack_body_path_mismatch")
+                content_ref = title_pack.get("content_fidelity_ref")
+                if not isinstance(content_ref, Mapping) or content_ref.get("path") != content_raw:
+                    result.append(f"{aid}:title_pack_content_fidelity_path_mismatch")
+                elif content_path is not None and content_path.is_file():
+                    try:
+                        content_hash = sha256_file(content_path)
+                    except OSError:
+                        content_hash = ""
+                    if str(content_ref.get("sha256", "")).lower() != content_hash:
+                        result.append(f"{aid}:title_pack_content_fidelity_hash_mismatch")
+            review_raw = _text(article.get("title_review_path"))
+            review_path = safe_relative_path(run_dir, review_raw)
+            title_review = _load_json(run_dir, review_raw) if review_path is not None and review_path.is_file() else None
+            if title_review is None:
+                result.append(f"{aid}:title_review_missing_or_unreadable")
+            else:
+                review_report = evaluate_title_review(title_review, title_pack=title_pack)
+                if review_report.get("status") != "pass":
+                    result.extend(
+                        f"{aid}:title_review:{error}"
+                        for error in review_report.get("errors", [])
+                    )
+                    if not review_report.get("errors"):
+                        result.append(f"{aid}:title_review_result_not_pass")
+            if title_review is not None:
+                review_ref = title_review.get("title_pack_ref")
+                if not isinstance(review_ref, Mapping) or review_ref.get("path") != title_raw:
+                    result.append(f"{aid}:title_review_title_pack_path_mismatch")
+                elif title_path is not None and title_path.is_file():
+                    try:
+                        title_hash = sha256_file(title_path)
+                    except OSError:
+                        title_hash = ""
+                    if str(review_ref.get("sha256", "")).lower() != title_hash:
+                        result.append(f"{aid}:title_review_title_pack_hash_mismatch")
+            delivery_raw = _text(article.get("delivery_path"))
+            delivery_path = safe_relative_path(run_dir, delivery_raw)
+            if delivery_path is None or not delivery_path.is_file():
+                result.append(f"{aid}:delivery_missing_or_unsafe")
+            else:
+                try:
+                    delivery_text = delivery_path.read_text(encoding="utf-8")
+                except (OSError, UnicodeError):
+                    result.append(f"{aid}:delivery_unreadable")
+                else:
+                    selected_title = ""
+                    if isinstance(title_pack, Mapping):
+                        selected_id = title_pack.get("selected_title_id")
+                        directions = title_pack.get("directions")
+                        if isinstance(directions, list):
+                            for direction in directions:
+                                if (
+                                    isinstance(direction, Mapping)
+                                    and direction.get("title_id") == selected_id
+                                ):
+                                    selected_title = _text(direction.get("title"))
+                                    break
+                    if selected_title:
+                        result.extend(
+                            f"{aid}:{error}"
+                            for error in validate_delivery_markdown(delivery_text, selected_title)
+                        )
+                        try:
+                            if compose_delivery_markdown(body_text, selected_title) != delivery_text:
+                                result.append(f"{aid}:delivery_body_mismatch")
+                        except ValueError:
+                            result.append(f"{aid}:delivery_body_mismatch")
+        return result
     sources = [item for item in (delivery, batch, manifest) if isinstance(item, Mapping)]
     for source in sources:
         authorization = source.get("publication_authorization")
@@ -550,6 +730,8 @@ def _content_status(run_dir: Path) -> tuple[str, list[str]]:
             raw_blockers = delivery.get("content_blockers")
             if isinstance(raw_blockers, list):
                 blockers.extend(item for item in (_text(value) for value in raw_blockers) if item)
+            if status == "CONTENT_READY":
+                blockers.extend(modern_ready_errors())
             return ("CONTENT_READY" if status == "CONTENT_READY" and not blockers else "CONTENT_BLOCKED", sorted(set(blockers)))
         blockers.append("content_status_missing_or_invalid")
         return "CONTENT_BLOCKED", sorted(set(blockers))
@@ -559,7 +741,6 @@ def _content_status(run_dir: Path) -> tuple[str, list[str]]:
         blockers.append("content_status_not_ready")
     if batch.get("review_surface") != "markdown_codex":
         blockers.append("content_delivery_requires_markdown_codex")
-    articles = batch.get("articles")
     if not isinstance(articles, list) or not articles:
         blockers.append("batch_articles_invalid")
     else:
@@ -567,10 +748,16 @@ def _content_status(run_dir: Path) -> tuple[str, list[str]]:
             if not isinstance(article, Mapping):
                 blockers.append("batch_article_invalid")
                 continue
-            raw_path = article.get("markdown_path") or article.get("draft_path")
+            raw_path = (
+                article.get("delivery_path")
+                or article.get("markdown_path")
+                or article.get("body_draft_path")
+                or article.get("draft_path")
+            )
             path = safe_relative_path(run_dir, raw_path)
             if path is None or path.is_symlink() or not path.is_file():
                 blockers.append(f"{_text(article.get('article_id')) or '?'}:markdown_missing_or_unsafe")
+    blockers.extend(modern_ready_errors())
     return ("CONTENT_READY" if not blockers else "CONTENT_BLOCKED", sorted(set(blockers)))
 
 

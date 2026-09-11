@@ -81,3 +81,43 @@ def test_content_delivery_record_binds_current_markdown(tmp_path: Path):
     assert result["publication_authorization"] == "not_authorized"
     assert result["articles"][0]["markdown_path"] == "drafts/art-001.md"
     assert result["articles"][0]["markdown_sha256"]
+
+
+def test_article_first_content_delivery_requires_selected_title_pack(tmp_path: Path):
+    from article_group.content_delivery import build_content_delivery_record
+
+    run_dir = tmp_path / "article-first"
+    (run_dir / "delivery").mkdir(parents=True)
+    (run_dir / "drafts").mkdir()
+    (run_dir / "review").mkdir()
+    (run_dir / "delivery" / "delivery.md").write_text(
+        "# 正式标题\n\n正文。\n", encoding="utf-8"
+    )
+    (run_dir / "drafts" / "body.md").write_text("正文。\n", encoding="utf-8")
+    _write_json = lambda path, value: path.write_text(
+        json.dumps(value, ensure_ascii=False), encoding="utf-8"
+    )
+    _write_json(run_dir / "batch.json", {
+        "run_id": "article-first",
+        "article_first_contract_version": "article-first-v1",
+        "review_surface": "markdown_codex",
+        "publication_authorization": "not_authorized",
+        "articles": [{
+            "article_id": "art-001",
+            "body_draft_path": "drafts/body.md",
+            "content_fidelity_path": "review/content.json",
+            "title_pack_path": "review/title-pack.json",
+            "delivery_path": "delivery/delivery.md",
+        }],
+    })
+    report = {
+        "verdict": "PUBLISHABLE",
+        "review_surface": "markdown_codex",
+        "publication_authorization": "not_authorized",
+        "human_judgment_items": [],
+    }
+
+    result = build_content_delivery_record(run_dir, review_report=report)
+
+    assert result["content_status"] == "CONTENT_BLOCKED"
+    assert "art-001:content_fidelity_missing_or_unreadable" in result["content_blockers"]

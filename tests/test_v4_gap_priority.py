@@ -94,6 +94,38 @@ def test_blocking_title_fact_gap_outranks_nonblocking_audience_gap():
     assert ranked[0]["gap_type"] == "title_core_fact"
 
 
+def test_title_core_fact_audit_is_ignored_before_title_node_exists():
+    graph = _graph()
+    graph["payload"]["nodes"].pop("title:art-001")
+    graph["payload"]["edges"] = [
+        edge for edge in graph["payload"]["edges"]
+        if "title:art-001" not in {edge.get("from"), edge.get("to")}
+    ]
+
+    gaps = derive_gap_tasks(
+        graph,
+        [{"gap_type": "title_core_fact", "status": "missing", "reason": "no title support"}],
+    )
+
+    assert all(item["gap_type"] != "title_core_fact" for item in gaps)
+
+
+def test_opening_support_gap_remains_active_without_claim_to_opening_edge():
+    graph = _graph()
+    graph["payload"]["edges"] = [
+        edge
+        for edge in graph["payload"]["edges"]
+        if not (
+            edge.get("to") == "opening:art-001"
+            and edge.get("edge_type") == "materialized_as"
+        )
+    ]
+
+    gaps = derive_gap_tasks(graph, [])
+
+    assert any(item["gap_type"] == "opening_support" for item in gaps)
+
+
 def test_derive_maps_all_gap_types_and_preserves_audit_details():
     audits = [
         {

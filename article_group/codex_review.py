@@ -140,16 +140,39 @@ def run_review(args: argparse.Namespace) -> int:
         ]
 
     record = _base_record(args, args.mode, command)
+    if getattr(args, "article_task_id", None):
+        record["article_task_id"] = args.article_task_id
+    if getattr(args, "article_id", None):
+        record["article_id"] = args.article_id
+    if getattr(args, "draft_path", None):
+        record["draft_path"] = args.draft_path
+    if getattr(args, "draft_sha256", None):
+        record["draft_sha256"] = args.draft_sha256
+    record["attempt"] = getattr(args, "attempt", 1) or 1
+    if getattr(args, "l2_required", False):
+        record["l2_required"] = True
+        record["l2_risk_basis"] = args.l2_risk_basis or ""
     started = datetime.now(timezone.utc)
+    run_kwargs = {
+        "cwd": args.repo,
+        "text": True,
+        "capture_output": True,
+        "check": False,
+        "env": os.environ.copy(),
+    }
+    if getattr(args, "timeout_seconds", None):
+        run_kwargs["timeout"] = args.timeout_seconds
     try:
-        completed = subprocess.run(
-            command,
-            cwd=args.repo,
-            text=True,
-            capture_output=True,
-            check=False,
-            env=os.environ.copy(),
-        )
+        completed = subprocess.run(command, **run_kwargs)
+    except subprocess.TimeoutExpired as exc:
+        record["error"] = f"codex_review_timeout:{exc}"
+        record["status"] = "UNVERIFIED"
+        record["decision"] = "timeout"
+        record["coverage_gaps"] = ["review_timeout"]
+        record["timeout_reason"] = "review_deadline_exceeded"
+        record["next_step"] = "resume_single_article" if record.get("article_task_id") else "resume_review"
+        record["scope"] = "single_article" if record.get("article_task_id") else "batch"
+        completed = None
     except OSError as exc:
         record["error"] = f"codex_invocation_failed:{exc}"
         completed = None
@@ -196,6 +219,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--base")
     parser.add_argument("--risk", choices=("L0", "L1", "L2"), default="L1")
     parser.add_argument("--schema", type=Path, default=DEFAULT_SCHEMA)
+    parser.add_argument("--timeout-seconds", type=float)
+    parser.add_argument("--article-task-id")
+    parser.add_argument("--article-id")
+    parser.add_argument("--draft-path")
+    parser.add_argument("--draft-sha256")
+    parser.add_argument("--attempt", type=int, default=1)
+    parser.add_argument("--l2-required", action="store_true")
+    parser.add_argument("--l2-risk-basis", default="")
     return parser
 
 

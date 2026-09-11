@@ -14,7 +14,15 @@ import re
 from pathlib import Path
 from typing import Any, Mapping
 
+from article_group.article_first import (
+    ARTICLE_FIRST_CONTRACT_VERSION,
+    is_article_first_record,
+    validate_phase_field_boundary,
+)
+from article_group.content_fidelity import content_body_path, evaluate_content_fidelity
+from article_group.delivery import compose_delivery_markdown, validate_body_draft, validate_delivery_markdown
 from article_group.final_review import BLOCKED, PUBLISHABLE, evaluate_batch
+from article_group.title_pack_fidelity import evaluate_title_pack, evaluate_title_review
 
 CONTENT_READY = "CONTENT_READY"
 CONTENT_BLOCKED = "CONTENT_BLOCKED"
@@ -86,9 +94,153 @@ def _safe_relative_path(root: Path, raw: object) -> Path | None:
     return resolved
 
 
-def _article_delivery_entry(root: Path, article: Mapping[str, Any]) -> dict[str, Any]:
+def _load_object(path: Path) -> dict[str, Any] | None:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _file_sha256(path: Path) -> str | None:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def _modern_article_errors(
+    root: Path,
+    article: Mapping[str, Any],
+    delivery_text: str,
+) -> tuple[list[str], str]:
+    """Validate the body → title pack → delivery chain for one modern article."""
+
+    errors: list[str] = []
+    aid = str(article.get("article_id", "?"))
+    errors.extend(validate_phase_field_boundary(article, "title"))
+
+    def required_path(*fields: str) -> tuple[str, Path | None]:
+        for field in fields:
+            raw = article.get(field)
+            if isinstance(raw, str) and raw.strip():
+                return raw, _safe_relative_path(root, raw)
+        errors.append(f"{aid}:article_first_missing:{fields[0]}")
+        return "", None
+
+    body_raw, body_path = required_path("body_draft_path", "body_path")
+    content_raw, content_path = required_path(
+        "content_fidelity_path", "content_fidelity_record_path"
+    )
+    title_raw, title_path = required_path("title_pack_path")
+    title_review_raw, title_review_path = required_path("title_review_path")
+    delivery_raw, _ = required_path("delivery_path", "markdown_path")
+    if body_path is None or not body_path.is_file():
+        errors.append(f"{aid}:body_draft_missing_or_unsafe")
+        body_text = ""
+    else:
+        try:
+            body_text = body_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            errors.append(f"{aid}:body_draft_unreadable")
+            body_text = ""
+    if body_text:
+        errors.extend(f"{aid}:{error}" for error in validate_body_draft(body_text))
+
+    content = _load_object(content_path) if content_path is not None and content_path.is_file() else None
+    if content is None:
+        errors.append(f"{aid}:content_fidelity_missing_or_unreadable")
+    else:
+        content_result = evaluate_content_fidelity(content, body_text=body_text)
+        if content_result.get("status") != "pass":
+            errors.extend(
+                f"{aid}:content_fidelity:{error}"
+                for error in content_result.get("errors", [])
+            )
+            if not content_result.get("errors"):
+                errors.append(f"{aid}:content_fidelity_result_not_pass")
+        if content_body_path(content) != body_raw:
+            errors.append(f"{aid}:content_fidelity_body_path_mismatch")
+
+    title_pack = _load_object(title_path) if title_path is not None and title_path.is_file() else None
+    if title_pack is None:
+        errors.append(f"{aid}:title_pack_missing_or_unreadable")
+        selected_title = ""
+    else:
+        title_result = evaluate_title_pack(title_pack, body_text=body_text)
+        if title_result.get("status") != "selected":
+            errors.extend(
+                f"{aid}:title_pack:{error}"
+                for error in title_result.get("errors", [])
+            )
+            if not title_result.get("errors"):
+                errors.append(f"{aid}:title_pack_result_not_selected")
+        selected_title = ""
+        selected_id = title_result.get("selected_title_id")
+        for direction in title_pack.get("directions", []):
+            if isinstance(direction, Mapping) and direction.get("title_id") == selected_id:
+                selected_title = str(direction.get("title", "")).strip()
+                break
+        if not selected_title:
+            errors.append(f"{aid}:selected_title_missing")
+        if title_pack.get("body_path") != body_raw:
+            errors.append(f"{aid}:title_pack_body_path_mismatch")
+        content_ref = title_pack.get("content_fidelity_ref")
+        if isinstance(content_ref, Mapping) and content_ref.get("path") != content_raw:
+            errors.append(f"{aid}:title_pack_content_fidelity_path_mismatch")
+        elif isinstance(content_ref, Mapping) and content_path is not None:
+            actual_hash = _file_sha256(content_path)
+            if actual_hash is None or str(content_ref.get("sha256", "")).lower() != actual_hash:
+                errors.append(f"{aid}:title_pack_content_fidelity_hash_mismatch")
+
+    title_review = (
+        _load_object(title_review_path)
+        if title_review_path is not None and title_review_path.is_file()
+        else None
+    )
+    if title_review is None:
+        errors.append(f"{aid}:title_review_missing_or_unreadable")
+    else:
+        title_review_result = evaluate_title_review(title_review, title_pack=title_pack)
+        if title_review_result.get("status") != "pass":
+            errors.extend(
+                f"{aid}:title_review:{error}"
+                for error in title_review_result.get("errors", [])
+            )
+            if not title_review_result.get("errors"):
+                errors.append(f"{aid}:title_review_result_not_pass")
+        if title_review.get("article_id") != aid:
+            errors.append(f"{aid}:title_review_article_id_mismatch")
+        review_ref = title_review.get("title_pack_ref")
+        if not isinstance(review_ref, Mapping) or review_ref.get("path") != title_raw:
+            errors.append(f"{aid}:title_review_title_pack_path_mismatch")
+        elif title_path is not None:
+            actual_hash = _file_sha256(title_path)
+            if actual_hash is None or str(review_ref.get("sha256", "")).lower() != actual_hash:
+                errors.append(f"{aid}:title_review_title_pack_hash_mismatch")
+
+    if selected_title:
+        errors.extend(f"{aid}:{error}" for error in validate_delivery_markdown(delivery_text, selected_title))
+        try:
+            if compose_delivery_markdown(body_text, selected_title) != delivery_text:
+                errors.append(f"{aid}:delivery_body_mismatch")
+        except ValueError:
+            errors.append(f"{aid}:delivery_body_mismatch")
+    if delivery_raw and article.get("delivery_path") and delivery_raw != article.get("delivery_path"):
+        errors.append(f"{aid}:delivery_path_mismatch")
+    return errors, selected_title
+
+
+def _article_delivery_entry(
+    root: Path,
+    article: Mapping[str, Any],
+    *,
+    modern: bool = False,
+) -> dict[str, Any]:
     article_id = str(article.get("article_id", ""))
-    raw_path = article.get("markdown_path")
+    raw_path = article.get("delivery_path") if modern else article.get("markdown_path")
+    if not raw_path:
+        raw_path = article.get("markdown_path")
     path = _safe_relative_path(root, raw_path)
     entry: dict[str, Any] = {
         "article_id": article_id,
@@ -102,7 +254,23 @@ def _article_delivery_entry(root: Path, article: Mapping[str, Any]) -> dict[str,
     title_match = _H1_RE.search(text)
     if not entry["title"] and title_match:
         entry["title"] = title_match.group("title").strip()
+    if modern:
+        entry["body_draft_path"] = article.get("body_draft_path", article.get("body_path", ""))
+        entry["content_fidelity_path"] = article.get(
+            "content_fidelity_path", article.get("content_fidelity_record_path", "")
+        )
+        entry["title_pack_path"] = article.get("title_pack_path", "")
+        entry["title_review_path"] = article.get("title_review_path", "")
+        entry["delivery_path"] = raw_path
+        modern_errors, selected_title = _modern_article_errors(root, article, text)
+        if selected_title:
+            entry["title"] = selected_title
+        if modern_errors:
+            entry["errors"] = modern_errors
+            entry["error"] = modern_errors[0]
     entry["markdown_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+    if modern:
+        entry["delivery_sha256"] = entry["markdown_sha256"]
     entry["cjk_chars"] = len(_CJK_RE.findall(text))
     return entry
 
@@ -151,12 +319,24 @@ def build_content_delivery_record(
     if not isinstance(articles, list):
         articles = []
         blockers.append("batch_articles_invalid")
-    entries = [_article_delivery_entry(run_dir, article) for article in articles if isinstance(article, Mapping)]
-    blockers.extend(
-        f"{entry.get('article_id', '?')}:{entry['error']}"
-        for entry in entries
-        if entry.get("error")
+    modern_batch = batch.get("article_first_contract_version") == ARTICLE_FIRST_CONTRACT_VERSION or any(
+        isinstance(article, Mapping)
+        and (is_article_first_record(article) or any(field in article for field in (
+            "body_draft_path", "body_path", "title_pack_path", "title_review_path",
+            "delivery_path", "content_fidelity_path", "content_fidelity_record_path"
+        )))
+        for article in articles
     )
+    entries = [
+        _article_delivery_entry(run_dir, article, modern=modern_batch)
+        for article in articles
+        if isinstance(article, Mapping)
+    ]
+    for entry in entries:
+        if isinstance(entry.get("errors"), list):
+            blockers.extend(error for error in entry["errors"] if isinstance(error, str))
+        elif entry.get("error"):
+            blockers.append(f"{entry.get('article_id', '?')}:{entry['error']}")
 
     return {
         "schema_version": CONTENT_DELIVERY_SCHEMA,

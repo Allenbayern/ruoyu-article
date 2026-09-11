@@ -3,8 +3,9 @@
 The protocol is deliberately additive and opt-in. This module reads a per-run
 record and immutable artifact references; it never edits a draft, changes a
 workflow state, fetches a source, grants publication authority, or sends a
-message. Human editorial judgments are recorded as attestations and are not
-replaced by text heuristics.
+message. A PASS here only means the record structure, hashes, and stage
+boundaries are complete. Editorial judgment, increment, and human confirmation
+live in article_group.editorial_judgment and are not replaced by this validator.
 """
 from __future__ import annotations
 

@@ -14,7 +14,10 @@ from typing import Any
 from .workflow import validate_delivery_authorization
 
 __all__ = [
+    "compose_delivery_markdown",
     "render_plain_text",
+    "validate_body_draft",
+    "validate_delivery_markdown",
     "write_plain_from_markdown",
     "validate_plain_delivery",
     "validate_run_plain_delivery",
@@ -25,6 +28,7 @@ _HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+")
 _BOLD_ITALIC_RE = re.compile(r"(\*\*\*|\*\*|\*|___|__|_)(.+?)\1")
 _INLINE_CODE_RE = re.compile(r"`([^`]+)`")
 _FENCE_RE = re.compile(r"^\s*```.*$")
+_H1_LINE_RE = re.compile(r"^[ \t]{0,3}#[ \t]+(?P<title>.+?)[ \t]*#?[ \t]*$")
 _REF_DEFINITION_RE = re.compile(r"^\s{0,3}\[([^\]]+)\]:\s+\S+")
 _REF_LINK_RE = re.compile(r"(?<!!)\[([^\]]+)\]\[([^\]]*)\]")
 # Residual markers that must not appear in plain deliverables.
@@ -38,6 +42,74 @@ _MARKDOWN_MARKER_RE = re.compile(
     r"|\[([^\]]+)\]\[([^\]]*)\]"  # leftover reference links
     r"|\[([^\]]+)\]\("  # leftover inline link openers
 )
+
+
+def _markdown_h1s(markdown: str) -> list[str]:
+    """Return real Markdown H1 headings, excluding fenced-code contents."""
+
+    headings: list[str] = []
+    in_fence = False
+    for raw_line in markdown.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        if _FENCE_RE.match(raw_line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        match = _H1_LINE_RE.match(raw_line)
+        if match and match.group("title").strip():
+            headings.append(match.group("title").strip())
+    return headings
+
+
+def validate_body_draft(body_text: str) -> list[str]:
+    """Validate the title-free body artifact used by the content stage."""
+
+    if not isinstance(body_text, str):
+        return ["body_draft_must_be_a_string"]
+    if not body_text.strip():
+        return ["body_draft_empty"]
+    if _markdown_h1s(body_text):
+        return ["body_draft_must_not_have_h1"]
+    return []
+
+
+def compose_delivery_markdown(body_text: str, title: str) -> str:
+    """Compose the final Markdown handoff from an already-reviewed body.
+
+    This is intentionally a one-way packaging operation.  It refuses a body
+    that already contains an H1 so a temporary title cannot silently become a
+    title candidate or a second source of truth.
+    """
+
+    body_errors = validate_body_draft(body_text)
+    if body_errors:
+        raise ValueError(body_errors[0])
+    if not isinstance(title, str) or not title.strip() or "\n" in title or "\r" in title:
+        raise ValueError("delivery_title_invalid")
+    body = body_text.replace("\r\n", "\n").replace("\r", "\n").strip()
+    return f"# {title.strip()}\n\n{body}\n"
+
+
+def validate_delivery_markdown(markdown: str, expected_title: str) -> list[str]:
+    """Validate exactly one formal H1 and its binding to the selected title."""
+
+    if not isinstance(markdown, str):
+        return ["delivery_markdown_must_be_a_string"]
+    if not isinstance(expected_title, str) or not expected_title.strip():
+        return ["delivery_title_expected_invalid"]
+    headings = _markdown_h1s(markdown)
+    errors: list[str] = []
+    if len(headings) != 1:
+        errors.append("delivery_h1_count_invalid")
+    elif headings[0] != expected_title.strip():
+        errors.append("delivery_title_mismatch")
+    body_lines = [
+        line for line in markdown.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        if line.strip() and not _H1_LINE_RE.match(line)
+    ]
+    if not body_lines:
+        errors.append("delivery_body_missing")
+    return errors
 
 
 def _replace_balanced_bracket_dest(text: str, *, image: bool) -> str:

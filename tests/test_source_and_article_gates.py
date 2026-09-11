@@ -450,3 +450,93 @@ def test_article_short_draft_is_rejected_by_article_stage(tmp_path: Path):
     }
     errors = validate_article_stage(article, set(), tmp_path)
     assert any("count" in err.lower() or "character" in err.lower() or "1000" in err for err in errors)
+
+
+def test_article_first_stage_validates_body_artifact_without_legacy_title_inputs(tmp_path: Path):
+    from article_group.prewrite import validate_article_stage
+
+    _want_text(
+        "## 关系转向\n\n人物在门口停下来，问题从这里开始。\n",
+        tmp_path / "drafts" / "art-A" / "body_draft.md",
+    )
+    article = {
+        "article_id": "art-A",
+        "article_first_contract_version": "article-first-v1",
+        "state": "drafting_content",
+        "body_draft_path": "drafts/art-A/body_draft.md",
+        "reader_question": "人物为什么改变选择？",
+        "html_delivery_state": "withheld",
+        "publication_authorization": "not_authorized",
+    }
+
+    errors = validate_article_stage(article, set(), tmp_path)
+
+    assert errors == []
+
+
+def test_article_first_brief_locked_does_not_require_body_file(tmp_path: Path):
+    from article_group.prewrite import validate_article_stage
+
+    article = {
+        "article_id": "art-A",
+        "article_first_contract_version": "article-first-v1",
+        "state": "brief_locked",
+        "body_draft_path": "drafts/art-A/body_draft.md",
+        "reader_question": "人物为什么改变选择？",
+        "html_delivery_state": "withheld",
+        "publication_authorization": "not_authorized",
+    }
+
+    assert validate_article_stage(article, set(), tmp_path) == []
+
+
+def test_article_first_stage_rejects_h1_and_hidden_title_fields(tmp_path: Path):
+    from article_group.prewrite import validate_article_stage
+
+    _want_text(
+        "# 临时标题\n\n正文仍然只是正文。\n",
+        tmp_path / "drafts" / "art-A" / "body_draft.md",
+    )
+    article = {
+        "article_id": "art-A",
+        "article_first_contract_version": "article-first-v1",
+        "state": "drafting_content",
+        "body_draft_path": "drafts/art-A/body_draft.md",
+        "title_skeleton": "发现层信号，不得进入写作",
+        "title_promise": "旧的标题承诺",
+        "html_delivery_state": "withheld",
+        "publication_authorization": "not_authorized",
+    }
+
+    errors = validate_article_stage(article, set(), tmp_path)
+
+    assert "article_art-A_body_draft_must_not_have_h1" in errors
+    assert "forbidden_content_field:title_skeleton" in errors
+    assert "forbidden_precontent_field:title_promise" in errors
+
+
+def test_article_first_content_review_binds_content_record_to_body_draft(tmp_path: Path):
+    from article_group.prewrite import validate_article_stage
+
+    body = "对象在车站等人。\n\n他最终选择离开。\n"
+    _want_text(body, tmp_path / "drafts" / "art-A" / "body_draft.md")
+    _want_text(
+        '{"schema_version":"article-content-fidelity-v1","article_id":"art-A",'
+        '"body_path":"drafts/art-A/body_draft.md","body_sha256":"bad"}',
+        tmp_path / "review" / "art-A" / "content-fidelity.json",
+    )
+    article = {
+        "article_id": "art-A",
+        "article_first_contract_version": "article-first-v1",
+        "state": "content_review",
+        "body_draft_path": "drafts/art-A/body_draft.md",
+        "content_fidelity_path": "review/art-A/content-fidelity.json",
+        "reader_question": "人物为什么离开？",
+        "html_delivery_state": "withheld",
+        "publication_authorization": "not_authorized",
+    }
+
+    errors = validate_article_stage(article, set(), tmp_path)
+
+    assert any("content_fidelity" in error for error in errors)
+    assert any("body_hash" in error or "fidelity" in error for error in errors)

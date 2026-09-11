@@ -88,6 +88,12 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _review_markdown_path(article: dict[str, Any]) -> object:
+    """Use final delivery.md for article-first records, legacy markdown otherwise."""
+
+    return article.get("delivery_path") or article.get("markdown_path")
+
+
 def build_markdown_review_evidence(
     root: Path, articles: Iterable[dict[str, Any]], *, run_id: str | None = None
 ) -> dict[str, Any]:
@@ -100,7 +106,7 @@ def build_markdown_review_evidence(
             raise ValueError("markdown_evidence_article_id_invalid")
         if article_id in entries:
             raise ValueError(f"markdown_evidence_article_duplicate:{article_id}")
-        raw_path = article.get("markdown_path")
+        raw_path = _review_markdown_path(article)
         target = _resolve_inside(root, raw_path)
         if target is None:
             raise ValueError(f"markdown_evidence_path_unsafe:{article_id}")
@@ -172,7 +178,7 @@ def validate_markdown_review_evidence(
             errors.append(f"markdown_evidence_entry_invalid:{article_id}")
             continue
         declared_path = entry.get("markdown_path")
-        expected_path = article.get("markdown_path")
+        expected_path = _review_markdown_path(article)
         if declared_path != expected_path:
             errors.append(f"markdown_evidence_path_mismatch:{article_id}")
         target = _resolve_inside(root, declared_path)

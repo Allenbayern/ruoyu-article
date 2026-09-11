@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 from typing import Any, Mapping
 
+from ..article_first import ARTICLE_FIRST_CONTRACT_VERSION
 from .contracts import NODE_TYPES, new_artifact_envelope, safe_relative_path, sha256_file, validate_artifact_envelope
 
 _SCHEMA = "v4-evidence-graph-v1"
@@ -194,11 +195,31 @@ def _merge_article(
     return merged
 
 
+def _is_article_first_article(article: Mapping[str, Any]) -> bool:
+    return bool(
+        article.get("article_first_contract_version") == ARTICLE_FIRST_CONTRACT_VERSION
+        or any(
+            isinstance(article.get(field), str) and article.get(field).strip()
+            for field in (
+                "body_draft_path",
+                "body_path",
+                "content_fidelity_path",
+                "content_fidelity_record_path",
+                "title_pack_path",
+                "title_review_path",
+                "delivery_path",
+            )
+        )
+    )
+
+
 def _draft_locators(
     root: Path,
     draft_path: str,
     expected_title: str = "",
     errors: list[str] | None = None,
+    *,
+    require_h1: bool = True,
 ) -> tuple[str, str, list[tuple[str, list[str]]], dict[str, str]]:
     path = safe_relative_path(root, draft_path)
     if path is None or not path.is_file():
@@ -213,26 +234,42 @@ def _draft_locators(
         return "", "", [], {}
 
     h1s: list[tuple[int, str]] = []
+    in_fence = False
     for line_number, line in enumerate(lines, 1):
+        if re.match(r"^[ \t]*```", line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
         match = re.match(r"^[ \t]{0,3}#[ \t]+(.+?)[ \t]*#?[ \t]*$", line)
         if match:
             heading = match.group(1).strip()
             if heading:
                 h1s.append((line_number, heading))
     title_locator = ""
-    if len(h1s) != 1:
-        if errors is not None:
-            errors.append(f"invalid:h1:{draft_path}:count={len(h1s)}")
-    else:
-        heading = h1s[0][1]
-        title_locator = f"h1:{heading}"
-        if expected_title and heading != expected_title.strip():
+    if require_h1:
+        if len(h1s) != 1:
             if errors is not None:
-                errors.append(f"mismatch:title:{draft_path}")
+                errors.append(f"invalid:h1:{draft_path}:count={len(h1s)}")
+        else:
+            heading = h1s[0][1]
+            title_locator = f"h1:{heading}"
+            if expected_title and heading != expected_title.strip():
+                if errors is not None:
+                    errors.append(f"mismatch:title:{draft_path}")
+    elif h1s and errors is not None:
+        errors.append(f"invalid:body_h1:{draft_path}:count={len(h1s)}")
 
-    blocks: list[tuple[str, str]] = []; block: list[str] = []; section = ""
+    blocks: list[tuple[str, str]] = []; block: list[str] = []; section = ""; in_fence = False
     for line in lines:
         value = line.strip()
+        if re.match(r"^```", value):
+            if block:
+                blocks.append((section, " ".join(block))); block = []
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
         if re.match(r"^#{1,6}(?:[ \t]+|$)", value):
             if block: blocks.append((section, " ".join(block))); block = []
             if value.startswith("## "):
@@ -442,16 +479,83 @@ def build_evidence_graph(run_root: Path, batch: Mapping[str, Any]) -> dict[str, 
                     _put_node(nodes, _node(root, f"source:{sid}", "source", spath, source_role=role), build_errors)
                     if locator:
                         _edge(edges, f"source:{sid}", "captured_as", mn, locator, generated_at)
-        draft_path = _text(article.get("draft_path")); title_loc, opening_loc, paragraph_data, locator_map = _draft_locators(root, draft_path, _text(article.get("title") or article.get("subject")), build_errors)
-        title, opening = f"title:{aid}", f"opening:{aid}"
-        _put_node(nodes, _node(root, title, "title", draft_path, locator=title_loc), build_errors)
-        _put_node(nodes, _node(root, opening, "opening", draft_path, locator=opening_loc), build_errors)
+        modern = _is_article_first_article(article)
+        body_path = _text(article.get("body_draft_path") or article.get("body_path") or article.get("draft_path"))
+        delivery_path = _text(article.get("delivery_path") or article.get("markdown_path") or article.get("draft_path"))
+        content_review_path = _text(
+            article.get("content_review_path")
+            or article.get("content_fidelity_path")
+            or article.get("review_path")
+        )
+        title_pack_path = _text(article.get("title_pack_path"))
+        title_review_path = _text(article.get("title_review_path"))
+        title_pack = _read_json(root, title_pack_path) if modern and title_pack_path else {}
+        if modern and title_pack_path and not title_pack:
+            build_errors.append(f"malformed:title_pack:{title_pack_path}")
+
+        selected_direction: Mapping[str, Any] | None = None
+        if modern and title_pack.get("result") == "selected":
+            selected_id = _text(title_pack.get("selected_title_id"))
+            directions = title_pack.get("directions", [])
+            if isinstance(directions, list):
+                selected_direction = next(
+                    (
+                        item
+                        for item in directions
+                        if isinstance(item, Mapping)
+                        and (
+                            (selected_id and item.get("title_id") == selected_id)
+                            or (not selected_id and item.get("selected") is True)
+                        )
+                    ),
+                    None,
+                )
+        selected_title = _text(selected_direction.get("title")) if selected_direction else ""
+        title_enabled = not modern or selected_direction is not None
+        title_loc, opening_loc, paragraph_data, locator_map = _draft_locators(
+            root,
+            body_path,
+            _text(article.get("title") or article.get("subject")),
+            build_errors,
+            require_h1=not modern,
+        )
+        title = f"title:{aid}"
+        opening = f"opening:{aid}"
+        if title_enabled and modern:
+            title_loc, _, _, _ = _draft_locators(
+                root,
+                delivery_path,
+                selected_title,
+                build_errors,
+                require_h1=True,
+            )
+        if title_enabled:
+            _put_node(
+                nodes,
+                _node(
+                    root,
+                    title,
+                    "title",
+                    delivery_path if modern else body_path,
+                    locator=title_loc,
+                ),
+                build_errors,
+            )
+        _put_node(nodes, _node(root, opening, "opening", body_path, locator=opening_loc), build_errors)
         for primary, aliases in paragraph_data:
-            _put_node(nodes, _node(root, f"paragraph:{aid}:{primary}", "paragraph", draft_path, locator=primary, locators=aliases), build_errors)
+            _put_node(nodes, _node(root, f"paragraph:{aid}:{primary}", "paragraph", body_path, locator=primary, locators=aliases), build_errors)
         current_claims = {claim_id: fact_by_id[claim_id] for claim_id in claim_ids if claim_id in fact_by_id}
-        title_claim_ids = _title_claim_ids(article, topic, current_claims, build_errors, aid)
-        for claim_id in title_claim_ids:
-            if claim_id in fact_by_id: _edge(edges, f"claim:{aid}:{claim_id}", "materialized_as", title, "title", generated_at)
+        title_claim_ids: list[str] = []
+        if title_enabled:
+            title_article = dict(article)
+            if modern and selected_title:
+                title_article["title"] = selected_title
+            if modern and selected_direction and selected_direction.get("claim_ids") is not None:
+                title_article["title_claim_ids"] = selected_direction.get("claim_ids")
+            title_claim_ids = _title_claim_ids(title_article, topic, current_claims, build_errors, aid)
+            for claim_id in title_claim_ids:
+                if claim_id in fact_by_id:
+                    _edge(edges, f"claim:{aid}:{claim_id}", "materialized_as", title, "title", generated_at)
         for cid, lc in ledger_claims.items():
             for loc in [x.strip() for x in _text(lc.get("draft_locator")).split(";") if x.strip()]:
                 primary = locator_map.get(loc)
@@ -459,8 +563,45 @@ def build_evidence_graph(run_root: Path, batch: Mapping[str, Any]) -> dict[str, 
                 paragraph_target = f"paragraph:{aid}:{primary}"
                 _edge(edges, f"claim:{aid}:{cid}", "materialized_as", paragraph_target, loc, generated_at)
                 if loc == opening_loc: _edge(edges, f"claim:{aid}:{cid}", "materialized_as", opening, loc, generated_at)
-        review_path = _text(article.get("review_path")); review = _read_required(root, review_path, f"review:{aid}", build_errors); rid = _text(review.get("article_id")) or aid; rn = f"review:{aid}:{rid}"; _put_node(nodes, _node(root, rn, "review", review_path, locator=review_path), build_errors)
-        for component in [title, opening, *[key for key in nodes if key.startswith(f"paragraph:{aid}:")]]: _edge(edges, component, "reviewed_by", rn, review_path, generated_at)
+        review_path = content_review_path
+        review = _read_required(root, review_path, f"review:{aid}", build_errors)
+        rid = _text(review.get("review_id") or review.get("article_id")) or aid
+        if modern:
+            content_review = f"review:{aid}:content:{rid}"
+            _put_node(
+                nodes,
+                _node(
+                    root,
+                    content_review,
+                    "review",
+                    review_path,
+                    locator=review_path,
+                    review_stage="content",
+                ),
+                build_errors,
+            )
+            for component in [opening, *[key for key in nodes if key.startswith(f"paragraph:{aid}:")]]:
+                _edge(edges, component, "reviewed_by", content_review, review_path, generated_at)
+            if title_enabled:
+                title_review_artifact = title_review_path or title_pack_path or review_path
+                title_review = f"review:{aid}:title:{title_review_artifact or rid}"
+                _put_node(
+                    nodes,
+                    _node(
+                        root,
+                        title_review,
+                        "review",
+                        title_review_artifact,
+                        locator=title_review_artifact,
+                        review_stage="title",
+                    ),
+                    build_errors,
+                )
+                _edge(edges, title, "reviewed_by", title_review, title_review_artifact, generated_at)
+        else:
+            rn = f"review:{aid}:{rid}"
+            _put_node(nodes, _node(root, rn, "review", review_path, locator=review_path), build_errors)
+            for component in [title, opening, *[key for key in nodes if key.startswith(f"paragraph:{aid}:")]]: _edge(edges, component, "reviewed_by", rn, review_path, generated_at)
     edges.sort(key=lambda x: (x["from"], x["edge_type"], x["to"], x["locator"])); payload: dict[str, Any] = {"nodes": nodes, "edges": edges}
     if build_errors: payload["build_errors"] = sorted(set(build_errors))
     graph = new_artifact_envelope(_SCHEMA, run_id, payload, generated_at=generated_at)

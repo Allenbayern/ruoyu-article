@@ -256,6 +256,196 @@ def _make_markdown_batch(root: Path) -> Path:
     return batch
 
 
+def test_modern_final_review_blocks_without_selected_title_package(tmp_path: Path):
+    batch = tmp_path / "article-first-999"
+    (batch / "review").mkdir(parents=True)
+    (batch / "drafts").mkdir()
+    (batch / "delivery").mkdir()
+    body = "## 关系转向\n\n正文先交代人物和问题。\n"
+    (batch / "drafts" / "body.md").write_text(body, encoding="utf-8")
+    _write_json(batch / "review" / "content-fidelity.json", {"placeholder": True})
+    _write_json(batch / "review" / "title-pack.json", {
+        "schema_version": "article-title-pack-v1",
+        "article_id": "art-001",
+        "body_path": "drafts/body.md",
+        "body_sha256": hashlib.sha256(body.encode()).hexdigest(),
+        "content_fidelity_ref": {
+            "path": "review/content-fidelity.json",
+            "sha256": hashlib.sha256((batch / "review" / "content-fidelity.json").read_bytes()).hexdigest(),
+        },
+        "created_after_content_pass": True,
+        "result": "return_article",
+        "directions": [],
+        "return_reason": "正文仍需补材料",
+    })
+    _write_json(batch / "batch.json", {
+        "run_id": "article-first-999",
+        "article_first_contract_version": "article-first-v1",
+        "review_surface": "markdown_codex",
+        "articles": [{
+            "article_id": "art-001",
+            "body_draft_path": "drafts/body.md",
+            "content_fidelity_path": "review/content-fidelity.json",
+            "title_pack_path": "review/title-pack.json",
+            "delivery_path": "delivery/delivery.md",
+            "reader_question": "人物为什么改变选择？",
+        }],
+    })
+    _write_json(batch / "preflight-report.json", {"status": "PASS"})
+
+    report = evaluate_batch(batch)
+
+    assert report["verdict"] == BLOCKED
+    assert report["reason"] in {"gate:title_pack", "gate:content_contract"}
+
+
+def test_modern_final_review_accepts_a_current_selected_title_package(tmp_path: Path):
+    from article_group.content_fidelity import CONTENT_FIDELITY_SCHEMA
+    from article_group.delivery import compose_delivery_markdown
+    from article_group.review_surface import build_markdown_review_evidence
+    from article_group.style_gate import validate_markdown_file
+
+    batch = tmp_path / "article-first-selected"
+    (batch / "review" / "scoring").mkdir(parents=True)
+    articles = []
+    for index, article_id in enumerate(("art-001", "art-002"), start=1):
+        body_path = batch / "drafts" / article_id / "body_draft.md"
+        content_path = batch / "review" / article_id / "content-fidelity.json"
+        title_path = batch / "review" / article_id / "title-pack.json"
+        delivery_path = batch / "delivery" / article_id / "delivery.md"
+        body_path.parent.mkdir(parents=True)
+        content_path.parent.mkdir(parents=True)
+        delivery_path.parent.mkdir(parents=True)
+        body = (
+            f"《测试片{index}》于2026年上映，把人物对象和核心问题放在第一段。\n\n"
+            "门口发生了第2场争执，人物随后选择留下。\n\n"
+            "这个动作改变了两人的关系，也解释了问题为什么成立。\n\n"
+            "第3个具体场面继续展开，读者可以据此形成自己的判断。\n"
+            + "具体细节继续落在人物和场面的变化上。" * 120
+            + "\n"
+        )
+        body_path.write_text(body, encoding="utf-8")
+        body_hash = hashlib.sha256(body.encode()).hexdigest()
+        content = {
+            "schema_version": CONTENT_FIDELITY_SCHEMA,
+            "article_id": article_id,
+            "body_path": f"drafts/{article_id}/body_draft.md",
+            "body_sha256": body_hash,
+            "core_object": f"《测试片{index}》",
+            "reader_question": "这个动作为什么改变关系？",
+            "explanation_mechanism": "具体动作改变关系位置",
+            "mechanism_locator": "p3",
+            "reader_takeaway": "先看动作，再判断关系变化。",
+            "reader_takeaway_locator": "p4",
+            "hard_information": [
+                {"information_id": "i1", "text": "人物对象", "kind": "fact", "body_locator": "p1", "source_locators": ["source-1#fact"], "independence_key": "object"},
+                {"information_id": "i2", "text": "门口争执", "kind": "scene", "body_locator": "p2", "source_locators": ["source-1#scene"], "independence_key": "scene"},
+                {"information_id": "i3", "text": "选择留下", "kind": "action", "body_locator": "p2", "source_locators": ["source-1#action"], "independence_key": "action"},
+            ],
+                "section_increments": [
+                    {"section_id": "s1", "body_locator": "p1", "reader_gain": "对象", "gain_kind": "fact", "material_refs": ["source-1"]},
+                    {"section_id": "s2", "body_locator": "p2", "reader_gain": "场面", "gain_kind": "scene", "material_refs": ["source-1"]},
+                    {"section_id": "s3", "body_locator": "p3", "reader_gain": "机制", "gain_kind": "mechanism", "material_refs": ["source-1"]},
+                    {"section_id": "s4", "body_locator": "p4", "reader_gain": "判断", "gain_kind": "judgment", "material_refs": ["source-1"]},
+                ],
+            "standalone_check": {"status": "pass", "object_locator": "p1", "problem_locator": "p1", "explanation_locator": "p3", "judgment_locator": "p4"},
+            "result": "pass",
+        }
+        _write_json(content_path, content)
+        title = f"《测试片{index}》这场争执改变了什么？"
+        title_pack = {
+            "schema_version": "article-title-pack-v1",
+            "article_id": article_id,
+            "body_path": f"drafts/{article_id}/body_draft.md",
+            "body_sha256": body_hash,
+            "content_fidelity_ref": {
+                "path": f"review/{article_id}/content-fidelity.json",
+                "sha256": hashlib.sha256(content_path.read_bytes()).hexdigest(),
+            },
+            "created_after_content_pass": True,
+            "result": "selected",
+            "selected_title_id": "t1",
+            "directions": [{
+                "title_id": "t1",
+                "title": title,
+                "distinct_angle": "动作如何改变关系",
+                "body_locators": ["p2"],
+                "source_locators": ["source-1#scene"],
+                "selected": True,
+            }],
+        }
+        _write_json(title_path, title_pack)
+        title_review_path = batch / "review" / article_id / "title-pack-review.json"
+        _write_json(title_review_path, {
+            "schema_version": "article-title-review-v1",
+            "article_id": article_id,
+            "title_pack_ref": {
+                "path": f"review/{article_id}/title-pack.json",
+                "sha256": hashlib.sha256(title_path.read_bytes()).hexdigest(),
+            },
+            "created_after_title_packaging": True,
+            "result": "pass",
+            "selected_title_id": "t1",
+        })
+        delivery_path.write_text(compose_delivery_markdown(body, title), encoding="utf-8")
+        articles.append({
+            "article_id": article_id,
+            "work": f"《测试片{index}》",
+            "reader_question": "这个动作为什么改变关系？",
+            "body_draft_path": f"drafts/{article_id}/body_draft.md",
+            "content_fidelity_path": f"review/{article_id}/content-fidelity.json",
+            "title_pack_path": f"review/{article_id}/title-pack.json",
+            "title_review_path": f"review/{article_id}/title-pack-review.json",
+            "delivery_path": f"delivery/{article_id}/delivery.md",
+            "html_delivery_state": "not_requested",
+            "publication_authorization": "not_authorized",
+        })
+
+    payload = {
+        "run_id": "article-first-selected",
+        "article_first_contract_version": "article-first-v1",
+        "review_surface": "markdown_codex",
+        "articles": articles,
+    }
+    _write_json(batch / "batch.json", payload)
+    _write_json(batch / "preflight-report.json", {"status": "PASS", "run_id": payload["run_id"]})
+    _write_json(batch / "review" / "markdown-review-evidence.json", build_markdown_review_evidence(batch, articles, run_id=payload["run_id"]))
+    prose_articles = []
+    for article in articles:
+        delivery = batch / article["delivery_path"]
+        style = validate_markdown_file(delivery, hook="争执")
+        _write_json(batch / "review" / f"style-gate-markdown-{article['article_id']}.json", style)
+        cjk = style["articles"][0]["char_count"]
+        _write_json(batch / "review" / "scoring" / f"{article['article_id']}.json", {
+            "total_score": 87,
+            "evidence_score": 20,
+            "original_judgment_score": 18,
+            "information_gain_score": 17,
+            "structure_score": 13,
+            "title_value_score": 9,
+            "readability_score": 5,
+            "compliance_score": 5,
+            "markdown_path": article["delivery_path"],
+            "markdown_sha256": hashlib.sha256(delivery.read_bytes()).hexdigest(),
+            "first_screen_value": "开头给出具体对象和场面",
+            "reader_takeaway": "先看动作，再判断关系变化。",
+            "reader_takeaway_locator": "p4",
+            "body_fulfillment": "正文在场面和机制段落完成判断",
+        })
+        prose_articles.append({"title": style["articles"][0]["title"], "chars": cjk})
+    _write_json(batch / "review" / "prose-pilot-report.json", {"advisory": True, "batches": [{"name": "article-first-selected", "articles": prose_articles}]})
+
+    report = evaluate_batch(batch)
+
+    assert report["verdict"] == PUBLISHABLE, report
+
+    (batch / articles[0]["title_review_path"]).unlink()
+    missing_title_review = evaluate_batch(batch)
+    assert missing_title_review["verdict"] == BLOCKED
+    assert missing_title_review["reason"] == "gate:title_pack"
+    assert "title_review_missing_or_unreadable" in missing_title_review["errors"]
+
+
 def test_evidence_missing_batch_json(tmp_path: Path) -> None:
     batch = tmp_path / "controlled-888"
     batch.mkdir(parents=True)
@@ -611,6 +801,16 @@ def test_markdown_surface_is_publishable_without_html_or_preview_evidence(tmp_pa
     assert report["verdict"] == PUBLISHABLE
     assert report["review_surface"] == "markdown_codex"
     assert "preview_mode" not in report
+
+
+def test_empty_portfolio_history_file_cannot_pass_cross_batch(tmp_path: Path) -> None:
+    batch = _make_markdown_batch(tmp_path)
+    (batch / "portfolio-history.json").write_text("[]\n", encoding="utf-8")
+
+    report = evaluate_batch(batch)
+
+    assert report["verdict"] == BLOCKED
+    assert "cross_batch" in str(report.get("reason", ""))
 
 
 def test_markdown_surface_missing_evidence_blocks_without_html_fallback(tmp_path: Path) -> None:

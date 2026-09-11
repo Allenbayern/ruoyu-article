@@ -2,7 +2,7 @@
 
 - article_id:
 - batch_id:
-- state:
+- state: `brief_locked | drafting_content | content_review | content_passed | title_packaging | title_review | final_review | delivered`
 - editorial_lessons_ref: `docs/codex/editorial-lessons.md`（历史经验参考；不替代当前来源、门禁或授权判断）
 
 ## Intake And Historical Dedupe
@@ -10,28 +10,31 @@
 - [ ] Topic-card JSON snapshot is present under the current run root and its path/version/SHA-256 are recorded in the review record.
 - [ ] `freshness_window`, `topic_mode`, `event_cluster_id` and `remove_timestamp_test` agree with the candidate card and batch portfolio result.
 - [ ] For `same-day`/`fermenting-1-3d`, the current trigger, observation time and revalidation boundary are recorded; for `revival`, the durable reader question and evergreen reason are recorded without implying current heat.
-- [ ] Historical comparison covers the same work, event cluster and near-duplicate titles; `new_angle_statement` names a new fact, concrete scene, relationship or reader question. A title wording change alone does not pass.
+- [ ] Historical comparison covers the same work, event cluster and near-duplicate titles; `new_angle_statement` names a new fact, concrete scene, relationship or reader question. A title wording change alone does not pass. Historical titles are comparison evidence only.
 - [ ] A `same_work_recent_check` or `title_near_duplicate_check` marked `override` includes the reason, comparison run/path and verifier; `blocked` does not enter writing.
 
 ## Content
 
 - [ ] Specific work, person, event, or conflict remains central.
 - [ ] Primary Atom is singular and fulfilled.
-- [ ] At least two types of concrete support appear.
-- [ ] The concrete support includes source ID + locator + draft locator for at least two different support types (for example a person/action, scene or page detail, timeline, number, or documented relationship); if the source provides no scene, the brief records the factual-anchor fallback and leaves the scene unwritten.
+- [ ] At least three independently supported hard-information items appear, from at least two of `fact | scene | action | relationship | mechanism | specific_context`; a reader paraphrase is not a hard information item.
+- [ ] Each hard-information item has a body locator, source locator, and unique independence key; no item is the same fact rewritten.
 - [ ] Chinese character count uses the style-gate CJK count; 1500–2200 is the usual target, with a 1000–2700 flexible acceptance band when the article is complete and readable.
-- [ ] Title is 30 Chinese characters or fewer and matches the body promise.
-- [ ] Each title candidate has a distinct angle and evidence reference; the opening begins to fulfill the selected promise with concrete supported content, with a draft locator. Repeating the title's question or page label is not fulfillment. The candidate count follows the topic and is not padded.
-- [ ] The existing independent reviewer selects from candidates before seeing author scores or ranking, gives reasons for accepting/rejecting them, and may reject all. Scores alone do not establish editorial quality.
-- title_qc_ref:
-- title_qc_draft_path:
-- title_qc_draft_sha256:
-- selected_title_id:
-- opening_fulfillment_locator:
+- [ ] Each major paragraph adds a fact, scene, action, relationship, mechanism, specific context, or judgment; repeated conclusions are returned instead of padded.
+- [ ] The title-free body identifies the object, problem, explanation, and judgment through body locators; `body_draft.md` contains no H1.
+- [ ] `reader_takeaway` is written after content review and points to an actual body locator; it is not a prewrite title target.
 - [ ] The outline uses only as many evidence-backed turns as the article needs; empty optional reversal fields are allowed and no third reversal is added for format compliance.
 - [ ] The ending is either an evidence-backed reader question, a conclusion, or deliberately has no question; a question is not required for engagement metrics.
 - [ ] No internal editorial, source, or growth terminology leaks into reader text.
-- [ ] Each paragraph adds a fact, action, attributed view, or supported analysis; repeated conclusions are merged and missing material is recorded rather than replaced with abstract filler. Natural-language review assesses sentences and paragraphs, not isolated words.
+
+## Title Packaging After Content Pass
+
+- [ ] `title_pack.json` exists only after `content_passed`; its body hash matches the current `body_draft.md`.
+- [ ] There are zero to three title directions. A selected result has exactly one selected direction; a return result has no selected direction and a return reason.
+- [ ] Every direction has a distinct angle, body locators, and source locators; `title_core_fact` checks happen here, not during body writing.
+- [ ] If a direction needs a new body fact, the package returns to content review; if it needs new evidence, it returns to material intake. Title packaging never appends or requests automatic body text.
+- [ ] `title-pack-review.json` binds the selected direction to the current title-pack path and SHA-256.
+- [ ] `delivery.md` is composed from the unchanged body and the selected formal H1; it has exactly one H1.
 
 ## Evidence And Originality
 
@@ -69,7 +72,7 @@
 - [ ] Worker input is a structured extract/fact card, not raw HTML.
 - [ ] Independent review report is attached.
 - [ ] No unresolved blocker or major finding remains.
-- [ ] Title-QC and existing evidence/review records identify the same run and current article version, using their respective contract fields; final-review governance and content-delivery status are reported separately. No summary may say `CONTENT_READY` while that run's `content-delivery.json` is `CONTENT_BLOCKED`.
+- [ ] Content-fidelity, title-pack, title-review, final-review, and content-delivery records identify the same run and current article version, using their respective contract fields. No summary may say `CONTENT_READY` while that run's `content-delivery.json` is `CONTENT_BLOCKED`.
 - [ ] If the user only wants a publishable article and no publication action, missing human attestation/controller governance is recorded as a governance note and does not block `CONTENT_READY`.
 - [ ] Separate human editor attestation remains required only for the M2 governance/promotion path.
 - [ ] Batch dedupe matrix passes.

@@ -5,7 +5,14 @@ import hashlib, json
 from pathlib import Path
 from typing import Any, Mapping
 
-STATES = ("idea","precheck","candidate","approved","researching","material_ready","writing","review","closed")
+from .article_first import ARTICLE_FIRST_STATES, validate_article_first_transition
+
+_LEGACY_STATES = ("idea","precheck","candidate","approved","researching","material_ready","writing","review","closed")
+# The controller keeps accepting the historical state vocabulary while also
+# recording the article-first content/title handoff.  ``material_return`` is a
+# routing outcome rather than a body-writing state, but it must be recordable so
+# a title-stage material return is not silently collapsed into a generic review.
+STATES = tuple(dict.fromkeys((*_LEGACY_STATES, *ARTICLE_FIRST_STATES, "material_return")))
 PUBLICATION_AUTHORIZATION = "not_authorized"
 from .controller_context import verify_context
 
@@ -37,6 +44,19 @@ def validate_stage_decision(decision: Mapping[str, Any], manifest: Mapping[str, 
     ids={a.get("topic_id") for a in manifest.get("articles",[]) if isinstance(a, Mapping)}
     if decision.get("topic_id") not in ids: errors.append("topic_id_not_in_manifest")
     if decision.get("to_state") not in STATES: errors.append("unknown_to_state")
+    if (
+        decision.get("from_state") in ARTICLE_FIRST_STATES
+        or decision.get("to_state") in ARTICLE_FIRST_STATES
+        or decision.get("from_state") == "material_return"
+        or decision.get("to_state") == "material_return"
+    ):
+        errors.extend(
+            validate_article_first_transition(
+                str(decision.get("from_state", "")),
+                str(decision.get("to_state", "")),
+                decision=decision.get("decision"),
+            )
+        )
     if "publication_authorization" in decision and decision["publication_authorization"] != PUBLICATION_AUTHORIZATION:
         errors.append("publication_authorization_must_be_not_authorized")
     return sorted(set(errors))
@@ -47,6 +67,17 @@ def append_stage_decision(path: Path, decision: Mapping[str, Any]) -> None:
         f.write(json.dumps(dict(decision), ensure_ascii=False, sort_keys=True) + "\n")
 
 def validate_controller_transition(from_state: str, to_state: str, **kwargs: Any) -> list[str]:
+    if (
+        from_state in ARTICLE_FIRST_STATES
+        or to_state in ARTICLE_FIRST_STATES
+        or from_state == "material_return"
+        or to_state == "material_return"
+    ):
+        return validate_article_first_transition(
+            from_state,
+            to_state,
+            decision=kwargs.get("decision"),
+        )
     from article_group.editorial_pipeline_v3 import validate_transition
     if from_state == "candidate" and to_state == "approved":
         card=kwargs.get("topic_card")

@@ -8,7 +8,7 @@
 
 ## 机器消费合同
 
-每篇必须保存为 `review/scoring/<article_id>.json`。新批次默认绑定当前 Markdown；终审会拒绝缺失、不可解析或与当前审阅面不一致的评分卡。评分卡是质量证据，不是发布授权。
+每篇必须保存为 `review/scoring/<article_id>.json`。新批次绑定最终 `delivery.md`；终审会拒绝缺失、不可解析或与当前审阅面不一致的评分卡。评分卡是质量证据，不是发布授权。总分 ≥ 75 时，编辑判断层还要求 `why_worth_reading` 引用当前稿件具体段落，说明为什么值得读；没有段落论据的高分不能当作编辑通过。旧批次的标题字段只读兼容，不得复制到正文 brief。
 
 ```json
 {
@@ -20,12 +20,18 @@
   "title_value_score": 9,
   "readability_score": 5,
   "compliance_score": 5,
-  "markdown_path": "drafts/art-001.md",
+  "markdown_path": "delivery/art-001/delivery.md",
   "markdown_sha256": "<64-char-lowercase-sha256>",
-  "title_promise": "标题承诺的具体读者收益",
   "first_screen_value": "首屏给出的信息差或阅读理由",
   "reader_takeaway": "读者读完能复述的判断",
-  "body_fulfillment": "正文兑现标题承诺的具体位置或方式",
+  "reader_takeaway_locator": "p6",
+  "body_fulfillment": "正文在具体段落完成对象、问题、解释和判断",
+  "why_worth_reading": [
+    {
+      "locator": "第3段",
+      "argument": "读者能就一个具体选择站队，而不是听空判断。"
+    }
+  ],
   "review_status": "controller_evidence_only",
   "evidence_prepared_by": "controller"
 }
@@ -46,13 +52,13 @@
   "reviewer_identity": "填写真实编辑身份",
   "reviewed_at": "YYYY-MM-DDThh:mm:ss+08:00",
   "decision": "accept",
-  "markdown_path": "drafts/art-001.md",
+"markdown_path": "delivery/art-001/delivery.md",
   "markdown_sha256": "<64-char-lowercase-sha256>",
   "attestation_ref": "人工复核记录或工单编号"
 }
 ```
 
-M2 的 `final_review` 同时要求：独立人工签字、独立复核状态、controller acceptance、当前 Markdown 绑定，以及存在动态事实时的出版前 `revalidation.json`。历史 HTML 批次继续要求当前 HTML 绑定。这些证据彼此不能互相冒充。
+M2 的 `final_review` 同时要求：独立人工签字、独立复核状态、controller acceptance、当前 `delivery.md` 绑定，以及存在动态事实时的出版前 `revalidation.json`。历史 HTML 批次继续要求当前 HTML 绑定。这些证据彼此不能互相冒充。
 
 ## 一、机械项（自动带入）
 

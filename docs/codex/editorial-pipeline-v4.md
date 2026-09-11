@@ -17,7 +17,7 @@ V4 是文章组已经决定选题后的证据与候选生产层。它读取一�
 | 文件 | 作用 |
 |---|---|
 | `portfolio-plan.json` | 两篇组合、候选资格、去重约束和选择理由 |
-| `evidence-graph.json` | topic—claim—source—material—title/opening/paragraph—review 追溯图 |
+| `evidence-graph.json` | topic—claim—source—material—opening/paragraph—content review 追溯图；选定标题包后才增加 title/title-review 分支 |
 | `gap-priority.json` | 按缺口影响排序的补证与重试队列 |
 | `template-signals.json` | 反模板提醒；只产生提示，不自动拒稿 |
 | `effect-feedback.json` | 真实指标回填后的中位数和经验生命周期 |
@@ -45,10 +45,20 @@ V4 是文章组已经决定选题后的证据与候选生产层。它读取一�
 - `missing_source_roles`：缺失的来源角色，例如官方物料、行业背景、观众反应；这是材料缺口，不得静默当作已补齐。
 - `retry_requirements`：可重试来源及下一步，不与合同 PASS 混为一谈。
 - `manual_escalations`：需要文章组/控制器判断的项，包括高风险、组合资格、换题建议和反模板人工复核。
-- `content_status=CONTENT_READY`：当前 Markdown 可交给真人处理；不等于 `R8`、控制器验收或已发布。
+- `content_status=CONTENT_READY`：标题包已选定、标题复核和最终复核完成，当前 `delivery.md` 可交给真人处理；不等于 `R8`、控制器验收或已发布。
 - `publication_authorization=not_authorized`：V4 永远不生成发布授权。
 
-发现榜、热榜和社交讨论可以保留为 `discovery_signal`/`social_signal` 来源节点，但不能生成 `claim --supported_by--> source` 的事实证明边。来源失效时，恢复动作沿证据图把受影响节点标为 `stale`；文章组决定补抓、缩小题目、退回或换题。连续两次失败只生成 `switch_topic_recommended`，不会自动换题。
+发现榜、热榜和社交讨论可以保留为 `discovery_signal`/`social_signal` 来源节点，但不能生成 `claim --supported_by--> source` 的事实证明边。正文阶段图只要求
+`claim → opening`、`claim → paragraph`、`paragraph → content_review`；标题阶段才可选地
+增加 `claim → title`、`title → title_review`。没有 `title_pack.json` 不能因为缺 title 节点
+生成 `title_core_fact` 缺口；`opening_support` 仍是正文阶段阻断项。来源失效时，恢复动作
+沿证据图把受影响节点标为 `stale`；文章组决定补抓、缩小题目、退回或换题。连续两次失败
+只生成 `switch_topic_recommended`，不会自动换题。
+
+文章先写成 `body_draft.md`，正文阶段不要求 H1；正式标题只在 `title_packaging` 通过后
+生成 `title_pack.json`，标题复核再生成绑定标题包哈希的 `title-pack-review.json`，最后与正文
+组合为 `delivery.md`。正文改动会使标题包正文哈希失效，必须重新过内容复核；标题包改动会
+使标题复核和交付稿哈希失效。
 
 ## V3 接口边界
 

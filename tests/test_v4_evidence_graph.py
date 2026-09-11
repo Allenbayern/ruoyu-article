@@ -411,3 +411,143 @@ def test_discovery_source_can_be_retained_but_cannot_prove_a_claim(tmp_path: Pat
     assert "source:src-1" in graph["payload"]["nodes"]
     assert any("discovery_source_support" in error for error in graph["payload"].get("build_errors", []))
     assert validate_evidence_graph(graph, tmp_path)
+
+
+def test_v4_body_draft_without_h1_can_build_content_graph(tmp_path: Path):
+    from article_group.article_first import ARTICLE_FIRST_CONTRACT_VERSION
+
+    batch = _minimal_batch(tmp_path)
+    for article in batch["articles"]:
+        original = Path(article["draft_path"])
+        body_relative = f"drafts/{article['article_id']}/body_draft.md"
+        body_path = tmp_path / body_relative
+        body_path.parent.mkdir(parents=True, exist_ok=True)
+        body_path.write_text("## 关系转向\n\nOpening.\n\nParagraph one.\n", encoding="utf-8")
+        content_relative = f"review/{article['article_id']}/content-fidelity.json"
+        content_path = tmp_path / content_relative
+        content_path.parent.mkdir(parents=True, exist_ok=True)
+        content_path.write_text(json.dumps({"review_id": "content-review"}), encoding="utf-8")
+        article.update({
+            "article_first_contract_version": ARTICLE_FIRST_CONTRACT_VERSION,
+            "body_draft_path": body_relative,
+            "content_fidelity_path": content_relative,
+            "review_path": content_relative,
+        })
+        article.pop("draft_path", None)
+
+    graph = build_evidence_graph(tmp_path, batch)
+
+    assert "title:art-001" not in graph["payload"]["nodes"]
+    assert not any(edge["to"] == "title:art-001" for edge in graph["payload"]["edges"])
+    assert validate_evidence_graph(graph, tmp_path) == []
+
+
+def test_v4_body_h1_inside_fenced_example_is_not_a_real_title(tmp_path: Path):
+    from article_group.article_first import ARTICLE_FIRST_CONTRACT_VERSION
+
+    batch = _minimal_batch(tmp_path)
+    for article in batch["articles"]:
+        body_relative = f"drafts/{article['article_id']}/body_draft.md"
+        body_path = tmp_path / body_relative
+        body_path.parent.mkdir(parents=True, exist_ok=True)
+        body_path.write_text(
+            "```markdown\n# 示例标题\n```\n\n正文对象和具体场面。\n\n第二段继续推进问题。\n",
+            encoding="utf-8",
+        )
+        content_relative = f"review/{article['article_id']}/content-fidelity.json"
+        content_path = tmp_path / content_relative
+        content_path.parent.mkdir(parents=True, exist_ok=True)
+        content_path.write_text(json.dumps({"review_id": "content-review"}), encoding="utf-8")
+        article.update({
+            "article_first_contract_version": ARTICLE_FIRST_CONTRACT_VERSION,
+            "body_draft_path": body_relative,
+            "content_fidelity_path": content_relative,
+            "review_path": content_relative,
+        })
+        article.pop("draft_path", None)
+
+    graph = build_evidence_graph(tmp_path, batch)
+
+    assert not any("body_h1" in error for error in graph["payload"].get("build_errors", []))
+    assert validate_evidence_graph(graph, tmp_path) == []
+
+
+def test_title_core_fact_gap_is_not_derived_before_title_packaging(tmp_path: Path):
+    from article_group.article_first import ARTICLE_FIRST_CONTRACT_VERSION
+    from article_group.v4.gap_priority import derive_gap_tasks
+
+    batch = _minimal_batch(tmp_path)
+    for article in batch["articles"]:
+        body_relative = f"drafts/{article['article_id']}/body_draft.md"
+        body_path = tmp_path / body_relative
+        body_path.parent.mkdir(parents=True, exist_ok=True)
+        body_path.write_text("## 关系转向\n\nOpening.\n\nParagraph one.\n", encoding="utf-8")
+        content_relative = f"review/{article['article_id']}/content-fidelity.json"
+        content_path = tmp_path / content_relative
+        content_path.parent.mkdir(parents=True, exist_ok=True)
+        content_path.write_text(json.dumps({"review_id": "content-review"}), encoding="utf-8")
+        article.update({
+            "article_first_contract_version": ARTICLE_FIRST_CONTRACT_VERSION,
+            "body_draft_path": body_relative,
+            "content_fidelity_path": content_relative,
+            "review_path": content_relative,
+        })
+        article.pop("draft_path", None)
+
+    graph = build_evidence_graph(tmp_path, batch)
+
+    gaps = derive_gap_tasks(graph, [])
+    assert all(item["gap_type"] != "title_core_fact" for item in gaps)
+
+
+def test_v4_selected_title_pack_adds_title_and_title_review_branch(tmp_path: Path):
+    from article_group.article_first import ARTICLE_FIRST_CONTRACT_VERSION
+
+    batch = _minimal_batch(tmp_path)
+    article = batch["articles"][0]
+    body_relative = "drafts/art-001/body_draft.md"
+    body_path = tmp_path / body_relative
+    body_path.parent.mkdir(parents=True, exist_ok=True)
+    body_text = "## 关系转向\n\nOpening.\n\nParagraph one.\n"
+    body_path.write_text(body_text, encoding="utf-8")
+    content_relative = "review/art-001/content-fidelity.json"
+    content_path = tmp_path / content_relative
+    content_path.parent.mkdir(parents=True, exist_ok=True)
+    content_path.write_text(json.dumps({"review_id": "content-review"}), encoding="utf-8")
+    delivery_relative = "delivery/art-001/delivery.md"
+    delivery_path = tmp_path / delivery_relative
+    delivery_path.parent.mkdir(parents=True, exist_ok=True)
+    delivery_path.write_text("# 正式标题\n\n" + body_text, encoding="utf-8")
+    title_relative = "review/art-001/title-pack.json"
+    title_path = tmp_path / title_relative
+    title_path.write_text(json.dumps({
+        "result": "selected",
+        "selected_title_id": "t1",
+        "directions": [{"title_id": "t1", "title": "正式标题", "claim_ids": ["cl-1"]}],
+    }), encoding="utf-8")
+    article.update({
+        "article_first_contract_version": ARTICLE_FIRST_CONTRACT_VERSION,
+        "body_draft_path": body_relative,
+        "content_fidelity_path": content_relative,
+        "title_pack_path": title_relative,
+        "delivery_path": delivery_relative,
+        "review_path": content_relative,
+    })
+    article.pop("draft_path", None)
+
+    graph = build_evidence_graph(tmp_path, batch)
+
+    nodes = graph["payload"]["nodes"]
+    edges = graph["payload"]["edges"]
+    assert nodes["title:art-001"]["artifact_path"] == delivery_relative
+    assert any(
+        edge["from"] == "claim:art-001:cl-1"
+        and edge["to"] == "title:art-001"
+        for edge in edges
+    )
+    assert any(
+        edge["from"] == "title:art-001"
+        and edge["to"].startswith("review:art-001:title:")
+        for edge in edges
+    )
+    assert validate_evidence_graph(graph, tmp_path) == []

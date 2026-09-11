@@ -163,3 +163,14 @@ uv run python -m article_group.editorial_review \
 ```
 
 仅 `PASS` 返回 exit `0`；结构违规的 `FAIL` 和结构合法但停稿的 `BLOCKED` 均返回非零。`PASS` 只表示记录结构、引用和阶段边界通过；最终采纳、冻结、发布、合并或授权仍由 controller 单独决定。
+
+## Editorial Judgment Is Separate
+
+本记录的 `PASS` 不是编辑判断通过。Article Task 进入 `final_review` / `delivered` 前，还要有 `article-editorial-judgment-v1`：
+
+- `structure_result` 来自本记录；
+- `judgment_result` 另计，可以是 `pass`、`return_research` 或 `fail`；
+- `actor_layers` 必须分列机器检查、模型编辑复核和真人确认；
+- `completed_by=editorial-protocol-record` 或 `review_mode=human` 都不能当作真人已核；
+- 每个正文部分写明新增材料、推进判断、与上一节的差别；相同事实换词复述不是增量；
+- 编辑意见必须引用当前稿件段落；材料不足时应给出 `return_research`，而不是靠高分或字数通过。

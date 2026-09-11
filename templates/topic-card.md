@@ -28,7 +28,7 @@
 ## Intake Decision
 
 - why_now: （为什么现在值得回答，最多三句）
-- reader_takeaway: （读者读完能带走什么）
+- reader_value_hypothesis: （预计读者读完能带走的具体判断；不是成稿获得感结论）
 - human_anchor: （人物/作品/具体处境）
 - conflict_or_gap: （冲突、反差或信息缺口）
 - evidence_gap:
@@ -88,9 +88,8 @@
   "title_near_duplicate_check": "pass",
   "new_angle_statement": "<相对历史选题新增的事实/场景/问题>",
   "override_reason": "",
-  "title_promise": "<标题承诺>",
-  "title_evidence_ref": "<标题事实证据路径/定位>",
-  "opening_fulfillment_plan": "<首屏兑现计划>"
+  "reader_value_hypothesis": "<预计读者能带走的具体问题/判断>",
+  "material_need": ["<正文事实>", "<具体场面或动作>", "<解释所需背景>"]
 }
 ```
 
@@ -99,7 +98,7 @@ reason code。上面新增的时效与历史排重字段保持向后兼容；进
 但不把历史经验或热榜信号升级为事实证据；这里的 `override` 仅记录编辑判断，不代替机器闸门要求的 controller 裁决。JSON 快照一旦被复核记录引用，不得原地改写；
 需要新判断时写新记录并递增 `record_revision`。
 
-当前校验器仍主要机械检查基础 topic-card 字段；时效、历史排重、标题证据和首屏兑现字段
+当前校验器仍主要机械检查基础 topic-card 字段；时效、历史排重和材料需求
 必须在编辑记录与交付清单中显式核对，不能把快照存在本身视为这些检查已通过。
 
 ## Stage Handoff
@@ -107,6 +106,4 @@ reason code。上面新增的时效与历史排重字段保持向后兼容；进
 - next_stage: `prewrite | evidence_intake | archive | reject`
 - handoff_evidence_ref:
 - handoff_note:
-- title_promise:
-- title_evidence_ref:
-- opening_fulfillment_plan: （标题承诺在首屏落到哪个可核验事实/页面细节/人物处境）
+- content_value_note: （把阅读问题落到正文需要补齐的事实、场面、关系或机制；不生成标题承诺）

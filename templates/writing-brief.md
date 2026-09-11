@@ -1,100 +1,116 @@
 # Writing Brief
 
+> 本 brief 只负责把文章写成一篇自洽的正文。正式标题不属于写作契约，正文通过
+> `content_review` 后，才创建独立的 `title_pack.json`。
+
 - article_id:
 - candidate_id:
-- state: `R5 brief-ready`
+- article_first_contract_version: `article-first-v1`
+- state: `brief_locked | drafting_content | content_review | content_passed`
 - run_profile: `two_article_daily | three_slot_controlled`
 - slot: `A | B | C`（由 run_profile 决定）
-- editorial_lessons_ref: `docs/codex/editorial-lessons.md`（历史经验参考；不替代当前来源核验或 canonical 规则）
+- body_draft_path: `drafts/<article_id>/body_draft.md`
+- content_fidelity_path: `review/<article_id>/content-fidelity.json`
+- title_pack_path: （仅 `content_passed` 后填写：`review/<article_id>/title_pack.json`）
+- delivery_path: （仅选定标题并通过终审后填写：`delivery/<article_id>/delivery.md`）
+- editorial_lessons_ref: `docs/codex/editorial-lessons.md`（历史经验参考；不替代当前来源核验）
 
-## Narrative Core
+## Content Contract
 
-- Primary Atom:
-- Reader Intent:
-- reader_share_expression:
-- Human Anchor:
-- Conflict:
-- Emotion:
-- Gap:
+- core_object: （具体作品、人物、场面或事件；正文始终指向它）
+- reader_question: （文章要回答的一个阅读问题，不是标题承诺）
+- target_reader: （具体读者，不写“所有人”）
+- article_type: `资讯 | 市场观察 | 人物评论 | 文化评论 | 作品评论 | 其他`
+- one_sentence_scope: （本篇只处理什么）
+- conflict_or_gap: （人物选择、关系冲突、具体反差或信息缺口）
+- reader_value_hypothesis: （写作前的价值假设；成稿获得感以复核记录为准）
+- emotion:
+- narrative_frame:
+- current_trigger_or_evergreen_reason:
+- out_of_scope:
+  - （未确认事实、动机、票价、传播数据、人物心理等不得写入正文的项目）
 
-## Promise And Route
+## Content Value Spine
 
-- title_promise:
-- title_candidates:
-  - （候选标题：写清具体冲突/反差、人物或画面入口、悬念/问题入口等方向；数量按题材决定，不以凑数为目的）
-- title_candidate_matrix:
-  - candidate_id:
-    - title:
-    - distinct_angle: （与其他候选相比新增的事实、人物关系或读者问题；只换措辞不算新角度）
-    - evidence_ref: （支持标题对象、动作或数字的 source ID/定位）
-    - opening_fulfillment_plan: （首屏如何兑现标题承诺，写出事实锚点或段落功能）
-    - selected: `yes | no`
-- title_review_target: （最终标题必须兑现的点击承诺；不得靠正文没有的数字或结论；记录首屏兑现位置）
-- title_qc_ref:
-- title_qc_draft_path:
-- title_qc_draft_sha256:
-- selected_title_id:
-- title_selection_note: （现有独立复核者先看当前正文和隐藏自评分/推荐顺序的候选，再说明推荐及淘汰理由；可以全部退回。分数不代替编辑判断）
-- opening_fulfillment_locator:
-- Hook:
-- Narrative Frame:
-- Opening_scene: （首屏用可核验的具体内容开始回答标题；仅复述页面标签、日期或再次提问不算兑现。观众反应仅在有证据时写，禁用通稿式项目自述）
-- Reversal_beats: （可选；只填写正文和来源真正支持的转向，不足三项就留空，不为满足数量制造反转）
-  - beat_1: （开头反差/第一处信息差；无则留空）
-  - beat_2: （中段事实或人物视角转向；无则留空）
-  - beat_3: （结尾转向；无则留空）
-- Skeleton:
-- ending_destination:
-- ending_interaction_question: `读者互动问句 | 结论性收尾 | 不设问（写明理由）`（由正文自然收束决定；问句必须承接本文问题，不以评论率或增长目标强制设置）
+正文按“对象 → 证据 → 解释 → 读者判断”展开，不按标题预设答案。
+
+- hard_information_plan:
+  - information_id:
+  - kind: `fact | scene | action | relationship | mechanism | specific_context`
+  - text: （准备写进正文的具体信息，不写空泛感受）
+  - material_refs: （来源/材料 ID 与定位）
+  - planned_body_locator: （预计进入哪一段；成稿后须改成实际定位）
+- opening_support_refs: （能让开头直接落地的事实、场面或动作证据）
+- explanation_mechanism: （为什么这些事实会形成当前的人物/关系/现实问题）
+- must_prove_claim_ids:
+- must_not_say:
+- attribution_requirements:
+- unsupported_scenario_boundary: （来源没有提供的场景、动机、结果或观众反应）
+
+## Body Structure
+
+- opening_scene: （正文首段用具体对象、动作、场面或事实开始；不先写抽象判断）
+- sections:
+  - section_id:
+  - working_question: （本节推进的子问题）
+  - planned_gain_kind: `fact | scene | action | relationship | mechanism | specific_context | judgment`
+  - planned_material_refs:
+  - planned_body_locator:
+- ending_destination: （正文最后回到哪个具体选择、关系或判断）
+- ending_interaction_question: `读者互动问句 | 结论性收尾 | 不设问（写明理由）`
+
+正文文件 `body_draft.md` 不写 H1，不放临时标题，也不放标题候选、标题兑现计划或标题自评分。
+必要的小节使用 H2；删除任何标题后，读者仍应识别对象、问题、解释和判断。
+
+## Content Review Handoff
+
+- content_review_result: `pass | return_article | return_material`
+- content_fidelity_path: `review/<article_id>/content-fidelity.json`
+- reader_takeaway: （成稿复核后读者真正能带走的判断；不得提前冒充标题目标）
+- reader_takeaway_locator: （正文实际段落定位）
+- content_return_reason:
+- content_return_route: `content_revision | material_return`
+
+只有 `content_review_result=pass` 才能创建标题包。标题包只能引用已通过的
+`body_draft.md` 与已确认材料；如标题需要新增事实，必须退回正文复核或材料验收。
+
+## Post-content Packaging Handoff
+
+- title_pack_path: `review/<article_id>/title_pack.json`
+- title_pack_result: `selected | return_article | return_material`
+- title_review_path: `review/<article_id>/title-pack-review.json`
+- title_review_result: `pass | return_article | return_material`（成标题复核后填写）
+- delivery_path: `delivery/<article_id>/delivery.md`
+- selected_title_id: （只在标题包选定后填写）
+- packaging_return_reason: （标题包返回时必填）
+
+标题包最多保留三条方向，也可以为零条。它不得新增正文事实、修改 body 或要求
+自动补写；选定标题与正文组合后，`delivery.md` 才出现正式 H1。
 
 ## Topic Timing And History
 
 - freshness_window: `same-day | fermenting-1-3d | revival`
 - topic_mode: `release_event | character | craft | audience | culture | revisit | market`
-- event_cluster_id: （与候选卡一致；同一事件流或簇不得借不同作品名重复进入批次）
-- current_trigger_or_evergreen_reason: （same-day/fermenting 记录当前触发与观察时间；revival 记录可脱离当天热度仍成立的读者问题）
-- remove_timestamp_test: `pass | risk | fail`（删掉日期、热榜或“今天”后仍剩下什么）
-- historical_dedupe_ref: （指向历史选题/同作品/同事件簇的比较记录；引用 `docs/codex/editorial-lessons.md` 的相关条目时同时给出具体历史 run/path）
+- event_cluster_id:
+- remove_timestamp_test: `pass | risk | fail`
+- historical_dedupe_ref:
 - same_work_recent_check: `pass | override | blocked`
-- title_near_duplicate_check: `pass | override | blocked`
-- new_angle_statement: （相对历史选题新增的事实、场景、人物关系或读者问题；仅换标题不能作为放行理由）
-- override_reason: （仅 `override` 时填写理由、对比批次和核验人）
-
-## Concrete Support Plan
-
-- support_1: （具体人物动作、现场/页面细节、时间线、数字或关系；填写 source ID、locator 和计划写入段落）
-- support_2: （与 support_1 类型不同的具体支撑；填写 source ID、locator 和计划写入段落）
-- additional_support: （可选；不要为了字数添加同义复述）
-- unsupported_scenario_boundary: （来源没有提供的场景、动机、结果或观众反应；明确不写或切换为可证实的事实锚点）
-
-## Style Field
-
-- emotion_valve: `0 | 1 | 2 | 3`
-- narrative_distance: `near | middle | far`
-- language_density: `high | medium | low`
-- conflict_visibility: `explicit | implicit`
-- sentence_constraints:
+- title_near_duplicate_check: `pass | override | blocked`（只作历史去重，不生成当前标题）
+- new_angle_statement: （相对历史选题新增的事实、场面、关系或问题）
+- override_reason:
 
 ## Evidence Boundaries
 
-- **动笔前核验**：写作前必须 web_search 主题 + 关键实体，回写事实包；信号只作选题入口（2026-08-14 空枪/沈腾案例硬纪律）。
-- **写作输入**：worker 只接收结构化 extracts/fact-card；不得把原始 HTML 直接作为写作上下文。
-- **标题与首屏关联**：标题候选、最终标题和首屏兑现必须引用同一批当前事实；改稿后重绑 title-qc 的 draft path、SHA-256 与首屏 locator。
-- must_prove_claim_ids:
-- must_not_say:
-- attribution_requirements:
-- backup_switch_condition:
-
-## Compliance Boundary
-
+- 写作输入只接收结构化 extracts/fact-card；不得把原始 HTML 直接作为写作上下文。
+- 热榜、标题、平台标签只能作发现信号，不能证明热度、动机、共识或因果。
+- 来源和证据放在 review/material artifacts；正文不写审稿过程、内部状态或来源自证。
 - five_gates_ref: `templates/social-topic-five-gates.md`
 - five_gates_result: `PASS | CONDITIONAL | FAIL | N/A（影视文章）`
-- compliant_angle: （`CONDITIONAL` 且推荐 `A | B | C` 时，填入候选卡中的可追溯处理说明）
-- conditional_writing_controls: （来源/事实核验、隐私最小化、责任表述和标题约束；不得因改写自动视为合规）
-- fail_boundary: （`FAIL` 不进入 `A | B | C`，只可 `Archive | Reject | Wait` 留档）
+- compliant_angle:
+- conditional_writing_controls:
+- fail_boundary:
 - must_attribution:
 - must_disclaimers:
 - must_omit_privacy:
 - must_not_predetermine_liability:
-- title_max_length: `30`
 - original_declaration: `no | yes（仅获授权）`

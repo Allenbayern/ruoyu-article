@@ -7,7 +7,7 @@
    style-gate / prose-pilot / 每篇评分卡必须存在；editorial-record 若存在必须通过校验。
 2. 机械闸门：preflight status == PASS；style-gate error_count == 0。
 3. 发布不变量：publication_authorization == "not_authorized" 且无 authorization_* 字段。
-4. 跨批指纹：collect_history(exclude_run=本批) + check_cross_batch，error 级命中阻断。
+4. 跨批指纹：已加载历史或明确 empty_history 才能比对；未加载历史不能宣称去重通过。
 5. 存疑判定：style-gate warning 或 prose-pilot 与 style_gate 字数口径差 > 15% → PENDING。
 6. 全过 → PUBLISHABLE（质量判定，发布永远人工）。
 
@@ -25,9 +25,15 @@ import re
 import sys
 from pathlib import Path
 
+from article_group.article_first import (
+    ARTICLE_FIRST_CONTRACT_VERSION,
+    validate_phase_field_boundary,
+)
+from article_group.content_fidelity import content_body_path, evaluate_content_fidelity
+from article_group.delivery import compose_delivery_markdown, validate_body_draft, validate_delivery_markdown
 from article_group.editorial_review import evaluate_editorial_record
 from article_group.human_attestation import validate_human_attestation
-from article_group.portfolio_gate import check_cross_batch, collect_history
+from article_group.portfolio_gate import check_cross_batch, collect_history, interpret_history_input
 from article_group.preview_contract import (
     resolve_preview_mode,
     validate_batch_preview_mode,
@@ -41,6 +47,7 @@ from article_group.review_surface import (
     validate_markdown_review_evidence,
 )
 from article_group.run_profile import MAX_CJK_CHARS, MIN_CJK_CHARS, validate_batch_profile
+from article_group.title_pack_fidelity import evaluate_title_pack, evaluate_title_review
 
 PUBLISHABLE = "PUBLISHABLE"
 BLOCKED = "BLOCKED"
@@ -66,6 +73,12 @@ _ENTRY_REVIEW_FIELDS = (
     "title_promise",
     "first_screen_value",
     "reader_takeaway",
+    "body_fulfillment",
+)
+_MODERN_ENTRY_REVIEW_FIELDS = (
+    "first_screen_value",
+    "reader_takeaway",
+    "reader_takeaway_locator",
     "body_fulfillment",
 )
 _HASH_FIELDS = ("html_sha256", "artifact_sha256")
@@ -108,6 +121,180 @@ def _pending(reason: str, items: list[str]) -> dict:
 
 def _publishable() -> dict:
     return {"verdict": PUBLISHABLE, "reason": "全部闸门和评分卡通过；发布仍需真人授权"}
+
+
+def _is_article_first_batch(batch: dict, articles: list[object] | None = None) -> bool:
+    values = articles if articles is not None else batch.get("articles", [])
+    return bool(
+        batch.get("article_first_contract_version") == ARTICLE_FIRST_CONTRACT_VERSION
+        or any(
+            isinstance(article, dict)
+            and (
+                article.get("article_first_contract_version") == ARTICLE_FIRST_CONTRACT_VERSION
+                or any(
+                    field in article
+                    for field in (
+                        "body_draft_path",
+                        "body_path",
+                        "content_fidelity_path",
+                        "content_fidelity_record_path",
+                        "title_pack_path",
+                        "title_review_path",
+                        "delivery_path",
+                    )
+                )
+            )
+            for article in values
+        )
+    )
+
+
+def _modern_relative_path(root: Path, raw: object) -> Path | None:
+    if not isinstance(raw, str) or not raw.strip() or Path(raw).is_absolute() or ".." in Path(raw).parts:
+        return None
+    return _resolve_inside(root, root / raw)
+
+
+def _modern_article_contract(root: Path, article: dict) -> dict:
+    """Validate the immutable body/title/delivery chain for one modern article."""
+
+    aid = str(article.get("article_id", "?"))
+    errors: list[str] = []
+    errors.extend(validate_phase_field_boundary(article, "title"))
+
+    def path_for(fields: tuple[str, ...], label: str) -> tuple[str, Path | None]:
+        for field in fields:
+            raw = article.get(field)
+            if isinstance(raw, str) and raw.strip():
+                path = _modern_relative_path(root, raw)
+                if path is None:
+                    errors.append(f"{label}_path_invalid")
+                return raw.strip(), path
+        errors.append(f"{label}_path_missing")
+        return "", None
+
+    body_raw, body_path = path_for(("body_draft_path", "body_path"), "body_draft")
+    content_raw, content_path = path_for(
+        ("content_fidelity_path", "content_fidelity_record_path"),
+        "content_fidelity",
+    )
+    title_raw, title_path = path_for(("title_pack_path",), "title_pack")
+    title_review_raw, title_review_path = path_for(("title_review_path",), "title_review")
+    delivery_raw, delivery_path = path_for(("delivery_path", "markdown_path"), "delivery")
+
+    body_text = ""
+    if body_path is None or not body_path.is_file():
+        errors.append("body_draft_missing")
+    else:
+        try:
+            body_text = body_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            errors.append("body_draft_unreadable")
+    errors.extend(validate_body_draft(body_text)) if body_text else None
+
+    content = _load_json(content_path) if content_path is not None and content_path.is_file() else None
+    content_result = None
+    if content is None:
+        errors.append("content_fidelity_missing_or_unreadable")
+    else:
+        content_report = evaluate_content_fidelity(content, body_text=body_text)
+        content_result = content_report.get("status")
+        if content_result != "pass":
+            errors.extend(
+                f"content_fidelity:{error}"
+                for error in content_report.get("errors", [])
+            )
+            if not content_report.get("errors"):
+                errors.append("content_fidelity_result_not_pass")
+        if content_body_path(content) != body_raw:
+            errors.append("content_fidelity_body_path_mismatch")
+
+    title_pack = _load_json(title_path) if title_path is not None and title_path.is_file() else None
+    title_result = None
+    selected_title = ""
+    if title_pack is None:
+        errors.append("title_pack_missing_or_unreadable")
+    else:
+        title_report = evaluate_title_pack(title_pack, body_text=body_text)
+        title_result = title_report.get("status")
+        if title_result != "selected":
+            errors.extend(
+                f"title_pack:{error}"
+                for error in title_report.get("errors", [])
+            )
+            if not title_report.get("errors"):
+                errors.append("title_pack_result_not_selected")
+        selected_id = title_report.get("selected_title_id")
+        for direction in title_pack.get("directions", []):
+            if isinstance(direction, dict) and direction.get("title_id") == selected_id:
+                selected_title = str(direction.get("title", "")).strip()
+                break
+        if title_result == "selected" and not selected_title:
+            errors.append("selected_title_missing")
+        if title_pack.get("body_path") != body_raw:
+            errors.append("title_pack_body_path_mismatch")
+        reference = title_pack.get("content_fidelity_ref")
+        if not isinstance(reference, dict) or reference.get("path") != content_raw:
+            errors.append("title_pack_content_fidelity_path_mismatch")
+        elif content_path is not None and _sha256(content_path) != str(reference.get("sha256", "")).lower():
+            errors.append("title_pack_content_fidelity_hash_mismatch")
+
+    title_review = (
+        _load_json(title_review_path)
+        if title_review_path is not None and title_review_path.is_file()
+        else None
+    )
+    title_review_result = None
+    if title_review is None:
+        errors.append("title_review_missing_or_unreadable")
+    else:
+        title_review_report = evaluate_title_review(title_review, title_pack=title_pack)
+        title_review_result = title_review_report.get("status")
+        if title_review_result != "pass":
+            errors.extend(
+                f"title_review:{error}"
+                for error in title_review_report.get("errors", [])
+            )
+            if not title_review_report.get("errors"):
+                errors.append("title_review_result_not_pass")
+        if title_review.get("article_id") != aid:
+            errors.append("title_review_article_id_mismatch")
+        reference = title_review.get("title_pack_ref")
+        if not isinstance(reference, dict) or reference.get("path") != title_raw:
+            errors.append("title_review_title_pack_path_mismatch")
+        elif title_path is not None and _sha256(title_path) != str(reference.get("sha256", "")).lower():
+            errors.append("title_review_title_pack_hash_mismatch")
+
+    if delivery_path is None or not delivery_path.is_file():
+        errors.append("delivery_missing")
+        delivery_text = ""
+    else:
+        try:
+            delivery_text = delivery_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            errors.append("delivery_unreadable")
+            delivery_text = ""
+    if selected_title and delivery_text:
+        errors.extend(validate_delivery_markdown(delivery_text, selected_title))
+        try:
+            if compose_delivery_markdown(body_text, selected_title) != delivery_text:
+                errors.append("delivery_body_mismatch")
+        except ValueError:
+            errors.append("delivery_body_mismatch")
+
+    return {
+        "article_id": aid,
+        "errors": sorted(set(errors)),
+        "body_path": body_path,
+        "content_path": content_path,
+        "title_path": title_path,
+        "delivery_path": delivery_path,
+        "delivery_raw": delivery_raw,
+        "content_result": content_result,
+        "title_result": title_result,
+        "title_review_result": title_review_result,
+        "selected_title": selected_title,
+    }
 
 
 def _requires_independent_review(batch: dict) -> bool:
@@ -270,6 +457,7 @@ def _validate_scoring_card(
     *,
     review_surface: str = "html_delivery",
     markdown_artifact: Path | None = None,
+    modern: bool = False,
 ) -> list[str]:
     """校验评分卡质量证据及其对当前审阅面的绑定。"""
     errors: list[str] = []
@@ -314,7 +502,15 @@ def _validate_scoring_card(
         card.get("editorial_review"),
         card.get("editorial_review_fields"),
     ]
-    for field in _ENTRY_REVIEW_FIELDS:
+    required_entry_fields = _MODERN_ENTRY_REVIEW_FIELDS if modern else _ENTRY_REVIEW_FIELDS
+    if modern:
+        errors.extend(validate_phase_field_boundary(card, "title"))
+    if modern and any(
+        isinstance(container, dict) and "title_promise" in container
+        for container in review_objects
+    ):
+        errors.append("entry_field_forbidden:title_promise")
+    for field in required_entry_fields:
         if not any(
             isinstance(container, dict)
             and isinstance(container.get(field), str)
@@ -622,6 +818,54 @@ def evaluate_batch(batch_dir: str | Path) -> dict:
     if str(preflight_data.get("status", "")).upper() != "PASS":
         return _blocked("gate:preflight", status=str(preflight_data.get("status")))
 
+    article_first_batch = _is_article_first_batch(batch, articles)
+    modern_bindings: dict[str, dict] = {}
+    if article_first_batch:
+        for index, article in enumerate(articles):
+            if not isinstance(article, dict):
+                return _blocked("gate:content_contract", article=index, errors=["article_not_object"])
+            binding = _modern_article_contract(root, article)
+            aid = str(article.get("article_id", index))
+            modern_bindings[aid] = binding
+            errors = binding["errors"]
+            if errors:
+                content_errors = [
+                    error for error in errors
+                    if error.startswith((
+                        "body_draft_",
+                        "missing:body_draft",
+                        "content_fidelity",
+                        "content_body_",
+                    ))
+                ]
+                title_errors = [
+                    error for error in errors
+                    if error.startswith((
+                        "title_pack",
+                        "title_review",
+                        "selected_title",
+                    ))
+                ]
+                if content_errors:
+                    return _blocked(
+                        "gate:content_contract",
+                        article=aid,
+                        errors=errors,
+                    )
+                if title_errors:
+                    return _blocked(
+                        "gate:title_pack",
+                        article=aid,
+                        errors=errors,
+                    )
+                return _blocked(
+                    "gate:delivery_artifact",
+                    article=aid,
+                    errors=errors,
+                )
+            if binding.get("selected_title"):
+                article["title"] = binding["selected_title"]
+
     delivery_htmls: list[Path] = []
     markdown_by_article: dict[str, Path] = {}
     review_artifacts: list[Path]
@@ -642,7 +886,8 @@ def evaluate_batch(batch_dir: str | Path) -> dict:
             if not isinstance(article, dict):
                 return _blocked("evidence_invalid:batch.json:article")
             aid = str(article.get("article_id", ""))
-            target = _resolve_inside(root, root / str(article.get("markdown_path", "")))
+            raw_markdown_path = article.get("delivery_path") or article.get("markdown_path")
+            target = _resolve_inside(root, root / str(raw_markdown_path or ""))
             if target is None or not target.is_file():
                 return _blocked("gate:markdown_review_evidence", article=aid,
                                 errors=["markdown_artifact_missing"])
@@ -743,8 +988,15 @@ def evaluate_batch(batch_dir: str | Path) -> dict:
 
     # ---- 4. 跨批指纹 ------------------------------------------------------
     try:
-        history = collect_history(exclude_run=root.name)
-        issues = check_cross_batch(articles, history)
+        history_path = root / "portfolio-history.json"
+        if history_path.is_file():
+            interpreted = interpret_history_input(_load_json(history_path))
+            history = interpreted["batches"]
+            history_status = interpreted["history_status"]
+        else:
+            history = collect_history(exclude_run=root.name)
+            history_status = "loaded" if history else "empty_history"
+        issues = check_cross_batch(articles, history, history_status=history_status)
     except Exception as exc:  # noqa: BLE001 — 指纹检查失败不得放行
         return _blocked("gate:cross_batch_failed", error=str(exc))
     waivers: list[dict] = []
@@ -831,6 +1083,7 @@ def evaluate_batch(batch_dir: str | Path) -> dict:
             article_id,
             review_surface=review_surface,
             markdown_artifact=markdown_by_article.get(str(article_id)),
+            modern=article_first_batch,
         )
         if scoring_errors:
             return _blocked(

@@ -1,4 +1,4 @@
-"""task_card_fidelity.py — task-card promise → draft fulfillment checker.
+"""Historical task-card promise → draft fulfillment checker.
 
 Compares what a task card PROMISED (title_promise, 站队点, H2 outline,
 ending_destination) against what the final draft actually delivered.
@@ -10,6 +10,13 @@ survived into the draft until a human flagged it. The style gate checks the
 final HTML in isolation (redlines, data-hook anchoring) but never cross-checks
 the article against its own task card — so promise drift was invisible to
 machines.
+
+Compatibility boundary:
+- This module is retained for historical runs whose task cards were written
+  with ``title_promise``.  It is not imported by the article-first content
+  gate, and it must never be used to construct a new writing brief.
+- New runs use ``content_fidelity.py`` for the title-free body and
+  ``title_pack_fidelity.py`` after content passes.
 
 Design:
 - Promise fields are extracted from the task-card markdown via the fixed

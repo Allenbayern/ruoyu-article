@@ -8,11 +8,17 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 import hashlib
+import json
 from pathlib import Path
 import re
 from typing import Any
 from urllib.parse import urlparse
 
+from article_group.article_first import (
+    ARTICLE_FIRST_CONTRACT_VERSION,
+    validate_phase_field_boundary,
+)
+from article_group.delivery import validate_body_draft
 from article_group.run_profile import MAX_CJK_CHARS, MIN_CJK_CHARS
 
 
@@ -60,7 +66,7 @@ def validate_candidate_pool(pool: dict[str, Any]) -> list[str]:
 
     required_candidate_fields = (
         "candidate_id", "work", "core_person_or_event", "primary_atom",
-        "reader_intent", "angle", "title_skeleton", "ending_destination",
+        "reader_intent", "angle", "ending_destination",
         "content_map", "event_cluster_id", "reader_question",
         "event_time", "observed_at", "freshness_window", "current_trigger",
         "content_value_scores", "source_roles", "evidence_atom_ids",
@@ -106,6 +112,19 @@ def validate_candidate_pool(pool: dict[str, Any]) -> list[str]:
                 errors.append(f"candidate_{cid}_invalid_{field}")
             elif isinstance(value, str) and not value.strip():
                 errors.append(f"candidate_{cid}_missing_{field}")
+
+        # title_skeleton is a discovery-only signal.  It is deliberately not
+        # required and is never copied into the canonical slot contract or a
+        # writing brief.  If a producer supplies it, keep only a shape check so
+        # malformed discovery metadata remains visible.
+        if "title_skeleton" in candidate:
+            title_signal = candidate.get("title_skeleton")
+            if not isinstance(title_signal, str) or not title_signal.strip():
+                errors.append(f"candidate_{cid}_invalid_discovery_title_skeleton")
+        errors.extend(
+            f"candidate_{cid}_{error}"
+            for error in validate_phase_field_boundary(candidate, "discovery")
+        )
 
         # Numeric scores
         scores = candidate.get("content_value_scores")
@@ -466,6 +485,133 @@ def _safe_relative(declared: str) -> bool:
     return not (candidate.is_absolute() or ".." in candidate.parts)
 
 
+def _is_article_first_stage_record(article: object) -> bool:
+    """Identify the modern body-first lane before applying legacy draft rules."""
+
+    if not isinstance(article, dict):
+        return False
+    if article.get("article_first_contract_version") == ARTICLE_FIRST_CONTRACT_VERSION:
+        return True
+    return any(
+        field in article
+        for field in (
+            "body_draft_path",
+            "body_path",
+            "content_fidelity_path",
+            "content_fidelity_record_path",
+            "title_pack_path",
+            "title_review_path",
+            "delivery_path",
+        )
+    )
+
+
+def _article_first_stage_phase(state: object) -> str:
+    if state in {"content_review", "content_passed"}:
+        return "content_review"
+    if state in {"title_packaging", "title_review", "final_review", "delivered"}:
+        return "title"
+    return "writing"
+
+
+def _load_json_object(path: Path) -> dict[str, Any] | None:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def validate_article_first_body_stage(
+    article: dict[str, Any],
+    run_root: Path,
+) -> list[str]:
+    """Validate the modern per-article body stage without requiring a title.
+
+    The historical validator below intentionally remains unchanged for V3/R8
+    records.  Modern records are checked against ``body_draft.md`` and, once
+    content review exists, against the content-fidelity record that hashes that
+    same body.  Title packaging is validated by ``title_pack_fidelity`` later.
+    """
+
+    aid = article.get("article_id", "unknown")
+    errors: list[str] = []
+    state = article.get("state")
+    errors.extend(validate_phase_field_boundary(article, _article_first_stage_phase(state)))
+
+    body_declared = article.get("body_draft_path") or article.get("body_path")
+    body_path: Path | None = None
+    body_text = ""
+    body_required = state != "brief_locked"
+    if not isinstance(body_declared, str) or not body_declared.strip() or not _safe_relative(body_declared):
+        if body_required:
+            errors.append(f"article_{aid}_body_draft_path_unsafe_or_missing")
+    else:
+        candidate = (run_root / body_declared).resolve()
+        if run_root.resolve() not in candidate.parents or not candidate.is_file():
+            if body_required:
+                errors.append(f"article_{aid}_body_draft_path_not_found")
+        else:
+            body_path = candidate
+            try:
+                body_text = body_path.read_text(encoding="utf-8")
+            except (OSError, UnicodeError):
+                errors.append(f"article_{aid}_body_draft_unreadable")
+            else:
+                errors.extend(
+                    f"article_{aid}_{error}"
+                    for error in validate_body_draft(body_text)
+                )
+
+    content_states = {
+        "content_review",
+        "content_passed",
+        "title_packaging",
+        "title_review",
+        "final_review",
+        "delivered",
+    }
+    content_declared = article.get("content_fidelity_path") or article.get(
+        "content_fidelity_record_path"
+    )
+    content_path: Path | None = None
+    if state in content_states:
+        if not isinstance(content_declared, str) or not content_declared.strip() or not _safe_relative(content_declared):
+            errors.append(f"article_{aid}_content_fidelity_path_unsafe_or_missing")
+        else:
+            candidate = (run_root / content_declared).resolve()
+            if run_root.resolve() not in candidate.parents or not candidate.is_file():
+                errors.append(f"article_{aid}_content_fidelity_path_not_found")
+            else:
+                content_path = candidate
+                content = _load_json_object(content_path)
+                if content is None:
+                    errors.append(f"article_{aid}_content_fidelity_unreadable")
+                else:
+                    from .content_fidelity import content_body_path, evaluate_content_fidelity
+
+                    result = evaluate_content_fidelity(
+                        content,
+                        body_text=body_text if body_path is not None else None,
+                    )
+                    if result.get("status") == "invalid":
+                        errors.extend(
+                            f"article_{aid}_content_fidelity_{error}"
+                            for error in result.get("errors", [])
+                        )
+                    if body_declared and content_body_path(content) != body_declared:
+                        errors.append(f"article_{aid}_content_fidelity_body_path_mismatch")
+                    if state != "content_review" and result.get("status") != "pass":
+                        errors.append(f"article_{aid}_content_fidelity_pass_required")
+
+    html_state = article.get("html_delivery_state", "")
+    if html_state not in ("withheld", "not_requested"):
+        errors.append(f"article_{aid}_html_must_be_withheld")
+    if article.get("publication_authorization", "not_authorized") != "not_authorized":
+        errors.append(f"article_{aid}_must_be_not_authorized")
+    return sorted(set(errors))
+
+
 def _is_placeholder_url(url: object) -> bool:
     normalized = str(url).strip().lower()
     parsed = urlparse(normalized)
@@ -630,6 +776,9 @@ def validate_article_stage(
     This runs per-article before the batch gate. Failure means H3 or H4 for
     this slot without blocking the other two.
     """
+    if _is_article_first_stage_record(article):
+        return validate_article_first_body_stage(article, run_root)
+
     errors: list[str] = []
     aid = article.get("article_id", "unknown")
     slot = article.get("slot", "unknown")
