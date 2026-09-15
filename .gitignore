@@ -47,16 +47,9 @@ scripts/*
 !scripts/codex_viral_library_index.py
 references/learning-samples/
 
-# media-intel-aios dormant backup (2026-08-07, SOL-ABSORB-003 fix): backup scripts/docs
-# are retained repository artifacts and must be tracked; only the backup's own
-# config/private/ is excluded (see projects/media-intel-aios/.gitignore).
-!projects/media-intel-aios/scripts/
-!projects/media-intel-aios/scripts/**
-!projects/media-intel-aios/docs/
-!projects/media-intel-aios/docs/**
-
-# ...but never its bytecode cache (negate above would otherwise un-ignore it)
-projects/media-intel-aios/scripts/__pycache__/
+# media-intel-aios 仓内备份已移除（2026-09-15）：磁盘副本在
+# ~/backups/media-intel-aios-2026-08-07-snapshot/，仓库仅留指针
+# projects/MEDIA-INTEL-ARCHIVE-NOTE.md。
 
 # Hermes desktop attachment cache (local only, never commit)
 .hermes/
@@ -79,4 +72,3 @@ docs/superpowers/specs/*
 !scripts/markdown_style_audit.py
 !scripts/content_delivery_audit.py
 !scripts/preview_route_audit.py
-!scripts/worker_dispatch_preflight.py
