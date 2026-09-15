@@ -60,6 +60,8 @@ def test_git_hygiene_report_matches_live_repo():
 
 
 def test_prose_pilot_report_is_real_analysis():
+    from scripts.run_real_daily_005 import MATERIAL_SPECS, SOURCE_IDS, SOURCES
+
     report = _load("review/prose-pilot-report.json")
     assert report["schema_version"] == "prose-pilot-v1"
     assert report["advisory"] is True
@@ -68,10 +70,56 @@ def test_prose_pilot_report_is_real_analysis():
     assert set(by_id) == {"art-001", "art-002"}
     for aid in ("art-001", "art-002"):
         text = (RUN / f"delivery/{aid}/delivery.md").read_text(encoding="utf-8")
-        expected = analyze_text(text, by_id[aid]["title"], [])
+        ledger_quotes = [
+            {
+                "source_id": source_id,
+                "title": SOURCES[source_id].get("captured_from", source_id),
+                "url": SOURCES[source_id].get("source_url", ""),
+                "text": fact,
+            }
+            for source_id in SOURCE_IDS[aid]
+            for fact in MATERIAL_SPECS[aid]["by_source"].get(source_id, [])
+        ]
+        expected = analyze_text(text, by_id[aid]["title"], ledger_quotes)
         assert by_id[aid]["material"] == expected["material"]
         assert by_id[aid]["syntax_warnings"] == expected["syntax_warnings"]
         assert by_id[aid]["advisory"] is True
+
+
+def test_batch_gate_status_backfilled_from_real_artifacts():
+    # ③（2026-09-15）：batch.json 的 gate_status 不再手写，必须等于从
+    # 真实门禁产物重算的值。
+    from article_group.content_fidelity import evaluate_content_fidelity
+    from article_group.title_pack_fidelity import evaluate_title_pack
+
+    batch = _load("batch.json")
+    for article in batch["articles"]:
+        aid = article["article_id"]
+        pack = _load(f"material-packs/{aid}.json")
+        readiness = pack.get("readiness", {})
+        cf = _load(f"review/{aid}/content-fidelity.json")
+        tp = _load(f"review/{aid}/title-pack.json")
+        style = _load(f"review/style-gate-markdown-{aid}.json")
+        independent = _load(f"review/{aid}/independent-review.json")
+        expected = {
+            "material_ready_for_draft": "pass" if readiness.get("material_ready_for_draft") else "fail",
+            "editorial_value_ready": "pass" if readiness.get("editorial_value_ready") else "fail",
+            "content_fidelity": str(evaluate_content_fidelity(cf, strict=True).get("status")),
+            "title_pack": str(evaluate_title_pack(tp).get("status")),
+            "style_gate": "pass" if style.get("pass") and not style.get("error_total") else "fail",
+            "independent_review": str(independent.get("status", "pending")).lower(),
+        }
+        for key, want in expected.items():
+            assert article["gate_status"][key] == want, (
+                aid, key, article["gate_status"][key], want,
+            )
+    assert set(batch["run_gates"]) >= {
+        "portfolio_gate",
+        "task_hierarchy_contract",
+        "claim_source_provenance",
+        "git_hygiene_infra",
+        "compliance_gate",
+    }
 
 
 def test_delivery_hashes_unchanged_after_gate_wiring():

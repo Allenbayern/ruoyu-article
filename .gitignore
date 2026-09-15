@@ -45,6 +45,9 @@ scripts/*
 !scripts/codex_review_audit.py
 !scripts/codex_skill_inventory.py
 !scripts/codex_viral_library_index.py
+!scripts/run_real_daily_005.py
+!scripts/daily_engine.py
+!scripts/generate_daily_001.py
 references/learning-samples/
 
 # media-intel-aios 仓内备份已移除（2026-09-15）：磁盘副本在

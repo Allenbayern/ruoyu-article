@@ -4,6 +4,14 @@ Three institutional gates, no silent skips:
 
 - **task-hierarchy 1.0 contract** (`article_task_v1.validate_task_hierarchy_run`)
   — blocking: a failing contract aborts the run with exit 1.
+- **claim↔source provenance** (`claim_source_check.check_run_material_packs`)
+  — blocking: every material-pack fact must be anchorable in its declared
+  source's captured artifact.
+- **四阶段复核协议** (`editorial_review.evaluate_editorial_record`)
+  — blocking: BLOCKED/FAIL records enter evidence_intake; upstream stop
+  requires downstream not_run (enforced inside the evaluator).
+- **independent_review 内容阻塞检查** — a completed L2 decision that is not
+  ``approve*`` blocks the run ("复核跑完了"≠通过)；pending 属治理栏不阻断。
 - **git_hygiene infra readiness** — a recorded snapshot of `git ls-files`
   against the required infrastructure paths; commit-level ``daily_commit``
   mode stays a commit-time check.
@@ -26,7 +34,9 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .article_task_v1 import validate_task_hierarchy_run
+from .claim_source_check import check_run_material_packs
 from .compliance_gate import crosscheck_pool_five_gates, validate_pool_five_gates
+from .editorial_review import evaluate_editorial_record
 from .git_hygiene import validate_infra_ready
 
 COMPLIANCE_GATE_REASON = (
@@ -119,6 +129,84 @@ def _load_json_mapping(path: Path) -> Mapping[str, Any] | None:
     return data if isinstance(data, Mapping) else None
 
 
+def build_editorial_protocol_report(run_root: str | Path) -> dict[str, Any]:
+    """Evaluate every article's four-stage editorial record (protocol v1.0).
+
+    BLOCKED/FAIL records (or missing records) are hard errors: the run may
+    not claim editorial PASS from a self-declared record.  ``not_run``
+    propagation after a stopping stage is enforced inside
+    ``evaluate_editorial_record``.
+    """
+    root = Path(run_root)
+    articles: list[dict[str, Any]] = []
+    errors: list[str] = []
+    paths = sorted((root / "task-hierarchy").glob("article-task-*.json"))
+    if not paths:
+        errors.append("missing:article_tasks")
+    for path in paths:
+        task = _load_json_mapping(path)
+        if task is None:
+            errors.append(f"invalid:article_task:{path.name}")
+            continue
+        aid = str(task.get("article_id") or path.stem)
+        record = _load_json_mapping(root / f"review/{aid}/editorial-review-record.json")
+        if record is None:
+            errors.append(f"editorial_record_missing:{aid}")
+            articles.append({"article_id": aid, "verdict": "FAIL", "errors": ["editorial_record_missing"]})
+            continue
+        report = evaluate_editorial_record(dict(record), root)
+        articles.append({"article_id": aid, **report})
+        if report.get("verdict") != "PASS":
+            errors.append(f"{aid}:verdict:{report.get('verdict')}")
+    return {
+        "schema_version": "editorial-protocol-v1",
+        "pass": not errors,
+        "errors": sorted(set(errors)),
+        "articles": articles,
+        "publication_authorization": "not_authorized",
+    }
+
+
+def build_independent_review_gate(run_root: str | Path) -> dict[str, Any]:
+    """Enforce the content-blocking rule for completed L2 reviews.
+
+    A completed decision that is not ``approve*`` is a content blocker
+    (gate:independent_review) — "复核跑完了但没通过"不能放行。Pending /
+    human_review_required / unverified 属治理栏，不阻断（run 在 L2 前交付）。
+    """
+    root = Path(run_root)
+    articles: list[dict[str, Any]] = []
+    errors: list[str] = []
+    paths = sorted((root / "task-hierarchy").glob("article-task-*.json"))
+    if not paths:
+        errors.append("missing:article_tasks")
+    for path in paths:
+        task = _load_json_mapping(path)
+        if task is None:
+            errors.append(f"invalid:article_task:{path.name}")
+            continue
+        aid = str(task.get("article_id") or path.stem)
+        record = _load_json_mapping(root / f"review/{aid}/independent-review.json")
+        if record is None:
+            errors.append(f"independent_review_record_missing:{aid}")
+            articles.append({"article_id": aid, "decision": None, "blocking": True})
+            continue
+        decision = str(record.get("decision") or record.get("status") or "pending")
+        blocking = decision and not decision.lower().startswith(
+            ("approve", "pending", "unverified", "timeout", "human_review")
+        )
+        if blocking:
+            errors.append(f"gate:independent_review:{aid}:decision:{decision}")
+        articles.append({"article_id": aid, "decision": decision, "blocking": blocking})
+    return {
+        "schema_version": "independent-review-gate-v1",
+        "pass": not errors,
+        "errors": sorted(set(errors)),
+        "articles": articles,
+        "publication_authorization": "not_authorized",
+    }
+
+
 def run_all_gates(
     run_root: str | Path,
     write_json: WriteFn,
@@ -134,6 +222,15 @@ def run_all_gates(
     hierarchy_report = build_task_hierarchy_report(run_root)
     write_json("task-hierarchy-validation-report.json", hierarchy_report)
 
+    claim_report = check_run_material_packs(run_root)
+    write_json("review/gates/claim-source-check.json", claim_report)
+
+    editorial_report = build_editorial_protocol_report(run_root)
+    write_json("review/gates/editorial-protocol.json", editorial_report)
+
+    independent_report = build_independent_review_gate(run_root)
+    write_json("review/gates/independent-review.json", independent_report)
+
     hygiene = build_git_hygiene_snapshot()
     write_json("review/gates/git-hygiene.json", hygiene)
 
@@ -142,9 +239,18 @@ def run_all_gates(
     write_json("review/gates/compliance-gate.json", compliance)
 
     compliance_failed = compliance.get("full_gate") == "run" and not compliance.get("pass")
-    if fail_on_error and (not hierarchy_report["pass"] or compliance_failed):
+    if fail_on_error and (
+        not hierarchy_report["pass"]
+        or not claim_report["pass"]
+        or not editorial_report["pass"]
+        or not independent_report["pass"]
+        or compliance_failed
+    ):
         payload = {
             "task_hierarchy_gate": hierarchy_report,
+            "claim_source_check": claim_report,
+            "editorial_protocol": editorial_report,
+            "independent_review_gate": independent_report,
             "compliance_gate": compliance,
         }
         print(
@@ -155,6 +261,9 @@ def run_all_gates(
         sys.exit(1)
     return {
         "task_hierarchy_contract": "pass" if hierarchy_report["pass"] else "fail",
+        "claim_source_provenance": "pass" if claim_report["pass"] else "fail",
+        "editorial_protocol": "pass" if editorial_report["pass"] else "fail",
+        "independent_review": "pass" if independent_report["pass"] else "fail",
         "git_hygiene_infra": "pass" if hygiene["pass"] else "fail",
         "compliance_gate": (
             "not_run"
@@ -169,7 +278,9 @@ __all__ = [
     "COMPLIANCE_GATE_REASON",
     "build_compliance_gate_record",
     "build_compliance_not_run_record",
+    "build_editorial_protocol_report",
     "build_git_hygiene_snapshot",
+    "build_independent_review_gate",
     "build_task_hierarchy_report",
     "run_all_gates",
 ]

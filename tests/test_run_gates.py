@@ -11,6 +11,7 @@ from article_group.run_gates import (
     build_compliance_gate_record,
     build_compliance_not_run_record,
     build_git_hygiene_snapshot,
+    build_independent_review_gate,
     build_task_hierarchy_report,
     run_all_gates,
 )
@@ -102,15 +103,30 @@ def test_run_all_gates_writes_artifacts_and_reports_fail_without_exit(tmp_path):
 
     summary = run_all_gates(tmp_path, writer, fail_on_error=False)
     assert summary["task_hierarchy_contract"] == "fail"
+    assert summary["claim_source_provenance"] == "fail"
+    assert summary["editorial_protocol"] == "fail"
+    assert summary["independent_review"] == "fail"
     assert summary["compliance_gate"] == "not_run"
     assert set(writes) == {
         "task-hierarchy-validation-report.json",
+        "review/gates/claim-source-check.json",
+        "review/gates/editorial-protocol.json",
+        "review/gates/independent-review.json",
         "review/gates/git-hygiene.json",
         "review/gates/compliance-gate.json",
     }
     hierarchy = writes["task-hierarchy-validation-report.json"]
     assert hierarchy["pass"] is False
     assert "missing:group_manifest" in hierarchy["errors"]
+    claims = writes["review/gates/claim-source-check.json"]
+    assert claims["pass"] is False
+    assert "missing:material_packs" in claims["errors"]
+    editorial = writes["review/gates/editorial-protocol.json"]
+    assert editorial["pass"] is False
+    assert "missing:article_tasks" in editorial["errors"]
+    independent = writes["review/gates/independent-review.json"]
+    assert independent["pass"] is False
+    assert "missing:article_tasks" in independent["errors"]
 
 
 def test_run_all_gates_reports_social_five_gates_failure(tmp_path):
@@ -140,6 +156,30 @@ def test_run_all_gates_reports_social_five_gates_failure(tmp_path):
     compliance = writes["review/gates/compliance-gate.json"]
     assert compliance["full_gate"] == "run"
     assert compliance["pass"] is False
+
+
+def test_independent_review_gate_blocks_completed_non_approve(tmp_path):
+    # ⑧：L2 已完成但 decision 非 approve* → 内容阻塞。
+    import json
+
+    (tmp_path / "task-hierarchy").mkdir()
+    (tmp_path / "task-hierarchy/article-task-art-001.json").write_text(
+        json.dumps({"article_id": "art-001"}), encoding="utf-8"
+    )
+    (tmp_path / "review").mkdir()
+    (tmp_path / "review/art-001").mkdir(parents=True)
+    (tmp_path / "review/art-001/independent-review.json").write_text(
+        json.dumps({"decision": "needs_changes", "status": "DONE"}), encoding="utf-8"
+    )
+    report = build_independent_review_gate(tmp_path)
+    assert report["pass"] is False
+    assert "gate:independent_review:art-001:decision:needs_changes" in report["errors"]
+
+    (tmp_path / "review/art-001/independent-review.json").write_text(
+        json.dumps({"decision": "human_review_required", "status": "PENDING"}), encoding="utf-8"
+    )
+    report = build_independent_review_gate(tmp_path)
+    assert report["pass"] is True
 
 
 def test_run_all_gates_exits_nonzero_on_gate_failure(tmp_path, capsys):
