@@ -7,11 +7,12 @@ from typing import Any
 
 
 # The editorial target remains 1500–2200 Chinese characters.  The production
-# policy allows roughly 500 characters of elasticity on either side so a
-# complete article is not padded merely to hit the target band.
+# policy allows elasticity on either side so a complete article is not padded
+# merely to hit the target band.  2026-09-16 controller ruling: 字数要求允许
+# ±100 误差（下限 1000→900，上限 2700→2800），篇幅以素材为准。
 TARGET_MIN_CJK_CHARS = 1500
 TARGET_MAX_CJK_CHARS = 2200
-CHAR_COUNT_FLEX_MARGIN = 500
+CHAR_COUNT_FLEX_MARGIN = 600
 MIN_CJK_CHARS = TARGET_MIN_CJK_CHARS - CHAR_COUNT_FLEX_MARGIN
 MAX_CJK_CHARS = TARGET_MAX_CJK_CHARS + CHAR_COUNT_FLEX_MARGIN
 

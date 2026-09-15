@@ -618,3 +618,31 @@ def test_unclassifiable_artifact_fails_closed(tmp_path):
     assert result["pass"] is False
     assert result["error_total"] > 0
     assert "artifact_type" in result
+
+
+def test_reader_self_certification_scaffolding_blocked():
+    """2026-09-16：读者面自证脚手架必须 error（来源自证/免责/过程框架/元观察）。"""
+    samples = [
+        "印尼商报的奖单把这句写得最直白：五季五拿。",
+        "IT之家补了一个关键细节：第五季也是最终季。",
+        "搜狐娱乐的通稿介绍，影片讲述一名医疗快递员的故事。",
+        "17173的新闻导语把这次回归概括为“恐怖升级”。",
+        "从事实层面看，目前能确认的只有三件事。",
+        "海报上的卖点都是通稿给出的官方口径，不构成对成片质量的承诺。",
+        "这是奖单呈现出的观感，不是来源里写明的评奖理由。",
+    ]
+    for sample in samples:
+        hits = [h for h in scan_style(sample) if h["severity"] == "error"]
+        assert hits, f"未命中自证红线: {sample}"
+
+
+def test_clean_reader_copy_not_flagged():
+    """改后的读者面句式不应误伤。"""
+    clean = [
+        "五季五拿之后，这座奖更像一个被时间验证过的判断。",
+        "海报里只有持枪的布莱恩背着快递包裹，孤身闯进被变异生物占领的城市。",
+        "片方也提前打了招呼：未成年人谨慎观看。",
+    ]
+    for sample in clean:
+        hits = [h for h in scan_style(sample) if h["severity"] == "error"]
+        assert not hits, f"误伤合法文本: {sample} -> {hits}"
