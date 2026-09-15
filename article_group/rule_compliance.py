@@ -22,8 +22,10 @@ MODE_REQUIRED_ROLES = {
     "viewing_commentary": (frozenset({"scene", "review"}),),
     # reported_feature 的合法证据角色（2026-09-16 扩展）：专访/现场之外，
     # 报道式特稿以媒体/新闻稿件为主证据同样是诚实角色（capability 层
-    # 早已收录 media_report）。
-    "reported_feature": (frozenset({"interview", "现场", "media_report"}),),
+    # 早已收录 media_report）。正规媒体发布的评论/时评文章（commentary）
+    # 同样可为报道式特稿提供主证据：其事件背景、盘点与案例部分可核查，
+    # 观点部分不升级为事实（claim↔账本门禁仍逐条锚定事实文本）。
+    "reported_feature": (frozenset({"interview", "现场", "media_report", "commentary"}),),
     "fact_explainer": (frozenset({"official_fact"}), frozenset({"cross_check"})),
 }
 MODE_ALLOWED_LEVELS = {
