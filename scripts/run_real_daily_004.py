@@ -36,6 +36,40 @@ def ref(path: str) -> dict:
 
 
 
+TASK_CARD_REQUIRED_FIELDS = {
+    # Workflow 第 4 步的 5 个必填字段；其中 ①站队点、title_promise、ending_destination
+    # 与 H2 大纲刻意取自成稿原句，使 `article_group.task_card_fidelity` 能真正核对
+    # "承诺是否兑现"（F4，2026-09-15）。
+    "art-001": (
+        "1. **站队点/可转述句**：粤语在《空枪》里不是装饰性的年代滤镜，而是演员进入人物关系、也让主创彼此靠近的一道门。\n"
+        "2. **读者已知锚点**：朱一龙主演、《空枪》正在上映、首映现场那句粤语问候。\n"
+        "3. **today-hook 理由**：影片 2026 年 8 月 19 日上映，首映现场“用粤语打招呼”正被讨论。\n"
+        "4. **事实底座**：影片于 2026 年 8 月 19 日上映；全片采用粤语拍摄；朱一龙为角色用一个月突击粤语、常练到凌晨四点（来源：广州日报新花城、新京报）。\n"
+        "5. **最强钩子**：为了演万梓强，他只有一个月时间突击粤语（与 batch.json 的 review_hook 一致）。\n"
+        "- **title_promise**：《空枪》为什么要让演员先学会说粤语\n"
+        "- **ending_destination**：至于这套声音最后能否撑起完整犯罪故事，仍要看影片本身如何完成。\n"
+        "\n## 文章结构大纲（H2 目录）\n"
+        "## 《空枪》先从一句粤语开始\n"
+        "## 语言不是滤镜，是演员进入关系的方式\n"
+        "## 一个月的训练，留下的是角色的笨拙\n"
+        "## 现场的鼓励，才让挑战继续下去\n"
+    ),
+    "art-002": (
+        "1. **站队点/可转述句**：《玩具总动员5》目前最清楚的冲突，不是旧物与新物的胜负，而是陪伴方式的重新分配。\n"
+        "2. **读者已知锚点**：玩具总动员系列、胡迪与巴斯光年、正在长大的邦妮。\n"
+        "3. **today-hook 理由**：官方设定公布“玩具先遇到一台平板”，系列第一次把冲突从反派换成孩子的连接方式。\n"
+        "4. **事实底座**：Lilypad 是新平板设备；The Pond（池塘）用于邦妮和舞蹈课朋友聊天；邦妮八岁并在努力交朋友；Jessie 任邦妮房间的新任 Sheriff、带着 Bullseye；Buzz 成为副手（来源：Pixar 官方 Toy Story 5 页面）。\n"
+        "5. **最强钩子**：一台叫 Lilypad 的新平板电脑，还坚信自己知道什么最适合这个孩子（与 batch.json 的 review_hook 一致）。\n"
+        "- **title_promise**：《玩具总动员5》为什么先让玩具遇到平板电脑\n"
+        "- **ending_destination**：真正困难的，是让一个正在长大的孩子感觉自己没有被任何一种方式落下。\n"
+        "\n## 文章结构大纲（H2 目录）\n"
+        "## 《玩具总动员5》先让玩具遇到平板电脑\n"
+        "## 邦妮不是不爱玩，她只是正在长大\n"
+        "## 旧玩具真正害怕的是什么\n"
+        "## 玩具和屏幕都要回答同一个问题\n"
+    ),
+}
+
 STRONGEST_HOOKS = {
     # 每篇的"最强待核钩子"声明：必须是正文中真实出现、最值得复核的事实断言，
     # 供 style gate 作为审查锚点核验（读者不可见）。取自正文已核验事实。
@@ -162,7 +196,7 @@ required_hard_information: Lilypad是新平板设备；Bonnie八岁且在努力�
 unsupported_boundary: 不能写影片最终如何解决屏幕问题，不能代替家庭观众评价教育效果
 """)
     for aid, mode, role, question, source in [("art-001", "reported_feature", "interview", "《空枪》为什么要让演员先学会说粤语，才进入这座欲望之城", "src-kongqiang-huacheng"), ("art-002", "setting_observation", "official_fact", "《玩具总动员5》为什么让玩具先面对一台平板电脑", "src-toy-story-pixar")]:
-        write_text(f"task-cards/task-card-{aid}.md", f"# Task Card: {aid}\n\nproduction_contract: article-first-v1\nbrief_contract: writing-brief-v2\ntitle_contract: title-pack-v1\nlegacy_compatibility: false\nrun_contract_required: true\narticle_id: {aid}\narticle_mode: {mode}\nrequired_source_roles: [{role}]\ncore_question: {question}\nreader: 当前电影观众\nbody_outline:\n- 先给出具体事实或现场\n- 再解释冲突如何改变人物关系\n- 最后回到读者能转述的判断和边界\nsource_scope: {source}\n")
+        write_text(f"task-cards/task-card-{aid}.md", f"# Task Card: {aid}\n\nproduction_contract: article-first-v1\nbrief_contract: writing-brief-v2\ntitle_contract: title-pack-v1\nlegacy_compatibility: false\nrun_contract_required: true\narticle_id: {aid}\narticle_mode: {mode}\nrequired_source_roles: [{role}]\ncore_question: {question}\nreader: 当前电影观众\nbody_outline:\n- 先给出具体事实或现场\n- 再解释冲突如何改变人物关系\n- 最后回到读者能转述的判断和边界\nsource_scope: {source}\n{TASK_CARD_REQUIRED_FIELDS[aid]}")
         write_json(f"task-cards/{aid}.json", {"schema_version": "article-task-card-v1", "article_id": aid, **CONTRACT, "article_mode": mode, "required_source_roles": [role], "core_question": question, "source_refs": [source]})
         write_json(f"task-hierarchy/article-task-{aid}.json", {"schema_version": "article-task-v1", "article_id": aid, "crawl_task_id": f"crawl-{aid}", "status": "content_passed", "brief_path": f"briefs/writing-brief-{aid}.md", "task_card_path": f"task-cards/task-card-{aid}.md"})
         write_json(f"task-hierarchy/crawl-task-{aid}.json", {"schema_version": "crawl-task-v1", "crawl_task_id": f"crawl-{aid}", "article_id": aid, "status": "accepted", "source_refs": [source], "required_claim_levels": ["event_exists", "character_setup", "scene_action", "dialogue"]})
