@@ -67,10 +67,16 @@
 
 ## Review And Controller Status
 
+- content_result: `PASS | FAIL | PENDING | UNKNOWN`
+- evidence_result: `PASS | FAIL | PENDING | UNKNOWN`
+- governance_result: `PASS | FAIL | PENDING | UNKNOWN`
+- publication_authorization: `not_authorized`
+
 - worker_dispatch_ref:
 - [ ] Missing requested skill is recorded as fallback only for drafting/title/structure; review/prepublication is blocked.
 - [ ] Worker input is a structured extract/fact card, not raw HTML.
 - [ ] Independent review report is attached.
+- [ ] Strict runs bind independent review to `artifact_path/artifact_sha256`、`body_sha256`、`title_pack_sha256` and `created_from_run`; mismatch is `stale_review`.
 - [ ] No unresolved blocker or major finding remains.
 - [ ] Content-fidelity, title-pack, title-review, final-review, and content-delivery records identify the same run and current article version, using their respective contract fields. No summary may say `CONTENT_READY` while that run's `content-delivery.json` is `CONTENT_BLOCKED`.
 - [ ] If the user only wants a publishable article and no publication action, missing human attestation/controller governance is recorded as a governance note and does not block `CONTENT_READY`.

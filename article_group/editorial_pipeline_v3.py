@@ -14,6 +14,13 @@ from typing import Any, Mapping
 
 from jsonschema import Draft202012Validator, FormatChecker
 
+from .run_contract import (
+    is_strict_run_contract,
+    validate_phase_contract_fields,
+    validate_run_contract,
+)
+from .source_capability import validate_claim_capabilities
+
 STATES = (
     "idea",
     "precheck",
@@ -155,6 +162,7 @@ def validate_transition(
     topic_card: Mapping[str, Any] | None | object = _MISSING,
     crawl_task: Mapping[str, Any] | None | object = _MISSING,
     material_pack: Mapping[str, Any] | None | object = _MISSING,
+    strict: bool | None = None,
 ) -> list[str]:
     """Validate a V3 transition and, when supplied, its artifact gate.
 
@@ -174,11 +182,11 @@ def validate_transition(
     if to_state not in _ALLOWED[from_state]:
         return [f"transition_not_allowed:{from_state}->{to_state}"]
 
-    strict = any(
+    artifact_validation = any(
         artifact is not _MISSING
         for artifact in (topic_card, crawl_task, material_pack)
     )
-    if not strict:
+    if not artifact_validation and strict is not True:
         return []
 
     return _validate_transition_artifacts(
@@ -187,6 +195,7 @@ def validate_transition(
         topic_card=None if topic_card is _MISSING else topic_card,
         crawl_task=None if crawl_task is _MISSING else crawl_task,
         material_pack=None if material_pack is _MISSING else material_pack,
+        strict=strict,
     )
 
 
@@ -197,6 +206,7 @@ def validate_pipeline_transition(
     topic_card: Mapping[str, Any] | None = None,
     crawl_task: Mapping[str, Any] | None = None,
     material_pack: Mapping[str, Any] | None = None,
+    strict: bool | None = None,
 ) -> list[str]:
     """Strictly validate a transition, including required artifact gates."""
 
@@ -209,6 +219,7 @@ def validate_pipeline_transition(
         topic_card=topic_card,
         crawl_task=crawl_task,
         material_pack=material_pack,
+        strict=strict,
     )
 
 
@@ -219,6 +230,7 @@ def _validate_transition_artifacts(
     topic_card: Mapping[str, Any] | None,
     crawl_task: Mapping[str, Any] | None,
     material_pack: Mapping[str, Any] | None,
+    strict: bool | None = None,
 ) -> list[str]:
     errors: list[str] = []
 
@@ -285,6 +297,7 @@ def _validate_transition_artifacts(
                     material_pack,
                     topic_card=topic_card,
                     crawl_task=crawl_task,
+                    strict=strict,
                 )
             )
             _append_if(
@@ -320,6 +333,7 @@ def _validate_transition_artifacts(
                     material_pack,
                     topic_card=topic_card,
                     crawl_task=crawl_task,
+                    strict=strict,
                 )
             )
             _append_if(
@@ -517,6 +531,7 @@ def validate_material_pack(
     *,
     topic_card: Mapping[str, Any] | None = None,
     crawl_task: Mapping[str, Any] | None = None,
+    strict: bool | None = None,
 ) -> list[str]:
     """Validate material evidence, audit visibility, and readiness criteria."""
 
@@ -555,7 +570,13 @@ def validate_material_pack(
                 "topic_version_mismatch",
             )
 
+    declared_strict = is_strict_run_contract(pack)
+    strict = declared_strict if strict is None else bool(strict or declared_strict)
+    if is_strict_run_contract(pack):
+        errors.extend(validate_run_contract(pack))
+
     material_ids: set[str] = set()
+    capability_sources: list[Mapping[str, Any]] = []
     materials = pack.get("materials")
     if isinstance(materials, Mapping):
         for category in _MATERIAL_CATEGORIES:
@@ -573,6 +594,7 @@ def validate_material_pack(
                         f"duplicate:material_id:{material_id}",
                     )
                     material_ids.add(material_id)
+                capability_sources.append(entry)
                 _append_if(
                     errors,
                     entry.get("category") != category,
@@ -623,8 +645,31 @@ def validate_material_pack(
                             f"unknown_material_ref:{material_id}",
                         )
 
+    if strict:
+        errors.extend(validate_phase_contract_fields(pack, "material"))
+        errors.extend(
+            validate_claim_capabilities(
+                capability_sources,
+                claims,
+                # A returned pack is an explicit hand-back of incomplete
+                # research.  Capability completeness becomes a hard gate only
+                # when the pack declares that it is ready to open writing.
+                strict=pack.get("status") == "material_ready",
+            )
+        )
+        acceptance = pack.get("acceptance")
+        if _is_mapping(acceptance):
+            errors.extend(
+                _validate_readiness_fields(
+                    acceptance,
+                    require_pass=pack.get("status") == "material_ready",
+                )
+            )
+
     if pack.get("status") == "material_ready":
-        _validate_material_ready_gate(errors, pack, material_ids, topic_card)
+        _validate_material_ready_gate(
+            errors, pack, material_ids, topic_card, strict=strict
+        )
     elif pack.get("status") == "returned":
         reasons = pack.get("return_reasons")
         _append_if(
@@ -656,11 +701,36 @@ def validate_material_pack(
     return _unique_errors(errors)
 
 
+def _validate_readiness_fields(
+    acceptance: Mapping[str, Any],
+    *,
+    require_pass: bool,
+) -> list[str]:
+    """Require explicit readiness values, but allow an explicit return."""
+
+    errors: list[str] = []
+    material_ready = acceptance.get("material_ready_for_draft")
+    editorial_ready = acceptance.get("editorial_value_ready")
+    if type(material_ready) is not bool:
+        errors.append("missing:material_ready_for_draft")
+    elif require_pass and not material_ready:
+        errors.append("material_not_ready_for_draft")
+    if type(editorial_ready) is not bool:
+        errors.append("missing:editorial_value_ready")
+    elif require_pass and not editorial_ready:
+        errors.append("editorial_value_not_ready")
+    if require_pass and (material_ready is not True or editorial_ready is not True):
+        errors.append("material_ready_requires_both_readiness")
+    return errors
+
+
 def _validate_material_ready_gate(
     errors: list[str],
     pack: Mapping[str, Any],
     material_ids: set[str],
     topic_card: Mapping[str, Any] | None,
+    *,
+    strict: bool = False,
 ) -> None:
     materials = pack.get("materials")
     if isinstance(materials, Mapping):

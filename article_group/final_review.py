@@ -33,6 +33,7 @@ from article_group.content_fidelity import content_body_path, evaluate_content_f
 from article_group.delivery import compose_delivery_markdown, validate_body_draft, validate_delivery_markdown
 from article_group.editorial_review import evaluate_editorial_record
 from article_group.human_attestation import validate_human_attestation
+from article_group.independent_review import evaluate_independent_review
 from article_group.portfolio_gate import check_cross_batch, collect_history, interpret_history_input
 from article_group.preview_contract import (
     resolve_preview_mode,
@@ -47,11 +48,20 @@ from article_group.review_surface import (
     validate_markdown_review_evidence,
 )
 from article_group.run_profile import MAX_CJK_CHARS, MIN_CJK_CHARS, validate_batch_profile
+from article_group.run_contract import (
+    is_strict_run_contract,
+    validate_article_first_run_lane,
+    validate_phase_contract_fields,
+    validate_referenced_contract_artifacts,
+    validate_run_contract,
+)
+from article_group.rule_compliance import evaluate_batch_rule_compliance
 from article_group.title_pack_fidelity import evaluate_title_pack, evaluate_title_review
 
 PUBLISHABLE = "PUBLISHABLE"
 BLOCKED = "BLOCKED"
 PENDING = "PENDING"
+FINAL_REVIEW_SCHEMA = "final-review-v1"
 
 CHAR_DIFF_TOLERANCE = 0.15  # style_gate 与 prose_pilot 字数口径差容限
 _SCORING_LIMITS = {
@@ -111,22 +121,140 @@ def _evidence_gap(reason: str) -> dict:
     return {"type": "evidence_gap", "reason": reason}
 
 
+def _dimensions_for_reason(reason: str) -> dict[str, str]:
+    if reason.startswith("gate:content_contract"):
+        return {
+            "content_result": "FAIL",
+            "evidence_result": "PASS",
+            "governance_result": "PENDING",
+        }
+    if reason.startswith("gate:publication_authorization"):
+        return {
+            "content_result": "PASS",
+            "evidence_result": "PASS",
+            "governance_result": "FAIL",
+        }
+    if reason.startswith("gate:title_pack") or reason.startswith("gate:delivery_artifact"):
+        return {
+            "content_result": "PASS",
+            "evidence_result": "FAIL",
+            "governance_result": "PENDING",
+        }
+    if reason.startswith("gate:independent_review"):
+        return {
+            "content_result": "PASS",
+            "evidence_result": "FAIL",
+            "governance_result": "PENDING",
+        }
+    return {
+        "content_result": "UNKNOWN",
+        "evidence_result": "FAIL",
+        "governance_result": "PENDING",
+    }
+
+
 def _blocked(reason: str, **extra: object) -> dict:
-    return {"verdict": BLOCKED, "reason": reason, **extra}
+    return {
+        "verdict": BLOCKED,
+        "reason": reason,
+        **_dimensions_for_reason(reason),
+        "publication_authorization": "not_authorized",
+        **extra,
+    }
+
+
+_CONTENT_PENDING_MARKERS = (
+    "style-gate",
+    "style_gate",
+    "prose-pilot",
+    "prose_pilot",
+    "opening_hook",
+    "title_gap",
+    "fact_density",
+    "hook_declaration",
+    "closing_interaction",
+    "char_count=",
+    "rule_compliance=",
+    "source_stripped_",
+)
+_EVIDENCE_PENDING_MARKERS = (
+    "cross_batch",
+    "revalidation",
+    "fact_card",
+    "evidence",
+    "source_",
+    "stale",
+)
+_GOVERNANCE_PENDING_MARKERS = (
+    "independent_review=",
+    "controller_acceptance=",
+    "human_editor_attestation=",
+    "human_attestation_",
+    "human_readability_attestation=",
+    "human_review_completed_by_nonhuman_provenance",
+    "delivery_state=",
+    "html_delivery_state=",
+    "editorial-review-record",
+)
+
+# 只有"人还没签"才会产生这些原因码；它们属治理待办，不是内容缺陷（A1，2026-09-15）。
+_HUMAN_ATTESTATION_CODES = (
+    "source_stripped_readability_pending",
+    "source_stripped_human_record_missing",
+    "source_stripped_human_reviewer_missing",
+)
+
+
+def _pending_dimensions(items: list[str]) -> dict[str, str]:
+    dimensions = {
+        "content_result": "PASS",
+        "evidence_result": "PASS",
+        "governance_result": "PASS",
+    }
+    for item in items:
+        normalized = item.lower()
+        if any(marker in normalized for marker in _CONTENT_PENDING_MARKERS):
+            dimensions["content_result"] = "PENDING"
+        if any(marker in normalized for marker in _EVIDENCE_PENDING_MARKERS):
+            dimensions["evidence_result"] = "PENDING"
+        if any(marker in normalized for marker in _GOVERNANCE_PENDING_MARKERS):
+            dimensions["governance_result"] = "PENDING"
+        elif not any(
+            marker in normalized
+            for marker in (*_CONTENT_PENDING_MARKERS, *_EVIDENCE_PENDING_MARKERS)
+        ):
+            # Unknown human judgment items are not silently treated as
+            # content or governance passes.
+            dimensions["evidence_result"] = "PENDING"
+    return dimensions
 
 
 def _pending(reason: str, items: list[str]) -> dict:
-    return {"verdict": PENDING, "reason": reason, "human_judgment_items": items}
+    return {
+        "verdict": PENDING,
+        "reason": reason,
+        "human_judgment_items": items,
+        **_pending_dimensions(items),
+        "publication_authorization": "not_authorized",
+    }
 
 
 def _publishable() -> dict:
-    return {"verdict": PUBLISHABLE, "reason": "全部闸门和评分卡通过；发布仍需真人授权"}
+    return {
+        "verdict": PUBLISHABLE,
+        "reason": "全部闸门和评分卡通过；发布仍需真人授权",
+        "content_result": "PASS",
+        "evidence_result": "PASS",
+        "governance_result": "PASS",
+        "publication_authorization": "not_authorized",
+    }
 
 
 def _is_article_first_batch(batch: dict, articles: list[object] | None = None) -> bool:
     values = articles if articles is not None else batch.get("articles", [])
     return bool(
         batch.get("article_first_contract_version") == ARTICLE_FIRST_CONTRACT_VERSION
+        or is_strict_run_contract(batch)
         or any(
             isinstance(article, dict)
             and (
@@ -155,12 +283,16 @@ def _modern_relative_path(root: Path, raw: object) -> Path | None:
     return _resolve_inside(root, root / raw)
 
 
-def _modern_article_contract(root: Path, article: dict) -> dict:
+def _modern_article_contract(root: Path, article: dict, *, strict: bool = False) -> dict:
     """Validate the immutable body/title/delivery chain for one modern article."""
 
     aid = str(article.get("article_id", "?"))
     errors: list[str] = []
-    errors.extend(validate_phase_field_boundary(article, "title"))
+    errors.extend(
+        validate_phase_contract_fields(article, "title")
+        if strict
+        else validate_phase_field_boundary(article, "title")
+    )
 
     def path_for(fields: tuple[str, ...], label: str) -> tuple[str, Path | None]:
         for field in fields:
@@ -197,7 +329,11 @@ def _modern_article_contract(root: Path, article: dict) -> dict:
     if content is None:
         errors.append("content_fidelity_missing_or_unreadable")
     else:
-        content_report = evaluate_content_fidelity(content, body_text=body_text)
+        content_report = evaluate_content_fidelity(
+            content,
+            body_text=body_text,
+            strict=strict or None,
+        )
         content_result = content_report.get("status")
         if content_result != "pass":
             errors.extend(
@@ -297,6 +433,63 @@ def _modern_article_contract(root: Path, article: dict) -> dict:
     }
 
 
+def _strict_independent_review(
+    root: Path,
+    article: dict,
+    binding: dict,
+    *,
+    run_id: str,
+) -> tuple[str, list[str]]:
+    """Check the independent review against the exact current article chain."""
+
+    aid = str(article.get("article_id", "?"))
+    raw_path = article.get("independent_review_path") or article.get(
+        "independent_review_record_path"
+    )
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        raw_path = f"review/{aid}/independent-review.json"
+    review_path = _modern_relative_path(root, raw_path)
+    if review_path is None or not review_path.is_file():
+        return "pending", [f"{aid}: independent_review=missing"]
+    review = _load_json(review_path)
+    if review is None:
+        return "blocked", ["independent_review_unreadable"]
+
+    body_raw = article.get("body_draft_path") or article.get("body_path")
+    title_raw = article.get("title_pack_path")
+    artifact_raw = (
+        binding.get("delivery_raw")
+        or article.get("delivery_path")
+        or article.get("artifact_path")
+        or body_raw
+    )
+    report = evaluate_independent_review(
+        review,
+        run_root=root,
+        expected_artifact_path=artifact_raw if isinstance(artifact_raw, str) else None,
+        expected_body_path=body_raw if isinstance(body_raw, str) else None,
+        expected_title_pack_path=title_raw if isinstance(title_raw, str) else None,
+        expected_run_id=run_id,
+        strict=True,
+    )
+    errors = report.get("errors", [])
+    if "stale_review" in errors:
+        return "blocked", sorted(set(["stale_review", *errors]))
+    if errors:
+        return "blocked", sorted(set(errors))
+    if not report.get("pass"):
+        status = str(report.get("status", "pending"))
+        normalized = status.strip().lower()
+        if normalized not in {"pending", ""}:
+            decision = str(report.get("decision") or "").strip() or "missing"
+            # 复核已完成但没有通过（decision 非 approve*，或 status=UNVERIFIED）属内容问题，
+            # 必须阻断；只有"尚未完成"才进治理待办。2026-09-15 修复：此前二者都被写成
+            # independent_review=<status>，该标记移入治理栏后会把未通过的复核漏放。
+            return "blocked", [f"{aid}: independent_review_decision={decision}"]
+        return "pending", [f"{aid}: independent_review={normalized or 'missing'}"]
+    return "pass", []
+
+
 def _requires_independent_review(batch: dict) -> bool:
     """M2/R7.5 batches must not look publishable before human review is complete.
 
@@ -307,10 +500,96 @@ def _requires_independent_review(batch: dict) -> bool:
     """
     milestone = str(batch.get("milestone", ""))
     return bool(
-        "M2" in milestone
+        is_strict_run_contract(batch)
+        or "M2" in milestone
         or batch.get("manifest_state")
         or batch.get("target_state")
     )
+
+
+def _rule_compliance_pending_items(rule_report: Mapping[str, Any]) -> list[str]:
+    """把未通过的 rule_compliance 逐篇转成人工待办项（A1，2026-09-15）。
+
+    - 若某篇的失败原因**全部**是"人还没签"（可读性/人工记录），记为治理项
+      ``human_readability_attestation=``：机器判内容，人判签字，各归各位。
+    - 一旦混入任何机器可判的失败原因，仍按内容项 ``rule_compliance=`` 处理（fail-closed）。
+
+    注意：治理项的文案刻意**不含** ``rule_compliance=`` 这个子串，否则会被
+    ``_CONTENT_PENDING_MARKERS`` 重新归类成内容问题（同一类折叠会制造假阳性）。
+    """
+
+    items: list[str] = []
+    for entry in rule_report.get("articles", []):
+        if not isinstance(entry, dict) or entry.get("status") == "PASS":
+            continue
+        aid = str(entry.get("article_id", "?"))
+        status = str(entry.get("status", "PENDING")).lower()
+        errors = [str(code) for code in (entry.get("errors") or [])]
+        human_only = bool(errors) and all(code in _HUMAN_ATTESTATION_CODES for code in errors)
+        if human_only:
+            items.append(f"{aid}: human_readability_attestation=pending ({status})")
+        else:
+            items.append(f"{aid}: rule_compliance={status}")
+    return items
+
+
+# 只有"编辑口径"类、且已由 controller 明确裁决的指标才可被豁免（2026-09-15，F5 选项 b）。
+# 机器不会创建 review/controller-waivers.json，也不会替 controller 补字段。
+_WAIVABLE_GATES = ("fact_density",)
+
+
+def _style_record_article_id(file_name: str) -> str:
+    """从 ``style-gate-markdown-art-001.json`` 取回 article_id；取不到返回空串。"""
+
+    match = re.match(r"style-gate(?:-markdown)?-(?P<aid>.+)\.json$", file_name)
+    return match.group("aid") if match else ""
+
+
+def _load_controller_waivers(root: Path) -> dict[tuple[str, str], dict[str, Any]]:
+    """读取 controller 手写的豁免记录（fail-closed：任何异常都视为无豁免）。
+
+    文件 ``review/controller-waivers.json``::
+
+        {"schema_version": "controller-waivers-v1",
+         "waivers": [{"gate": "fact_density", "article_id": "art-001",
+                      "adjudicated": true, "adjudicator": "Allen",
+                      "recorded_at": "2026-09-15",
+                      "reason": "口径理由（必填）"}]}
+
+    条目必须 gate 落在 ``_WAIVABLE_GATES``、字段齐全、``adjudicated`` 为 true；
+    任何一条不满足就被忽略并继续阻断——机器只尊重显式裁决，不自行创造豁免。
+    """
+
+    path = root / "review" / "controller-waivers.json"
+    if not path.is_file():
+        return {}
+    payload = _load_json(path)
+    if not isinstance(payload, dict):
+        return {}
+    entries = payload.get("waivers")
+    if not isinstance(entries, list):
+        return {}
+    loaded: dict[tuple[str, str], dict[str, Any]] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        gate = str(entry.get("gate") or "").strip()
+        aid = str(entry.get("article_id") or "").strip()
+        reason = str(entry.get("reason") or "").strip()
+        adjudicator = str(entry.get("adjudicator") or "").strip()
+        if gate not in _WAIVABLE_GATES or not aid or not reason or not adjudicator:
+            continue
+        if entry.get("adjudicated") is not True:
+            continue
+        loaded[(gate, aid)] = {
+            "article_id": aid,
+            "gate": gate,
+            "reason": reason,
+            "adjudicator": adjudicator,
+            "recorded_at": str(entry.get("recorded_at") or ""),
+            "source": "review/controller-waivers.json",
+        }
+    return loaded
 
 
 def _review_completion_items(
@@ -437,6 +716,143 @@ def _sha256(path: Path) -> str | None:
     except OSError:
         return None
     return digest.hexdigest()
+
+
+_FINAL_REVIEW_COMPARISON_FIELDS = (
+    "run_id",
+    "verdict",
+    "reason",
+    "content_result",
+    "evidence_result",
+    "governance_result",
+    "article_rule_compliance",
+    "publication_authorization",
+    "human_judgment_items",
+    "evidence_gaps",
+    "adjudicated_waivers",
+    "review_surface",
+    "preview_mode",
+    "final_review_schema",
+    "batch_sha256",
+    "reviewed_artifacts",
+)
+
+
+def _current_review_artifacts(root: Path, batch: dict) -> list[dict[str, str]]:
+    """Return the current final review surface and its byte identities."""
+
+    entries: list[dict[str, str]] = []
+    surface = batch.get("review_surface")
+    if surface == "markdown_codex":
+        articles = batch.get("articles")
+        if not isinstance(articles, list):
+            return entries
+        for article in articles:
+            if not isinstance(article, dict):
+                continue
+            raw_path = article.get("delivery_path") or article.get("markdown_path")
+            if not isinstance(raw_path, str):
+                continue
+            target = _resolve_inside(root, root / raw_path)
+            digest = _sha256(target) if target is not None and target.is_file() else None
+            if target is None or digest is None:
+                continue
+            entries.append(
+                {
+                    "article_id": str(article.get("article_id", "")),
+                    "path": target.relative_to(root.resolve()).as_posix(),
+                    "sha256": digest,
+                }
+            )
+        return entries
+
+    for target in _delivery_htmls(root):
+        digest = _sha256(target)
+        if digest is None:
+            continue
+        entries.append(
+            {
+                "path": target.relative_to(root.resolve()).as_posix(),
+                "sha256": digest,
+            }
+        )
+    return entries
+
+
+def build_final_review_record(batch_dir: str | Path) -> dict:
+    """Evaluate and bind a final-review record to the current run bytes."""
+
+    root = Path(batch_dir)
+    report = dict(evaluate_batch(root))
+    batch = _load_json(root / "batch.json") or {}
+    if batch.get("article_rule_compliance_required") is True:
+        report["article_rule_compliance"] = evaluate_batch_rule_compliance(root, batch).get("status", "UNVERIFIED")
+    else:
+        report.setdefault("article_rule_compliance", "not_required")
+    if not report.get("run_id") and batch.get("run_id"):
+        report["run_id"] = batch["run_id"]
+    report.update(
+        {
+            "final_review_schema": FINAL_REVIEW_SCHEMA,
+            "final_review_path": "review/final-review.json",
+            "batch_sha256": _sha256(root / "batch.json"),
+            "reviewed_artifacts": _current_review_artifacts(root, batch),
+        }
+    )
+    return report
+
+
+def validate_final_review_record(
+    record: object,
+    batch_dir: str | Path,
+    *,
+    expected: dict | None = None,
+) -> list[str]:
+    """Fail closed unless a persisted final review is for this exact run."""
+
+    if not isinstance(record, dict):
+        return ["final_review_record_not_object"]
+    root = Path(batch_dir)
+    batch = _load_json(root / "batch.json")
+    if batch is None:
+        return ["batch_unreadable"]
+
+    errors: list[str] = []
+    if record.get("final_review_schema") != FINAL_REVIEW_SCHEMA:
+        errors.append("final_review_schema_missing_or_invalid")
+    expected_run_id = batch.get("run_id")
+    if record.get("run_id") != expected_run_id:
+        errors.extend(("stale_final_review", "final_review_run_id_mismatch"))
+    batch_digest = _sha256(root / "batch.json")
+    if not isinstance(record.get("batch_sha256"), str):
+        errors.append("final_review_binding_missing:batch_sha256")
+    if record.get("batch_sha256") != batch_digest:
+        errors.extend(("stale_final_review", "final_review_batch_hash_mismatch"))
+    current_artifacts = _current_review_artifacts(root, batch)
+    if record.get("reviewed_artifacts") != current_artifacts:
+        errors.extend(("stale_final_review", "final_review_artifacts_mismatch"))
+
+    if expected is not None:
+        for field in _FINAL_REVIEW_COMPARISON_FIELDS:
+            if record.get(field) != expected.get(field):
+                errors.extend(("stale_final_review", f"final_review_result_mismatch:{field}"))
+    return list(dict.fromkeys(errors))
+
+
+def write_final_review_report(
+    batch_dir: str | Path,
+    output: str | Path | None = None,
+) -> Path:
+    """Persist a freshly evaluated and byte-bound final-review record."""
+
+    root = Path(batch_dir)
+    target = Path(output) if output is not None else root / "review" / "final-review.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        json.dumps(build_final_review_record(root), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return target
 
 
 def _article_delivery_htmls(
@@ -754,9 +1170,30 @@ def evaluate_batch(batch_dir: str | Path) -> dict:
     if batch is None:
         return _blocked("evidence_unreadable:batch.json")
 
+    strict_run = is_strict_run_contract(batch)
     articles = batch.get("articles") or []
     if not isinstance(articles, list) or not articles:
         return _blocked("evidence_invalid:batch.json:no_articles")
+
+    article_first_batch = _is_article_first_batch(batch, articles)
+    lane_errors = validate_article_first_run_lane(batch, detected=article_first_batch)
+    if lane_errors:
+        return _blocked("gate:run_contract", errors=lane_errors)
+    if strict_run:
+        contract_errors = validate_run_contract(batch)
+        contract_errors.extend(validate_referenced_contract_artifacts(root, batch))
+        if contract_errors:
+            return _blocked("gate:run_contract", errors=contract_errors)
+        if batch.get("article_rule_compliance_required") is True:
+            rule_report = evaluate_batch_rule_compliance(root, batch)
+            if rule_report.get("status") in {"FAIL", "UNVERIFIED"}:
+                return _blocked(
+                    "gate:article_rule_compliance",
+                    errors=rule_report.get("errors", []),
+                    article_rule_compliance=rule_report.get("status"),
+                )
+            if rule_report.get("status") == "PENDING":
+                human_items.extend(_rule_compliance_pending_items(rule_report))
 
     modern_contract = (
         batch.get("run_profile_contract_version") == "run-profile-v1"
@@ -818,13 +1255,12 @@ def evaluate_batch(batch_dir: str | Path) -> dict:
     if str(preflight_data.get("status", "")).upper() != "PASS":
         return _blocked("gate:preflight", status=str(preflight_data.get("status")))
 
-    article_first_batch = _is_article_first_batch(batch, articles)
     modern_bindings: dict[str, dict] = {}
     if article_first_batch:
         for index, article in enumerate(articles):
             if not isinstance(article, dict):
                 return _blocked("gate:content_contract", article=index, errors=["article_not_object"])
-            binding = _modern_article_contract(root, article)
+            binding = _modern_article_contract(root, article, strict=strict_run)
             aid = str(article.get("article_id", index))
             modern_bindings[aid] = binding
             errors = binding["errors"]
@@ -865,7 +1301,25 @@ def evaluate_batch(batch_dir: str | Path) -> dict:
                 )
             if binding.get("selected_title"):
                 article["title"] = binding["selected_title"]
-
+        if strict_run:
+            expected_run_id = str(batch.get("run_id") or root.name)
+            for article in articles:
+                if not isinstance(article, dict):
+                    continue
+                aid = str(article.get("article_id", "?"))
+                review_status, review_items = _strict_independent_review(
+                    root,
+                    article,
+                    modern_bindings.get(aid, {}),
+                    run_id=expected_run_id,
+                )
+                if review_status == "blocked":
+                    return _blocked(
+                        "gate:independent_review",
+                        article=aid,
+                        errors=review_items,
+                    )
+                human_items.extend(review_items)
     delivery_htmls: list[Path] = []
     markdown_by_article: dict[str, Path] = {}
     review_artifacts: list[Path]
@@ -943,12 +1397,15 @@ def evaluate_batch(batch_dir: str | Path) -> dict:
     style_files = sorted(root.glob(style_pattern))
     if not style_files:
         return _blocked(f"evidence_missing:{style_pattern}")
+    controller_waivers = _load_controller_waivers(root)
+    applied_waivers: list[dict[str, Any]] = []
     style_reports: list[tuple[Path, dict]] = []
     for sf in style_files:
         data = _load_json(sf)
         if data is None:
             return _blocked("evidence_unreadable:style-gate", file=sf.name)
         style_reports.append((sf, data))
+        style_article_id = _style_record_article_id(sf.name)
         for art in data.get("articles") or []:
             if not isinstance(art, dict):
                 continue
@@ -969,6 +1426,17 @@ def evaluate_batch(batch_dir: str | Path) -> dict:
                     isinstance(structured_status, dict)
                     and structured_status.get("status") in warning_statuses
                 ):
+                    waiver = controller_waivers.get((field, style_article_id))
+                    if waiver:
+                        applied_waivers.append(
+                            {
+                                **waiver,
+                                "metric": field,
+                                "status": structured_status.get("status"),
+                                "detail": structured_status.get("reason", ""),
+                            }
+                        )
+                        continue
                     human_items.append(
                         f"{sf.name}: {field}: {structured_status.get('reason', 'status=warning')}"
                     )
@@ -1199,7 +1667,7 @@ def evaluate_batch(batch_dir: str | Path) -> dict:
         "reason": None,
         "evidence_gaps": gaps,
         "human_judgment_items": human_items,
-        "adjudicated_waivers": waivers,
+        "adjudicated_waivers": [*waivers, *applied_waivers],
         "publication_authorization": "not_authorized",
     }
     if preview_mode is not None:
@@ -1259,7 +1727,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    report = evaluate_batch(args.batch)
+    report = build_final_review_record(args.batch)
+    final_review_path = args.batch / "review" / "final-review.json"
+    final_review_path.parent.mkdir(parents=True, exist_ok=True)
+    final_review_path.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
     print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
     return 0 if report["verdict"] == PUBLISHABLE else 1
 

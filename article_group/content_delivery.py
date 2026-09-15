@@ -21,7 +21,19 @@ from article_group.article_first import (
 )
 from article_group.content_fidelity import content_body_path, evaluate_content_fidelity
 from article_group.delivery import compose_delivery_markdown, validate_body_draft, validate_delivery_markdown
-from article_group.final_review import BLOCKED, PUBLISHABLE, evaluate_batch
+from article_group.final_review import (
+    BLOCKED,
+    PUBLISHABLE,
+    build_final_review_record,
+    validate_final_review_record,
+)
+from article_group.run_contract import (
+    is_strict_run_contract,
+    validate_article_first_run_lane,
+    validate_phase_contract_fields,
+    validate_referenced_contract_artifacts,
+    validate_run_contract,
+)
 from article_group.title_pack_fidelity import evaluate_title_pack, evaluate_title_review
 
 CONTENT_READY = "CONTENT_READY"
@@ -31,11 +43,38 @@ CONTENT_DELIVERY_SCHEMA = "content-delivery-v1"
 _GOVERNANCE_MARKERS = (
     "human_editor_attestation=",
     "human_attestation_",
+    "human_readability_attestation=",
     "controller_acceptance=",
     "human_review_completed_by_nonhuman_provenance",
+    "independent_review=",
+    "delivery_state=",
+    "html_delivery_state=",
+    "editorial-review-record",
 )
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 _H1_RE = re.compile(r"^\s{0,3}#\s+(?P<title>.+?)\s*$", re.MULTILINE)
+
+
+def _delivery_error_record(
+    reason: str,
+    *,
+    errors: list[str] | None = None,
+) -> dict[str, Any]:
+    """Keep the four review dimensions present on every delivery outcome."""
+
+    blockers = list(dict.fromkeys([reason, *(errors or [])]))
+    return {
+        "schema_version": CONTENT_DELIVERY_SCHEMA,
+        "content_status": CONTENT_BLOCKED,
+        "content_result": "UNKNOWN",
+        "evidence_result": "FAIL",
+        "governance_result": "PENDING",
+        "article_rule_compliance": "UNVERIFIED",
+        "publication_authorization": "not_authorized",
+        "delivery_state": "withheld",
+        "content_blockers": blockers,
+        "governance_items": [],
+    }
 
 
 def _is_governance_item(item: object) -> bool:
@@ -113,12 +152,18 @@ def _modern_article_errors(
     root: Path,
     article: Mapping[str, Any],
     delivery_text: str,
+    *,
+    strict: bool = False,
 ) -> tuple[list[str], str]:
     """Validate the body → title pack → delivery chain for one modern article."""
 
     errors: list[str] = []
     aid = str(article.get("article_id", "?"))
-    errors.extend(validate_phase_field_boundary(article, "title"))
+    errors.extend(
+        validate_phase_contract_fields(article, "title")
+        if strict
+        else validate_phase_field_boundary(article, "title")
+    )
 
     def required_path(*fields: str) -> tuple[str, Path | None]:
         for field in fields:
@@ -151,7 +196,11 @@ def _modern_article_errors(
     if content is None:
         errors.append(f"{aid}:content_fidelity_missing_or_unreadable")
     else:
-        content_result = evaluate_content_fidelity(content, body_text=body_text)
+        content_result = evaluate_content_fidelity(
+            content,
+            body_text=body_text,
+            strict=strict or None,
+        )
         if content_result.get("status") != "pass":
             errors.extend(
                 f"{aid}:content_fidelity:{error}"
@@ -236,6 +285,7 @@ def _article_delivery_entry(
     article: Mapping[str, Any],
     *,
     modern: bool = False,
+    strict: bool = False,
 ) -> dict[str, Any]:
     article_id = str(article.get("article_id", ""))
     raw_path = article.get("delivery_path") if modern else article.get("markdown_path")
@@ -262,7 +312,9 @@ def _article_delivery_entry(
         entry["title_pack_path"] = article.get("title_pack_path", "")
         entry["title_review_path"] = article.get("title_review_path", "")
         entry["delivery_path"] = raw_path
-        modern_errors, selected_title = _modern_article_errors(root, article, text)
+        modern_errors, selected_title = _modern_article_errors(
+            root, article, text, strict=strict
+        )
         if selected_title:
             entry["title"] = selected_title
         if modern_errors:
@@ -275,41 +327,37 @@ def _article_delivery_entry(
     return entry
 
 
-def build_content_delivery_record(
+def _build_content_delivery_record_from_report(
     run_dir: Path,
+    review_report: Mapping[str, Any],
     *,
-    review_report: Mapping[str, Any] | None = None,
+    batch: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Build a compact, user-facing content handoff record for one run."""
+    """Build a handoff from an already evaluated report for unit tests."""
     if not isinstance(run_dir, Path) or not run_dir.is_dir():
-        return {
-            "schema_version": CONTENT_DELIVERY_SCHEMA,
-            "content_status": CONTENT_BLOCKED,
-            "content_blockers": ["run_dir_missing"],
-            "governance_items": [],
-        }
+        return _delivery_error_record("run_dir_missing")
 
-    batch_path = run_dir / "batch.json"
-    try:
-        batch = json.loads(batch_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
-        return {
-            "schema_version": CONTENT_DELIVERY_SCHEMA,
-            "content_status": CONTENT_BLOCKED,
-            "content_blockers": ["batch_unreadable"],
-            "governance_items": [],
-        }
-    if not isinstance(batch, dict):
-        return {
-            "schema_version": CONTENT_DELIVERY_SCHEMA,
-            "content_status": CONTENT_BLOCKED,
-            "content_blockers": ["batch_not_object"],
-            "governance_items": [],
-        }
+    if batch is None:
+        batch_path = run_dir / "batch.json"
+        try:
+            loaded_batch = json.loads(batch_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            return _delivery_error_record("batch_unreadable")
+        if not isinstance(loaded_batch, dict):
+            return _delivery_error_record("batch_not_object")
+        batch = loaded_batch
+    if not isinstance(batch, Mapping):
+        return _delivery_error_record("batch_not_object")
+    if not isinstance(review_report, Mapping):
+        return _delivery_error_record("review_report_not_object")
 
-    report = dict(review_report) if isinstance(review_report, Mapping) else evaluate_batch(run_dir)
+    report = dict(review_report)
     assessment = assess_content_readiness(report)
     blockers = list(assessment["content_blockers"])
+    strict_batch = is_strict_run_contract(batch)
+    if strict_batch:
+        blockers.extend(validate_run_contract(batch))
+        blockers.extend(validate_referenced_contract_artifacts(run_dir, batch))
     if batch.get("review_surface") != "markdown_codex":
         blockers.append("content_delivery_requires_markdown_codex")
     if batch.get("publication_authorization", "not_authorized") != "not_authorized":
@@ -319,7 +367,7 @@ def build_content_delivery_record(
     if not isinstance(articles, list):
         articles = []
         blockers.append("batch_articles_invalid")
-    modern_batch = batch.get("article_first_contract_version") == ARTICLE_FIRST_CONTRACT_VERSION or any(
+    modern_batch = strict_batch or batch.get("article_first_contract_version") == ARTICLE_FIRST_CONTRACT_VERSION or any(
         isinstance(article, Mapping)
         and (is_article_first_record(article) or any(field in article for field in (
             "body_draft_path", "body_path", "title_pack_path", "title_review_path",
@@ -327,8 +375,14 @@ def build_content_delivery_record(
         )))
         for article in articles
     )
+    blockers.extend(validate_article_first_run_lane(batch, detected=modern_batch))
     entries = [
-        _article_delivery_entry(run_dir, article, modern=modern_batch)
+        _article_delivery_entry(
+            run_dir,
+            article,
+            modern=modern_batch,
+            strict=strict_batch,
+        )
         for article in articles
         if isinstance(article, Mapping)
     ]
@@ -345,6 +399,10 @@ def build_content_delivery_record(
         "review_surface": batch.get("review_surface"),
         "final_review_verdict": report.get("verdict"),
         "final_review_path": "review/final-review.json",
+        "content_result": report.get("content_result", "UNKNOWN"),
+        "evidence_result": report.get("evidence_result", "UNKNOWN"),
+        "governance_result": report.get("governance_result", "UNKNOWN"),
+        "article_rule_compliance": report.get("article_rule_compliance", "UNVERIFIED"),
         "publication_authorization": "not_authorized",
         "delivery_state": "content_ready_not_published" if not blockers else "withheld",
         "articles": entries,
@@ -352,6 +410,74 @@ def build_content_delivery_record(
         "governance_items": assessment["governance_items"],
         "note": "CONTENT_READY 只表示文章可交给真人复制发布，不代表本系统已发布或授权发布。",
     }
+
+
+def build_content_delivery_record(
+    run_dir: Path,
+    *,
+    review_report: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a handoff from the persisted and freshly re-evaluated final review.
+
+    ``review_report`` is retained as a consistency assertion for callers that
+    already hold the record.  It can never supply the delivery verdict.
+    """
+
+    if not isinstance(run_dir, Path) or not run_dir.is_dir():
+        return _delivery_error_record("run_dir_missing")
+
+    batch_path = run_dir / "batch.json"
+    try:
+        batch = json.loads(batch_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return _delivery_error_record("batch_unreadable")
+    if not isinstance(batch, dict):
+        return _delivery_error_record("batch_not_object")
+
+    final_review_path = run_dir / "review" / "final-review.json"
+    persisted = _load_object(final_review_path)
+    if persisted is None:
+        reason = (
+            "final_review_record_missing"
+            if not final_review_path.exists()
+            else "final_review_record_unreadable"
+        )
+        return _delivery_error_record(reason)
+
+    try:
+        fresh = build_final_review_record(run_dir)
+    except Exception:  # noqa: BLE001 — delivery must fail closed on re-evaluation errors
+        return _delivery_error_record("final_review_evaluation_failed")
+
+    persisted_errors = validate_final_review_record(
+        persisted,
+        run_dir,
+        expected=fresh,
+    )
+    if persisted_errors:
+        return _delivery_error_record(
+            "stale_final_review" if "stale_final_review" in persisted_errors else "final_review_record_invalid",
+            errors=persisted_errors,
+        )
+
+    if review_report is not None:
+        supplied = dict(review_report) if isinstance(review_report, Mapping) else review_report
+        supplied_errors = validate_final_review_record(
+            supplied,
+            run_dir,
+            expected=fresh,
+        )
+        if supplied_errors:
+            return _delivery_error_record(
+                "review_report_not_current",
+                errors=supplied_errors,
+            )
+
+    return _build_content_delivery_record_from_report(
+        run_dir,
+        fresh,
+        batch=batch,
+    )
 
 
 def write_content_delivery_record(run_dir: Path, output: Path | None = None) -> Path:

@@ -22,6 +22,57 @@
     "created_at",
     "updated_at"
   ],
+  "allOf": [
+    {
+      "if": {
+        "anyOf": [
+          {"required": ["production_contract"]},
+          {"required": ["brief_contract"]},
+          {"required": ["title_contract"]},
+          {"required": ["legacy_compatibility"]},
+          {"required": ["run_contract_required"]}
+        ]
+      },
+      "then": {
+        "required": [
+          "production_contract",
+          "brief_contract",
+          "title_contract",
+          "legacy_compatibility"
+        ],
+        "properties": {
+          "acceptance": {
+            "required": ["material_ready_for_draft", "editorial_value_ready"]
+          }
+        },
+        "allOf": [
+          {
+            "if": {"properties": {"status": {"const": "material_ready"}}, "required": ["status"]},
+            "then": {
+              "properties": {
+                "materials": {
+                  "properties": {
+                    "body_facts": {"items": {"required": ["source_capability"]}},
+                    "industry_context": {"items": {"required": ["source_capability"]}},
+                    "audience_reactions": {"items": {"required": ["source_capability"]}},
+                    "cross_check_facts": {"items": {"required": ["source_capability"]}}
+                  }
+                },
+                "claims": {
+                  "properties": {
+                    "facts": {"items": {"required": ["claim_level"]}},
+                    "attributed_views": {"items": {"required": ["claim_level"]}},
+                    "audience_reactions": {"items": {"required": ["claim_level"]}},
+                    "inferences": {"items": {"required": ["claim_level"]}}
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
   "properties": {
     "schema_version": {"const": "material-pack-v1"},
     "pack_id": {
@@ -42,6 +93,11 @@
       "pattern": "^crawl-[A-Za-z0-9][A-Za-z0-9._-]*$"
     },
     "status": {"enum": ["material_ready", "returned", "closed"]},
+    "production_contract": {"const": "article-first-v1"},
+    "brief_contract": {"const": "writing-brief-v2"},
+    "title_contract": {"const": "title-pack-v1"},
+    "legacy_compatibility": {"const": false},
+    "run_contract_required": {"const": true},
     "materials": {
       "type": "object",
       "additionalProperties": false,
@@ -100,7 +156,9 @@
         "failed_sources_visible": {"type": "boolean"},
         "gaps": {"type": "array", "items": {"type": "string", "minLength": 1}},
         "blocking_gaps": {"type": "array", "items": {"type": "string", "minLength": 1}},
-        "prohibited_claims": {"type": "array", "items": {"type": "string", "minLength": 1}}
+        "prohibited_claims": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "material_ready_for_draft": {"type": "boolean"},
+        "editorial_value_ready": {"type": "boolean"}
       }
     },
     "audience_sample": {
@@ -202,6 +260,17 @@
           "items": {"type": "string", "minLength": 1}
         },
         "cannot_support": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "source_capability": {
+          "oneOf": [
+            {"type": "string", "enum": ["event_exists", "character_setup", "scene_action", "dialogue", "audience_reaction", "mechanism", "outcome"]},
+            {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {"type": "string", "enum": ["event_exists", "character_setup", "scene_action", "dialogue", "audience_reaction", "mechanism", "outcome"]}
+            }
+          ]
+        },
         "sample_scope": {"type": "string"},
         "generalization_allowed": {"type": "boolean"}
       }
@@ -213,6 +282,7 @@
       "properties": {
         "claim_id": {"type": "string", "minLength": 1},
         "text": {"type": "string", "minLength": 1},
+        "claim_level": {"enum": ["event_exists", "character_setup", "scene_action", "dialogue", "audience_reaction", "mechanism", "outcome"]},
         "material_ids": {
           "type": "array",
           "minItems": 1,

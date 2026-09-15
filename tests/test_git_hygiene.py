@@ -92,6 +92,22 @@ def test_validate_infra_ready_rejects_non_iterable_without_crashing():
     assert validate_infra_ready(123) == ["tracked_paths_must_be_an_iterable_of_str"]  # type: ignore[arg-type]
 
 
+def test_live_repo_infra_ready_via_git_ls_files():
+    """实测：当前仓库 git ls-files 必须包含全部必需基础设施路径。
+
+    2026-09-15 接入裁定：git_hygiene 不是过期模块，它在真实仓库上返回
+    0 errors；此测试把该事实变成回归护栏。
+    """
+    import subprocess
+
+    from article_group.git_hygiene import validate_infra_ready
+
+    tracked = subprocess.run(
+        ["git", "ls-files"], capture_output=True, text=True, check=True
+    ).stdout.splitlines()
+    assert validate_infra_ready(tracked) == []
+
+
 def test_validate_workspace_status_flags_cache_and_blocks_daily_when_infra_untracked():
     from article_group.git_hygiene import validate_workspace_status
 

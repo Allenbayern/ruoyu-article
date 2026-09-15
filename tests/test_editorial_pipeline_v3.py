@@ -359,3 +359,72 @@ def test_v3_returned_artifacts_keep_a_reason_for_the_next_action():
     assert "returned_requires_reason" in validate_crawl_task(crawl_task)
     crawl_task["return_reasons"] = ["来源失败，需重试"]
     assert validate_crawl_task(crawl_task) == []
+
+
+def _strict_v3_pack(topic_card, crawl_task):
+    pack = _material_pack(topic_card, crawl_task)
+    pack.update(
+        {
+            "production_contract": "article-first-v1",
+            "brief_contract": "writing-brief-v2",
+            "title_contract": "title-pack-v1",
+            "legacy_compatibility": False,
+        }
+    )
+    for category, entries in pack["materials"].items():
+        for entry in entries:
+            entry["source_capability"] = {
+                "body_facts": "scene_action",
+                "industry_context": "mechanism",
+                "audience_reactions": "audience_reaction",
+                "cross_check_facts": "scene_action",
+            }[category]
+    return pack
+
+
+def test_strict_v3_material_pack_rejects_a_synopsis_backed_scene_claim():
+    topic_card = _topic_card()
+    crawl_task = _crawl_task(topic_card)
+    material_pack = _strict_v3_pack(topic_card, crawl_task)
+    material_pack["materials"]["body_facts"][0]["source_capability"] = "character_setup"
+    material_pack["claims"]["facts"][0]["claim_level"] = "scene_action"
+
+    errors = validate_material_pack(
+        material_pack, topic_card=topic_card, crawl_task=crawl_task
+    )
+
+    assert "claim_level_exceeds_source_capability:claim-1:m-body" in errors
+
+
+def test_strict_v3_material_pack_reports_fact_and_editorial_readiness_separately():
+    topic_card = _topic_card()
+    crawl_task = _crawl_task(topic_card)
+    material_pack = _strict_v3_pack(topic_card, crawl_task)
+    material_pack["acceptance"]["material_ready_for_draft"] = True
+    material_pack["acceptance"]["editorial_value_ready"] = False
+
+    errors = validate_material_pack(
+        material_pack, topic_card=topic_card, crawl_task=crawl_task
+    )
+
+    assert "editorial_value_not_ready" in errors
+    assert "material_ready_for_draft" not in errors
+
+
+def test_strict_v3_returned_pack_can_record_incomplete_research_without_opening_writing():
+    topic_card = _topic_card()
+    crawl_task = _crawl_task(topic_card)
+    material_pack = _strict_v3_pack(topic_card, crawl_task)
+    material_pack["status"] = "returned"
+    material_pack["return_reasons"] = ["仍缺少可复核场面"]
+    material_pack["acceptance"]["material_ready_for_draft"] = False
+    material_pack["acceptance"]["editorial_value_ready"] = False
+    for entries in material_pack["materials"].values():
+        for entry in entries:
+            entry.pop("source_capability", None)
+
+    errors = validate_material_pack(
+        material_pack, topic_card=topic_card, crawl_task=crawl_task
+    )
+
+    assert errors == []

@@ -316,6 +316,120 @@ def test_article_first_material_acceptance_does_not_require_title_directions():
     assert not any("title_direction" in error for error in result["errors"])
 
 
+def test_information_dense_reference_shape_requires_five_hard_information_items():
+    from article_group.article_first import ARTICLE_FIRST_CONTRACT_VERSION
+
+    record = scene_supported_pack(
+        article_first_contract_version=ARTICLE_FIRST_CONTRACT_VERSION,
+        reference_shape="relationship_plot_recap",
+        title_directions=[],
+        content_value_plan={
+            "hard_information_plan": [
+                {"plan_id": "i1", "kind": "action", "material_refs": ["src-episode-scene"]},
+                {"plan_id": "i2", "kind": "scene", "material_refs": ["src-episode-scene"]},
+                {"plan_id": "i3", "kind": "relationship", "material_refs": ["src-episode-page"]},
+                {"plan_id": "i4", "kind": "mechanism", "material_refs": ["src-episode-scene"]},
+            ],
+            "opening_support_refs": ["src-episode-scene"],
+            "explanation_mechanism": "动作顺序解释关系变化",
+        },
+    )
+
+    errors = validate_material_acceptance_record(record)
+
+    assert "content_value_plan_requires_at_least_5_for_reference_shape" in errors
+
+
+def test_information_dense_reference_shape_requires_three_concrete_support_kinds():
+    from article_group.article_first import ARTICLE_FIRST_CONTRACT_VERSION
+
+    record = scene_supported_pack(
+        article_first_contract_version=ARTICLE_FIRST_CONTRACT_VERSION,
+        reference_shape="relationship_plot_recap",
+        title_directions=[],
+        content_value_plan={
+            "hard_information_plan": [
+                {"plan_id": "i1", "kind": "action", "material_refs": ["src-episode-scene"]},
+                {"plan_id": "i2", "kind": "action", "material_refs": ["src-episode-scene"]},
+                {"plan_id": "i3", "kind": "action", "material_refs": ["src-episode-scene"]},
+                {"plan_id": "i4", "kind": "action", "material_refs": ["src-episode-scene"]},
+                {"plan_id": "i5", "kind": "action", "material_refs": ["src-episode-scene"]},
+            ],
+            "opening_support_refs": ["src-episode-scene"],
+            "explanation_mechanism": "动作顺序解释关系变化",
+        },
+    )
+
+    errors = validate_material_acceptance_record(record)
+
+    assert "content_value_plan_requires_three_concrete_support_kinds" in errors
+
+
+def test_legacy_article_first_plan_keeps_existing_three_item_threshold():
+    from article_group.article_first import ARTICLE_FIRST_CONTRACT_VERSION
+
+    record = scene_supported_pack(
+        article_first_contract_version=ARTICLE_FIRST_CONTRACT_VERSION,
+        title_directions=[],
+        content_value_plan={
+            "hard_information_plan": [
+                {"plan_id": "i1", "kind": "action", "material_refs": ["src-episode-scene"]},
+                {"plan_id": "i2", "kind": "scene", "material_refs": ["src-episode-scene"]},
+                {"plan_id": "i3", "kind": "relationship", "material_refs": ["src-episode-page"]},
+            ],
+            "opening_support_refs": ["src-episode-scene"],
+            "explanation_mechanism": "动作顺序解释关系变化",
+        },
+    )
+
+    errors = validate_material_acceptance_record(record)
+
+    assert "content_value_plan_requires_at_least_5_for_reference_shape" not in errors
+    assert "content_value_plan_requires_three_concrete_support_kinds" not in errors
+
+
+def test_reference_shape_must_be_from_supported_set():
+    errors = validate_material_acceptance_record(
+        scene_supported_pack(reference_shape="generic_viral_template")
+    )
+
+    assert "invalid:reference_shape" in errors
+
+
+def test_dense_reference_shape_requires_reader_gain_floor_five_when_declared():
+    errors = validate_material_acceptance_record(
+        scene_supported_pack(
+            reference_shape="relationship_plot_recap",
+            reader_gain_floor=3,
+        )
+    )
+
+    assert "invalid:reader_gain_floor_for_reference_shape" in errors
+
+
+def test_declared_reference_shape_requires_reader_gain_for_each_plan_item():
+    from article_group.article_first import ARTICLE_FIRST_CONTRACT_VERSION
+
+    record = scene_supported_pack(
+        article_first_contract_version=ARTICLE_FIRST_CONTRACT_VERSION,
+        reference_shape="setting_observation",
+        title_directions=[],
+        content_value_plan={
+            "hard_information_plan": [
+                {"plan_id": "i1", "kind": "action", "material_refs": ["src-episode-scene"]},
+                {"plan_id": "i2", "kind": "scene", "material_refs": ["src-episode-scene"]},
+                {"plan_id": "i3", "kind": "relationship", "material_refs": ["src-episode-page"]},
+            ],
+            "opening_support_refs": ["src-episode-scene"],
+            "explanation_mechanism": "动作顺序解释关系变化",
+        },
+    )
+
+    errors = validate_material_acceptance_record(record)
+
+    assert "missing:content_value_plan_reader_gain:0" in errors
+
+
 def test_article_first_material_acceptance_rejects_discovery_title_skeleton():
     from article_group.article_first import ARTICLE_FIRST_CONTRACT_VERSION
 
@@ -328,3 +442,162 @@ def test_article_first_material_acceptance_rejects_discovery_title_skeleton():
     )
 
     assert "forbidden_content_field:title_skeleton" in result["errors"]
+
+
+def test_strict_material_acceptance_separates_fact_readiness_from_editorial_value():
+    from article_group.article_first import ARTICLE_FIRST_CONTRACT_VERSION
+
+    record = scene_supported_pack(
+        article_first_contract_version=ARTICLE_FIRST_CONTRACT_VERSION,
+        production_contract="article-first-v1",
+        brief_contract="writing-brief-v2",
+        title_contract="title-pack-v1",
+        legacy_compatibility=False,
+        title_directions=[],
+        material_ready_for_draft=True,
+        editorial_value_ready=False,
+        content_value_plan={
+            "hard_information_plan": [
+                {"plan_id": "i1", "kind": "action", "material_refs": ["src-episode-scene"]},
+                {"plan_id": "i2", "kind": "scene", "material_refs": ["src-episode-scene"]},
+                {"plan_id": "i3", "kind": "relationship", "material_refs": ["src-episode-page"]},
+            ],
+            "opening_support_refs": ["src-episode-scene"],
+            "explanation_mechanism": "动作顺序解释关系变化",
+        },
+    )
+
+    result = evaluate_material_acceptance(record)
+
+    assert result["material_ready_for_draft"] is True
+    assert result["editorial_value_ready"] is False
+    assert "editorial_value_not_ready" in result["errors"]
+    assert result["status"] != "accept"
+
+
+def test_strict_material_claim_cannot_upgrade_metadata_to_scene():
+    from article_group.article_first import ARTICLE_FIRST_CONTRACT_VERSION
+
+    record = heart_metadata_pack(
+        article_first_contract_version=ARTICLE_FIRST_CONTRACT_VERSION,
+        production_contract="article-first-v1",
+        brief_contract="writing-brief-v2",
+        title_contract="title-pack-v1",
+        legacy_compatibility=False,
+        claims=[
+            {
+                "claim_id": "c-scene",
+                "claim_level": "scene_action",
+                "source_ids": ["src-heart-teaser"],
+            }
+        ],
+    )
+
+    errors = validate_material_acceptance_record(record)
+
+    assert "claim_level_exceeds_source_capability:c-scene:src-heart-teaser" in errors
+
+
+def test_strict_return_research_can_declare_readiness_false():
+    from article_group.article_first import ARTICLE_FIRST_CONTRACT_VERSION
+
+    record = heart_metadata_pack(
+        article_first_contract_version=ARTICLE_FIRST_CONTRACT_VERSION,
+        production_contract="article-first-v1",
+        brief_contract="writing-brief-v2",
+        title_contract="title-pack-v1",
+        legacy_compatibility=False,
+        material_ready_for_draft=False,
+        editorial_value_ready=False,
+        content_value_plan=None,
+        title_directions=[],
+    )
+
+    result = evaluate_material_acceptance(record)
+
+    assert result["status"] == "return_research"
+    assert result["errors"] == []
+    assert result["material_ready_for_draft"] is False
+    assert result["editorial_value_ready"] is False
+
+
+def test_strict_material_plan_references_must_name_declared_sources():
+    from article_group.article_first import ARTICLE_FIRST_CONTRACT_VERSION
+
+    record = scene_supported_pack(
+        article_first_contract_version=ARTICLE_FIRST_CONTRACT_VERSION,
+        production_contract="article-first-v1",
+        brief_contract="writing-brief-v2",
+        title_contract="title-pack-v1",
+        legacy_compatibility=False,
+        material_ready_for_draft=True,
+        editorial_value_ready=True,
+        title_directions=[],
+        content_value_plan={
+            "hard_information_plan": [
+                {
+                    "plan_id": "i1",
+                    "kind": "action",
+                    "material_refs": ["missing-source"],
+                },
+                {
+                    "plan_id": "i2",
+                    "kind": "scene",
+                    "material_refs": ["src-episode-scene"],
+                },
+                {
+                    "plan_id": "i3",
+                    "kind": "relationship",
+                    "material_refs": ["src-episode-page"],
+                },
+            ],
+            "opening_support_refs": ["missing-opening-source"],
+            "explanation_mechanism": "动作顺序解释关系变化",
+        },
+    )
+
+    errors = validate_material_acceptance_record(record)
+
+    assert "unknown:content_value_plan_material_ref:0:missing-source" in errors
+    assert "unknown:content_value_plan_opening_support:missing-opening-source" in errors
+
+
+def test_strict_marker_cannot_be_downgraded_by_strict_false():
+    from article_group.article_first import ARTICLE_FIRST_CONTRACT_VERSION
+
+    record = scene_supported_pack(
+        article_first_contract_version=ARTICLE_FIRST_CONTRACT_VERSION,
+        production_contract="article-first-v1",
+        brief_contract="writing-brief-v2",
+        title_contract="title-pack-v1",
+        legacy_compatibility=False,
+        title_directions=[],
+        material_ready_for_draft=True,
+        editorial_value_ready=True,
+        content_value_plan={
+            "hard_information_plan": [
+                {
+                    "plan_id": "i1",
+                    "kind": "action",
+                    "material_refs": ["src-episode-scene"],
+                },
+                {
+                    "plan_id": "i2",
+                    "kind": "scene",
+                    "material_refs": ["src-episode-scene"],
+                },
+                {
+                    "plan_id": "i3",
+                    "kind": "relationship",
+                    "material_refs": ["src-episode-page"],
+                },
+            ],
+            "opening_support_refs": ["src-episode-scene"],
+            "explanation_mechanism": "动作顺序解释关系变化",
+        },
+    )
+
+    errors = validate_material_acceptance_record(record, strict=False)
+
+    assert errors
+    assert "missing:source_capability:src-episode-scene" in errors

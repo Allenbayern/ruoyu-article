@@ -281,6 +281,7 @@ def test_modern_final_review_blocks_without_selected_title_package(tmp_path: Pat
     _write_json(batch / "batch.json", {
         "run_id": "article-first-999",
         "article_first_contract_version": "article-first-v1",
+        "legacy_compatibility": True,
         "review_surface": "markdown_codex",
         "articles": [{
             "article_id": "art-001",
@@ -297,6 +298,32 @@ def test_modern_final_review_blocks_without_selected_title_package(tmp_path: Pat
 
     assert report["verdict"] == BLOCKED
     assert report["reason"] in {"gate:title_pack", "gate:content_contract"}
+
+
+def test_modern_artifacts_without_a_run_contract_or_legacy_marker_are_rejected(
+    tmp_path: Path,
+):
+    batch = tmp_path / "unmarked-modern"
+    (batch / "review").mkdir(parents=True)
+    _write_json(
+        batch / "batch.json",
+        {
+            "run_id": "2026-09-13/unmarked-modern",
+            "review_surface": "markdown_codex",
+            "articles": [{
+                "article_id": "art-001",
+                "body_draft_path": "drafts/body_draft.md",
+            }],
+        },
+    )
+    _write_json(batch / "preflight-report.json", {"status": "PASS"})
+
+    report = evaluate_batch(batch)
+
+    assert report["verdict"] == BLOCKED
+    assert report["reason"] == "gate:run_contract"
+    assert "contract_mismatch" in report["errors"]
+    assert "run_contract_required" in report["errors"]
 
 
 def test_modern_final_review_accepts_a_current_selected_title_package(tmp_path: Path):
@@ -404,6 +431,7 @@ def test_modern_final_review_accepts_a_current_selected_title_package(tmp_path: 
     payload = {
         "run_id": "article-first-selected",
         "article_first_contract_version": "article-first-v1",
+        "legacy_compatibility": True,
         "review_surface": "markdown_codex",
         "articles": articles,
     }
@@ -693,6 +721,145 @@ def test_release_info_does_not_trigger_pending(tmp_path: Path) -> None:
     assert report["human_judgment_items"] == []
 
 
+def test_final_review_always_separates_content_evidence_governance_and_authorization(tmp_path: Path) -> None:
+    batch = _make_batch(tmp_path)
+
+    report = evaluate_batch(batch)
+
+    assert report["content_result"] == "PASS"
+    assert report["evidence_result"] == "PASS"
+    assert report["governance_result"] == "PASS"
+    assert report["publication_authorization"] == "not_authorized"
+
+
+def test_declared_new_run_without_complete_contract_is_rejected_before_other_gates(tmp_path: Path) -> None:
+    batch = _make_batch(tmp_path)
+    batch_json = batch / "batch.json"
+    payload = json.loads(batch_json.read_text(encoding="utf-8"))
+    payload["production_contract"] = "article-first-v1"
+    batch_json.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    report = evaluate_batch(batch)
+
+    assert report["verdict"] == BLOCKED
+    assert report["reason"] == "gate:run_contract"
+    assert "contract_mismatch" in report["errors"]
+    assert report["publication_authorization"] == "not_authorized"
+
+
+def test_strict_final_review_rejects_independent_review_bound_to_an_old_title_pack(tmp_path: Path) -> None:
+    from article_group.final_review import _strict_independent_review
+    from article_group.independent_review import build_independent_review_binding
+
+    (tmp_path / "articles").mkdir()
+    (tmp_path / "review").mkdir()
+    body_path = tmp_path / "articles" / "art-001.md"
+    title_path = tmp_path / "review" / "title-pack.json"
+    body_path.write_text("正文版本一", encoding="utf-8")
+    title_path.write_text('{"title":"标题一"}', encoding="utf-8")
+    binding = build_independent_review_binding(
+        tmp_path,
+        artifact_path="articles/art-001.md",
+        body_path="articles/art-001.md",
+        title_pack_path="review/title-pack.json",
+        created_from_run="run-001",
+    )
+    review = {
+        "schema_version": "article-independent-review-v1",
+        "article_task_id": "at-art-001",
+        "article_id": "art-001",
+        "draft_path": "articles/art-001.md",
+        "draft_sha256": binding["artifact_sha256"],
+        "attempt": 1,
+        "max_attempts": 3,
+        "status": "PASS",
+        "decision": "approve",
+        "next_step": "controller_review",
+        "publication_authorization": "not_authorized",
+        **binding,
+    }
+    review_path = tmp_path / "review" / "independent-review.json"
+    _write_json(review_path, review)
+    article = {
+        "article_id": "art-001",
+        "body_draft_path": "articles/art-001.md",
+        "title_pack_path": "review/title-pack.json",
+        "independent_review_path": "review/independent-review.json",
+    }
+
+    status, items = _strict_independent_review(
+        tmp_path,
+        article,
+        {},
+        run_id="run-001",
+    )
+    assert status == "pass"
+    assert items == []
+
+    title_path.write_text('{"title":"标题二"}', encoding="utf-8")
+    status, items = _strict_independent_review(
+        tmp_path,
+        article,
+        {},
+        run_id="run-001",
+    )
+    assert status == "blocked"
+    assert "stale_review" in items
+
+
+def test_strict_final_review_binds_independent_review_to_current_delivery_artifact(tmp_path: Path) -> None:
+    from article_group.final_review import _strict_independent_review
+    from article_group.independent_review import build_independent_review_binding
+
+    (tmp_path / "drafts").mkdir()
+    (tmp_path / "delivery").mkdir()
+    (tmp_path / "review").mkdir()
+    (tmp_path / "drafts" / "body.md").write_text("正文", encoding="utf-8")
+    (tmp_path / "delivery" / "article.md").write_text(
+        "# 标题\n\n正文", encoding="utf-8"
+    )
+    (tmp_path / "review" / "title-pack.json").write_text("{}", encoding="utf-8")
+    binding = build_independent_review_binding(
+        tmp_path,
+        artifact_path="delivery/article.md",
+        body_path="drafts/body.md",
+        title_pack_path="review/title-pack.json",
+        created_from_run="run-001",
+    )
+    review = {
+        "schema_version": "article-independent-review-v1",
+        "article_task_id": "at-art-001",
+        "article_id": "art-001",
+        "draft_path": "drafts/body.md",
+        "draft_sha256": binding["body_sha256"],
+        "attempt": 1,
+        "max_attempts": 3,
+        "status": "PASS",
+        "decision": "approve",
+        "next_step": "controller_review",
+        "publication_authorization": "not_authorized",
+        **binding,
+    }
+    _write_json(tmp_path / "review" / "independent-review.json", review)
+    article = {
+        "article_id": "art-001",
+        "body_draft_path": "drafts/body.md",
+        "title_pack_path": "review/title-pack.json",
+        "delivery_path": "delivery/article.md",
+        "independent_review_path": "review/independent-review.json",
+    }
+
+    status, items = _strict_independent_review(
+        tmp_path,
+        article,
+        {"delivery_raw": "delivery/article.md"},
+        run_id="run-001",
+    )
+
+    assert status == "pass"
+    assert items == []
+
+
 def test_fact_density_warning_triggers_pending(tmp_path: Path) -> None:
     batch = _make_batch(tmp_path)
     style_path = batch / "review" / "style-gate-art-001.json"
@@ -711,6 +878,23 @@ def test_fact_density_warning_triggers_pending(tmp_path: Path) -> None:
         "fact_density" in item and "4/16" in item
         for item in report["human_judgment_items"]
     )
+
+
+def test_pending_style_warning_marks_content_dimension_pending(tmp_path: Path) -> None:
+    batch = _make_batch(tmp_path)
+    style_path = batch / "review" / "style-gate-art-001.json"
+    style = json.loads(style_path.read_text(encoding="utf-8"))
+    style["articles"][0]["hits"] = [
+        {"severity": "warning", "rule": "fact_density"}
+    ]
+    style_path.write_text(json.dumps(style, ensure_ascii=False), encoding="utf-8")
+
+    report = evaluate_batch(batch)
+
+    assert report["verdict"] == PENDING
+    assert report["content_result"] == "PENDING"
+    assert report["evidence_result"] == "PASS"
+    assert report["governance_result"] == "PASS"
 
 
 @pytest.mark.parametrize(
@@ -1146,3 +1330,176 @@ def test_waiver_requires_adjudicated_flag(tmp_path: Path, monkeypatch) -> None:
                         _fake_history_with_duplicate)
     report = evaluate_batch(batch)
     assert report["verdict"] == BLOCKED
+
+
+def test_strict_independent_review_blocks_a_completed_non_approving_review(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """2026-09-15：已完成但未通过的独立复核必须阻断，不能被当成治理待办放行。"""
+
+    from article_group import final_review as fr
+
+    root = tmp_path / "run"
+    (root / "review" / "art-001").mkdir(parents=True)
+    (root / "review" / "art-001" / "independent-review.json").write_text(
+        json.dumps(
+            {
+                "status": "complete",
+                "decision": "needs_changes",
+                "next_step": "stop",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        fr,
+        "evaluate_independent_review",
+        lambda *args, **kwargs: {
+            "status": "complete",
+            "decision": "needs_changes",
+            "pass": False,
+            "errors": [],
+        },
+    )
+
+    status, items = fr._strict_independent_review(
+        root, {"article_id": "art-001"}, {}, run_id="2026-09-15/daily-004"
+    )
+
+    assert status == "blocked"
+    assert items == ["art-001: independent_review_decision=needs_changes"]
+
+
+def test_strict_independent_review_keeps_an_unfinished_review_as_governance_pending(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from article_group import final_review as fr
+
+    root = tmp_path / "run"
+    (root / "review" / "art-001").mkdir(parents=True)
+    (root / "review" / "art-001" / "independent-review.json").write_text(
+        json.dumps({"status": "PENDING", "decision": "human_review_required"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        fr,
+        "evaluate_independent_review",
+        lambda *args, **kwargs: {
+            "status": "PENDING",
+            "decision": "human_review_required",
+            "pass": False,
+            "errors": [],
+        },
+    )
+
+    status, items = fr._strict_independent_review(
+        root, {"article_id": "art-001"}, {}, run_id="2026-09-15/daily-004"
+    )
+
+    assert status == "pending"
+    assert items == ["art-001: independent_review=pending"]
+
+
+def test_rule_compliance_pending_items_splits_human_signature_from_machine_failure():
+    """A1（2026-09-15）：人没签字属治理待办；机器判出的失败仍是内容项（fail-closed）。"""
+
+    from article_group.final_review import _rule_compliance_pending_items
+
+    human_only = {
+        "status": "PENDING",
+        "articles": [
+            {
+                "article_id": "art-001",
+                "status": "PENDING",
+                "errors": ["source_stripped_readability_pending"],
+            }
+        ],
+    }
+    machine = {
+        "status": "PENDING",
+        "articles": [
+            {"article_id": "art-002", "status": "PENDING", "errors": ["missing:required_source_roles"]}
+        ],
+    }
+    mixed = {
+        "status": "PENDING",
+        "articles": [
+            {
+                "article_id": "art-003",
+                "status": "PENDING",
+                "errors": ["source_stripped_readability_pending", "claim_locator_missing:c1"],
+            }
+        ],
+    }
+    passed = {
+        "status": "PASS",
+        "articles": [{"article_id": "art-004", "status": "PASS", "errors": []}],
+    }
+
+    governance_items = _rule_compliance_pending_items(human_only)
+    assert governance_items == ["art-001: human_readability_attestation=pending (pending)"]
+    # 治理文案不得包含内容标记子串，否则会被重新归类为内容阻塞
+    assert "rule_compliance=" not in governance_items[0]
+
+    assert _rule_compliance_pending_items(machine) == ["art-002: rule_compliance=pending"]
+    assert _rule_compliance_pending_items(mixed) == ["art-003: rule_compliance=pending"]
+    assert _rule_compliance_pending_items(passed) == []
+
+
+def test_load_controller_waivers_requires_an_explicit_record(tmp_path: Path):
+    """fact_density 豁免通道（F5 选项 b）：只有显式、字段齐全的裁决才生效。"""
+
+    from article_group.final_review import _load_controller_waivers, _style_record_article_id
+
+    root = tmp_path / "run"
+    (root / "review").mkdir(parents=True)
+    assert _load_controller_waivers(root) == {}
+
+    (root / "review" / "controller-waivers.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "controller-waivers-v1",
+                "waivers": [
+                    {
+                        "gate": "fact_density",
+                        "article_id": "art-001",
+                        "adjudicated": True,
+                        "adjudicator": "Allen",
+                        "recorded_at": "2026-09-15",
+                        "reason": "官方设定类证据不在锚点集合内，口径理由已记录",
+                    },
+                    {"gate": "fact_density", "article_id": "art-002", "adjudicated": True},
+                    {"gate": "fact_density", "article_id": "art-003", "adjudicated": False,
+                     "adjudicator": "Allen", "reason": "未裁决"},
+                    {"gate": "hook_declaration", "article_id": "art-004", "adjudicated": True,
+                     "adjudicator": "Allen", "reason": "不在可豁免集合"},
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = _load_controller_waivers(root)
+
+    assert set(loaded) == {("fact_density", "art-001")}
+    assert loaded[("fact_density", "art-001")]["adjudicator"] == "Allen"
+    assert _style_record_article_id("style-gate-markdown-art-001.json") == "art-001"
+    assert _style_record_article_id("style-gate-art-002.json") == "art-002"
+    assert _style_record_article_id("something-else.json") == ""
+
+
+def test_load_controller_waivers_fails_closed_on_malformed_input(tmp_path: Path):
+    from article_group.final_review import _load_controller_waivers
+
+    root = tmp_path / "run"
+    (root / "review").mkdir(parents=True)
+
+    (root / "review" / "controller-waivers.json").write_text("{ not json", encoding="utf-8")
+    assert _load_controller_waivers(root) == {}
+
+    (root / "review" / "controller-waivers.json").write_text(
+        json.dumps({"waivers": {"fact_density": "art-001"}}), encoding="utf-8"
+    )
+    assert _load_controller_waivers(root) == {}

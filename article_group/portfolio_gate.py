@@ -262,18 +262,26 @@ CROSS_BATCH_WINDOW = 10
 RECENT3 = 3
 
 
-def collect_history(limit: int = CROSS_BATCH_WINDOW, exclude_run: str = "") -> list[dict]:
-    """从 runs/*/controlled-*/ 收集历史交付标题指纹（近 limit 批，时间倒序）。
+def collect_history(
+    limit: int = CROSS_BATCH_WINDOW,
+    exclude_run: str = "",
+    runs_root: Path | None = None,
+) -> list[dict]:
+    """从 runs/*/controlled-*/ 与 runs/*/daily-*/ 收集历史交付标题指纹（近 limit 批，时间倒序）。
 
     每批优先取根目录交付副本（ruoyu-articles-*.html，016 及以前命名），
     否则取 review/frozen 下所有交付 HTML：兼容两种命名——
       - ruoyu-articles-*.html（旧：整批合并包，016 及以前）
       - ruoyu-art-00*.html（新：单篇 frozen，021 起）
     修复 026 发现的命名契约断裂：021 起批次因只收 ruoyu-articles-* 整段漏窗。
+    修复 2026-09-15 复核发现的漏窗：`daily-*` 日更批次此前完全不在历史内，
+    导致跨批查重对日更永久失效（见《接手总纲》A-B3）。
     """
-    runs_root = Path(__file__).resolve().parent.parent / "runs"
+    if runs_root is None:
+        runs_root = Path(__file__).resolve().parent.parent / "runs"
     batches: list[dict] = []
-    for batch_dir in sorted(runs_root.glob("*/controlled-*"), reverse=True):
+    batch_dirs = list(runs_root.glob("*/controlled-*")) + list(runs_root.glob("*/daily-*"))
+    for batch_dir in sorted(batch_dirs, key=lambda path: str(path), reverse=True):
         if exclude_run and batch_dir.name == exclude_run:
             continue
         htmls = sorted(batch_dir.glob("ruoyu-articles-*.html"), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -519,6 +527,21 @@ def check_cross_batch(
     return issues
 
 
+def _run_dir_name(pool_path: str) -> str:
+    """Return the batch directory name that owns ``pool_path``.
+
+    A pool may live at the run root (``runs/<date>/<batch>/pool.json``) or under
+    ``review/`` (``runs/<date>/<batch>/review/pool.json``); walking up until the
+    parent of a dated directory yields the same identifier ``collect_history``
+    compares against, so a run never sees itself in its own cross-batch window.
+    """
+    path = Path(pool_path).resolve()
+    for candidate in path.parents:
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", candidate.parent.name):
+            return candidate.name
+    return path.parent.name
+
+
 def run_checks(pool_path: str, cross_batch_window: int = 0) -> tuple[dict, int]:
     data, selected, fatal = _load(pool_path)
     issues: list[dict] = []
@@ -540,7 +563,10 @@ def run_checks(pool_path: str, cross_batch_window: int = 0) -> tuple[dict, int]:
 
     cross_batch: dict | None = None
     if cross_batch_window > 0 and not fatal:
-        current_run = Path(pool_path).resolve().parent.name
+        # ``collect_history`` matches ``exclude_run`` against the batch directory
+        # *name*; derive it from the pool location so a run cannot appear in its
+        # own cross-batch window (self-comparison).
+        current_run = _run_dir_name(pool_path)
         history = collect_history(limit=cross_batch_window, exclude_run=current_run)
         history_status = "loaded" if history else "empty_history"
         cross_issues = check_cross_batch(selected, history, history_status=history_status)

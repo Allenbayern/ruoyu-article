@@ -172,3 +172,94 @@ def test_content_fidelity_requires_an_increment_for_each_major_body_paragraph():
     errors = validate_content_fidelity(record, body_text=body)
 
     assert "section_increment_missing_major_paragraph:p4" in errors
+
+
+def _strict_content_record(**overrides):
+    record = valid_content_record(
+        production_contract="article-first-v1",
+        brief_contract="writing-brief-v2",
+        title_contract="title-pack-v1",
+        legacy_compatibility=False,
+        core_judgment="这段关系的变化来自一次具体选择，而不是一句表态。",
+        judgment_basis=[
+            {
+                "locator": "p1",
+                "fact_or_scene": "女主在门口拦住他",
+                "explanation": "先出现主动拦截的动作。",
+            },
+            {
+                "locator": "p3",
+                "fact_or_scene": "他选择先离开而不是解释",
+                "explanation": "后出现离开的选择，形成关系转向。",
+            },
+        ],
+        judgment_strength="supported",
+        reader_can_repeat=True,
+        unsupported_scenario_boundary="材料不能支持两人之后是否和好，也不能推出所有观众的看法。",
+    )
+    record.update(overrides)
+    return record
+
+
+def test_strict_content_review_requires_the_repeatable_core_judgment_package():
+    from article_group.content_fidelity import validate_content_fidelity
+
+    errors = validate_content_fidelity(
+        valid_content_record(
+            production_contract="article-first-v1",
+            brief_contract="writing-brief-v2",
+            title_contract="title-pack-v1",
+            legacy_compatibility=False,
+        )
+    )
+
+    assert "missing:core_judgment" in errors
+    assert "missing:judgment_basis" in errors
+    assert "missing:judgment_strength" in errors
+    assert "missing:reader_can_repeat" in errors
+    assert "missing:unsupported_scenario_boundary" in errors
+
+
+def test_strict_content_review_needs_two_bases_for_the_same_judgment():
+    from article_group.content_fidelity import validate_content_fidelity
+
+    record = _strict_content_record(
+        judgment_basis=[
+            {
+                "locator": "p1",
+                "fact_or_scene": "女主在门口拦住他",
+                "explanation": "一个具体动作。",
+            }
+        ]
+    )
+
+    errors = validate_content_fidelity(record)
+
+    assert "core_judgment_requires_two_bases" in errors
+
+
+def test_strict_marker_cannot_be_downgraded_by_strict_false():
+    from article_group.content_fidelity import validate_content_fidelity
+
+    record = _strict_content_record(
+        core_judgment=None,
+        judgment_basis=None,
+        judgment_strength=None,
+        reader_can_repeat=None,
+        unsupported_scenario_boundary=None,
+    )
+
+    errors = validate_content_fidelity(record, strict=False)
+
+    assert "missing:core_judgment" in errors
+    assert "missing:judgment_basis" in errors
+    assert "missing:judgment_strength" in errors
+
+
+def test_strict_content_review_accepts_supported_repeatable_judgment():
+    from article_group.content_fidelity import evaluate_content_fidelity
+
+    result = evaluate_content_fidelity(_strict_content_record())
+
+    assert result["status"] == "pass"
+    assert result["content_checks"]["core_judgment"]["status"] == "pass"

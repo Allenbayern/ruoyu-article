@@ -15,7 +15,11 @@ from typing import Any, NoReturn, Sequence
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_HOME_AGENTS = Path.home() / "AGENTS.md"
 DEFAULT_PROJECT_AGENTS = PROJECT_ROOT / "AGENTS.md"
-DEFAULT_SKILLS_ROOT = Path.home() / ".codex" / "skills"
+DEFAULT_SKILLS_ROOT = (
+    Path.home() / ".agents" / "skills"
+    if (Path.home() / ".agents" / "skills").is_dir()
+    else Path.home() / ".codex" / "skills"
+)
 DEFAULT_SCHEMA = PROJECT_ROOT / "schemas" / "codex-review-contract.json"
 DEFAULT_RUNS_ROOT = PROJECT_ROOT / "runs"
 

@@ -30,7 +30,7 @@ Codex review、脚本输出和审查包都只是证据。它们不能授权发�
 | 源码/部署同步审计 | `codex-ops-portable`、Git、`systemctl --user`、`readlink /proc/<pid>` | 已迁移为只读优先流程；外部写入需单独授权、恢复点和精确回读 |
 | Python CLI 运行验证 | 项目测试、`uv run pytest`、`py_compile`、负向路径测试 | 已迁移；零退出码不是完整验收 |
 | 确定性脱敏 | skill 中的 `[REDACTED]` 规则、现有安全启动桥接 | 已迁移为流程；不得读取或复制凭证值 |
-| review evidence / adversarial review | `codex review`、`--output-schema`、现有 review contract 和 `codex_review.py` | 已有适配；审查结论是证据，不是授权 |
+| review evidence / adversarial review | `codex review`、`--output-schema`、现有 review contract 和 `codex_review.py` | 已有适配；normal 输出明确是 `repository_code_review`，不能代替文章独立复核；审查结论是证据，不是授权 |
 | Hermes `codex` 委派 skill | Codex 原生 `codex exec`、`codex review`、agents、worktrees | 不复制 Hermes 委派语义；任务仍由当前控制面划界和验收 |
 | Hermes Gateway / Dashboard | `systemctl --user status/show`、服务日志、HTTP/端口只读检查 | 不迁移；这是 Hermes 私有运行面，Codex 只能按明确范围观察 |
 | Hermes Kanban / dispatcher | 项目 `runs/<run-id>`、manifest、Git、现有测试；必要时外部 tracker MCP | 不做一比一伪迁移；不导入 Kanban 数据，不自行推进状态 |

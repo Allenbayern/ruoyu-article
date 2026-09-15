@@ -20,8 +20,9 @@ repository ever publishes, merges, deploys, or sends messages.
   publication path is implemented or authorized.
 - 2026-08-07: absorbed 8 offline sample parsers from the legacy
   `media-intel-aios` project into `article_group/sources/`; the legacy
-  project's automation is backed up read-only under `projects/media-intel-aios/`
-  (dormant, not enabled).
+  project's automation backup moved out of the repo tree (2026-09-15):
+  `~/backups/media-intel-aios-2026-08-07-snapshot/` (dormant, not enabled);
+  repo keeps only `projects/MEDIA-INTEL-ARCHIVE-NOTE.md`.
 - 2026-08-11: contract system landed — `article_group/case_contract.py`
   (fact/feedback vocabulary and technique-reference validation),
   `article_group/bilibili_capture.py` (public Bilibili long-form evidence
@@ -41,6 +42,8 @@ repository ever publishes, merges, deploys, or sends messages.
 | `article_group/sync_compliance.py` | Sync five-gates declarations from candidate JSONs into a Markdown checklist |
 | `article_group/toutiao_capture.py` | Public Toutiao article snapshot for evidence (no cookies/JS/anti-bot) |
 | `article_group/toutiao_cli.py` | CLI entry point for the Toutiao capture |
+| `article_group/wechat.py` | Public WeChat body extraction with challenge-page fail-closed checks |
+| `article_group/wechat_capture.py` | WeChat body snapshots, metadata sidecars, and CLI |
 | `article_group/yuafeng_hot.py` | Read-only Yuafeng hot-list client (UC, Tencent News, aggregates) |
 | `article_group/discovery_radar.py` | Isolated R0 discovery-radar artifact builder |
 | `article_group/yuafeng_radar_cli.py` | CLI to build one R0 discovery-only radar JSON |
@@ -56,7 +59,7 @@ repository ever publishes, merges, deploys, or sends messages.
 | `briefs/` | Per-task contract briefs (authoring, repairs, Sol review/re-review) |
 | `templates/` | First-run brief, candidate card, evidence pack, delivery checklist, five gates |
 | `runs/` | Per-run roots: sources, drafts, frozen artifacts, review packets, seals |
-| `projects/media-intel-aios/` | Read-only legacy backup (code/tests/README snapshot, daily3 automation kept dormant) — never imported or run without explicit authorization |
+| `projects/` | Only `MEDIA-INTEL-ARCHIVE-NOTE.md` pointer to the legacy backup (`~/backups/media-intel-aios-2026-08-07-snapshot/`); original project used at its absolute path — never imported or run without explicit authorization |
 
 ## Verification
 

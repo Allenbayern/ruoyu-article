@@ -1,5 +1,9 @@
 # V2 Contract Shadow Validators
 
+> **状态：已冻结不接入（2026-09-15 裁定）。** 日更现行契约族是
+> `article_first`（article-first-v1）+ `schemas/editorial-pipeline-v3/`；
+> 本层保留只为历史 run 的哈希与文档链接兼容，新工作不得接入本层。
+
 This package validates the frozen Ruoyu V2 contract without importing or changing `article_group/`. It is shadow mode: it reads task-card JSON and the frozen state-vocabulary YAML, reports errors, and never publishes, authorizes, writes production batches, or changes workflow state.
 
 ## Usage

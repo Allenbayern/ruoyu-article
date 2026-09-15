@@ -17,6 +17,8 @@
 - topic_mode: `release_event | character | craft | audience | culture | revisit | market`（叙事入口，非题材标签）
 - event_cluster_id: （同一事件流/事件簇共享一个 id；不同作品同属一个簇不算独立选题）
 - reader_question: （去掉时间戳后仍成立的读者问题，即 durable_reader_question）
+- reference_shape: `workplace_reality_check | relationship_plot_recap | audience_culture_explainer | adaptation_comparison | viewing_commentary | setting_observation`（结构目标，不是事实来源或文章标题）
+- reader_gain_floor: `3 | 5`（信息密集型形态填 5；设定观察填 3）
 - remove_timestamp_test: `pass | risk | fail`（删掉“今天/8月5日/热搜第一”等时间与排名信息后，正文还剩什么？剩读者问题/人物/冲突→pass；只剩事件→fail）
 - editorial_value_score: `1-5`（内容价值：读者问题×叙事潜力×人物锚点，独立于时效）
 - evidence_readiness: `high | medium | low`（当前证据是否足够写；低价值高就绪≠值得写，高价值低就绪≠不值得写）
@@ -40,6 +42,7 @@
 - risk_tags:
 - denial_or_conflict_status:
 - evidence_gap:
+- reference_material_status: `fulltext | partial | unavailable`（参考文章只用于结构研究）
 - recommendation: `A | B | C | Archive | Reject | Wait`
 - reason:
 

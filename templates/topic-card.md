@@ -17,6 +17,8 @@
 - core_question: （一句话；只允许一个阅读问题）
 - target_reader: （具体读者，不写“所有人”）
 - article_type: `资讯 | 市场观察 | 人物评论 | 文化评论 | 作品评论 | 其他`
+- reference_shape: `workplace_reality_check | relationship_plot_recap | audience_culture_explainer | adaptation_comparison | viewing_commentary | setting_observation`
+- reader_gain_floor: `3 | 5`（前五种信息密集型形态填 5；只有设定观察填 3）
 - one_sentence_scope: （本篇只处理什么）
 - freshness_window: `same-day | fermenting-1-3d | revival`
 - topic_mode: `release_event | character | craft | audience | culture | revisit | market`
@@ -31,6 +33,7 @@
 - reader_value_hypothesis: （预计读者读完能带走的具体判断；不是成稿获得感结论）
 - human_anchor: （人物/作品/具体处境）
 - conflict_or_gap: （冲突、反差或信息缺口）
+- reference_shape_reason: （为什么这个形态适合当前读者问题和现有材料；不得用“参考文标题很热”作理由）
 - evidence_gap:
 - backup_switch_condition:
 - risk_tags:
@@ -72,6 +75,8 @@
   "core_question": "<一句话核心问题>",
   "target_reader": "<目标读者>",
   "article_type": "<文章类型>",
+  "reference_shape": "setting_observation",
+  "reader_gain_floor": 3,
   "one_sentence_scope": "<只处理什么>",
   "freshness_window": "same-day",
   "topic_mode": "release_event",

@@ -5,6 +5,13 @@ description: "Use for portable, evidence-first Codex operations: source/deployme
 
 # Portable Codex Operations
 
+> **DEPRECATED 2026-09-15 — Codex CLI 已退役。**
+> 本技能描述的是 `codex review` / `codex exec` / Codex 沙箱与凭据边界，退役后不再有可执行路径。
+> - 只作历史记录保留，**不要**按其中的命令操作。
+> - 现行等价能力：dsh 会话本身（只读审计用只读命令 + `runs/` 证据），代码复核用 `python -m article_group.codex_review --mode l2 --review-json <review.json>`。
+> - 全局技能已迁移到 `~/.agents/skills/`。
+
+
 Use this skill for bounded work that can run from a Git repository without Hermes private state. The skill covers evidence collection, local validation, and review preparation. It does not grant permission to publish, merge, deploy, change access boundaries, promote state, or modify remote systems.
 
 ## Scope and safety

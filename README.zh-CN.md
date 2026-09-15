@@ -21,6 +21,8 @@
 | `article_group/sync_compliance.py` | 将候选 JSON 的五道门声明同步为 Markdown 清单 |
 | `article_group/toutiao_capture.py` | 头条公开文章快照，用于证据（无 cookie/JS/反爬绕过） |
 | `article_group/toutiao_cli.py` | 头条捕获的 CLI 入口 |
+| `article_group/wechat.py` | 微信公开文章正文抓取与验证码页 fail-closed 解析 |
+| `article_group/wechat_capture.py` | 微信正文快照、sidecar 元数据与 CLI 入口 |
 | `article_group/yuafeng_hot.py` | 只读玉峰热榜客户端（UC、腾讯新闻、聚合榜） |
 | `article_group/discovery_radar.py` | 隔离的 R0 发现雷达产物构建器 |
 | `article_group/yuafeng_radar_cli.py` | 构建单个 R0 发现专用雷达 JSON 的 CLI |
@@ -56,6 +58,33 @@ uv run python -m article_group.toutiao_cli \
   --source-id TT-<article-id> \
   --independence-group toutiao:<article-id>
 ```
+
+## 手动来源捕获（微信）
+
+微信桌面请求可能返回 HTTP 200 的“环境异常”页。专用入口会使用公开移动端
+文章面、补齐 `scene=25`，并且只有检测到 `#js_content` 正文后才保存；不读取
+Cookie 或登录态。
+
+直接阅读正文：
+
+```bash
+uv run python -m article_group.wechat_capture \
+  'https://mp.weixin.qq.com/s/<article-key>'
+```
+
+保存为 run 内的 `sources/<source-id>.clean.md` 和哈希 sidecar：
+
+```bash
+uv run python -m article_group.wechat_capture \
+  'https://mp.weixin.qq.com/s/<article-key>' \
+  --run-root runs/2026-09-14/controlled-001 \
+  --source-id WX-<article-key> \
+  --role research-reference \
+  --independence-group wechat:<article-key>
+```
+
+失败的验证码页、空壳页和网络失败不会进入材料包。完整用法与错误码见
+[`docs/codex/wechat-source-capture.md`](docs/codex/wechat-source-capture.md)。
 
 ## 发现雷达（玉峰）
 

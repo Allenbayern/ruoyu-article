@@ -10,6 +10,7 @@ from pathlib import Path
 
 from article_group.style_gate import (
     scan_style,
+    validate_artifact_file,
     validate_batch_style,
     validate_delivery_file,
     opening_hook_check,
@@ -512,3 +513,108 @@ def test_markdown_style_gate_accepts_audit_hook_from_batch_metadata():
     result = validate_markdown_text(markdown, hook="《新片》 命案")
 
     assert result["articles"][0]["hook_declaration"]["status"] == "ok"
+
+
+def test_markdown_fact_density_excludes_headings_from_denominator():
+    """2026-09-15（B3）：H2 小标题是结构不是段落，不得计入事实底座分母。
+
+    3 个正文段落中有 1 个带《》锚点 = 1/3，应当 ok；若把小标题也算进去
+    （1/5）就会误报 warning——这正是 F5 记录的口径缺陷。
+    """
+
+    markdown = (
+        "# 《空枪》为什么要让演员先学会说粤语\n\n"
+        "## 先从一句粤语开始\n\n"
+        "《空枪》在广州办了首映。\n\n"
+        "他说这门语言很难学，但听上去很美。\n\n"
+        "现场的人记得那句话。\n\n"
+        "## 故事发生在哪里\n\n"
+        "片子把故事放在一座南方的城里。\n"
+    )
+
+    result = validate_markdown_text(markdown, hook="《空枪》在广州办了首映")
+    article = result["articles"][0]
+    density = article["fact_density"]
+
+    # 4 个正文段落、1 个带《》锚点 = 1/4 < 1/3 → warning；关键是分母不含 2 个小标题。
+    assert density["total_paragraphs"] == 4, density
+    assert density["anchored_paragraphs"] == 1, density
+    assert density["status"] == "warning", density
+
+
+def test_markdown_headings_are_still_scanned_for_red_lines():
+    """小标题退出分母，但仍必须参与红线扫描（不能因为改口径而放走标题里的违规）。"""
+
+    markdown = (
+        "# 《空枪》标题\n\n"
+        "## 在这篇报道的讨论中，影院也可以向综合文化体验空间发展。\n\n"
+        "正文段落写在这里。\n"
+    )
+
+    result = validate_markdown_text(markdown)
+    article = result["articles"][0]
+
+    assert article["error_count"] >= 1, article["hits"]
+
+
+# ---------------------------------------------------------------------------
+# CLI artifact-type dispatch (2026-09-15): the HTML-only CLI used to report
+# pass=true / error_total=0 / article_count=0 for a Markdown file — a green
+# false pass over zero scanned articles. The CLI must now detect the artifact
+# type (Markdown vs HTML) and fail closed on anything it cannot classify.
+# ---------------------------------------------------------------------------
+
+MARKDOWN_WITH_REDLINE = """# 一部电影为什么值得重看
+
+## 从一份公开简介说起
+
+这周的电影院里，观众最先看到的不是人物，而是排片表。据当地媒体报道，这部片子的口碑正在变化。
+
+## 真正的问题
+
+它的问题不在于画面，而在于它不肯把人物的选择说清楚。
+"""
+
+
+def test_markdown_cli_path_flags_redline_and_fails(tmp_path):
+    path = tmp_path / "delivery.md"
+    path.write_text(MARKDOWN_WITH_REDLINE, encoding="utf-8")
+
+    result = validate_artifact_file(path)
+
+    assert result["artifact_type"] == "markdown"
+    assert result["article_count"] >= 1, "Markdown 必须真的被扫描，不能返回 0 篇"
+    assert result["error_total"] > 0
+    assert result["pass"] is False
+
+
+def test_markdown_cli_path_clean_delivery_passes(tmp_path):
+    path = tmp_path / "delivery.md"
+    path.write_text("# 干净的标题\n\n《某片》2026年8月上映。\n", encoding="utf-8")
+
+    result = validate_artifact_file(path)
+
+    assert result["artifact_type"] == "markdown"
+    assert result["article_count"] == 1
+    assert result["pass"] is True
+
+
+def test_html_cli_path_still_uses_the_html_surface(tmp_path):
+    path = tmp_path / "frozen.html"
+    path.write_text(CLEAN_DELIVERY, encoding="utf-8")
+
+    result = validate_artifact_file(path)
+
+    assert result["artifact_type"] == "html"
+    assert result["article_count"] == 3
+
+
+def test_unclassifiable_artifact_fails_closed(tmp_path):
+    path = tmp_path / "delivery.txt"
+    path.write_text("既不是 Markdown 标题结构，也不是 HTML 文档。", encoding="utf-8")
+
+    result = validate_artifact_file(path)
+
+    assert result["pass"] is False
+    assert result["error_total"] > 0
+    assert "artifact_type" in result

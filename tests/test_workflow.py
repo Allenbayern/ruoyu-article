@@ -97,6 +97,38 @@ def test_new_profile_contract_requires_explicit_review_surface():
     assert "review_surface_missing" in validate_batch(batch)
 
 
+def test_article_first_run_contract_is_copied_to_the_controlled_manifest(tmp_path: Path):
+    batch = valid_batch()
+    batch.update(
+        {
+            "production_contract": "article-first-v1",
+            "brief_contract": "writing-brief-v2",
+            "title_contract": "title-pack-v1",
+            "legacy_compatibility": False,
+        }
+    )
+    materialize_artifacts(batch, tmp_path)
+
+    target = build_controlled_run(batch, tmp_path)
+    import json
+
+    manifest = json.loads(target.read_text(encoding="utf-8"))
+    assert manifest["production_contract"] == "article-first-v1"
+    assert manifest["brief_contract"] == "writing-brief-v2"
+    assert manifest["title_contract"] == "title-pack-v1"
+    assert manifest["legacy_compatibility"] is False
+
+
+def test_unmarked_article_first_artifacts_cannot_enter_controlled_run():
+    batch = valid_batch()
+    batch["articles"][0]["body_draft_path"] = "drafts/body_draft.md"
+
+    errors = validate_batch(batch)
+
+    assert "article_first_lane_unmarked" in errors
+    assert "contract_mismatch" in errors
+
+
 def test_new_profile_contract_accepts_markdown_review_surface():
     batch = valid_batch()
     batch["run_profile"] = "two_article_daily"

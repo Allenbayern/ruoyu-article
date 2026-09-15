@@ -20,6 +20,12 @@ from article_group.article_first import (
 )
 from article_group.delivery import validate_body_draft
 from article_group.run_profile import MAX_CJK_CHARS, MIN_CJK_CHARS
+from article_group.run_contract import (
+    is_strict_run_contract,
+    validate_phase_contract_fields,
+    validate_referenced_contract_artifacts,
+    validate_run_contract,
+)
 
 
 class PrewriteValidationError(ValueError):
@@ -537,7 +543,19 @@ def validate_article_first_body_stage(
     aid = article.get("article_id", "unknown")
     errors: list[str] = []
     state = article.get("state")
-    errors.extend(validate_phase_field_boundary(article, _article_first_stage_phase(state)))
+    strict = is_strict_run_contract(article)
+    run_manifest = _load_json_object(run_root / "batch.json")
+    run_strict = is_strict_run_contract(run_manifest)
+    if run_strict:
+        errors.extend(validate_run_contract(run_manifest))
+        errors.extend(validate_referenced_contract_artifacts(run_root, run_manifest))
+    if not strict:
+        strict = run_strict
+    errors.extend(
+        validate_phase_contract_fields(article, _article_first_stage_phase(state))
+        if strict
+        else validate_phase_field_boundary(article, _article_first_stage_phase(state))
+    )
 
     body_declared = article.get("body_draft_path") or article.get("body_path")
     body_path: Path | None = None
@@ -593,6 +611,7 @@ def validate_article_first_body_stage(
                     result = evaluate_content_fidelity(
                         content,
                         body_text=body_text if body_path is not None else None,
+                        strict=strict or None,
                     )
                     if result.get("status") == "invalid":
                         errors.extend(

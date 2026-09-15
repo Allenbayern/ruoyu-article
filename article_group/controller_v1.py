@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .article_first import ARTICLE_FIRST_STATES, validate_article_first_transition
+from .run_contract import is_strict_run_contract, validate_run_contract
 
 _LEGACY_STATES = ("idea","precheck","candidate","approved","researching","material_ready","writing","review","closed")
 # The controller keeps accepting the historical state vocabulary while also
@@ -26,6 +27,8 @@ def validate_controller_manifest(manifest: Mapping[str, Any]) -> list[str]:
         if not manifest.get(key): errors.append(f"missing:{key}")
     if manifest.get("publication_authorization", PUBLICATION_AUTHORIZATION) != PUBLICATION_AUTHORIZATION:
         errors.append("publication_authorization_must_be_not_authorized")
+    if is_strict_run_contract(manifest):
+        errors.extend(validate_run_contract(manifest))
     if not isinstance(manifest.get("articles"), list): errors.append("articles_must_be_list")
     else:
         ids=[]

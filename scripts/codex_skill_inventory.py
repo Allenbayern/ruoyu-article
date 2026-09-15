@@ -15,7 +15,23 @@ from typing import Any, Sequence
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CODEX_SKILLS_ROOT = Path.home() / ".codex" / "skills"
+AGENT_SKILLS_ROOT = Path.home() / ".agents" / "skills"
+LEGACY_CODEX_SKILLS_ROOT = Path.home() / ".codex" / "skills"
+
+
+def default_user_skills_root() -> Path:
+    """Return the user-level skills root.
+
+    The harness-neutral ``~/.agents/skills`` location wins when it exists; the
+    historical Codex root stays as a read-only fallback so audits remain valid
+    while the Codex CLI is being retired.
+    """
+    if AGENT_SKILLS_ROOT.is_dir():
+        return AGENT_SKILLS_ROOT
+    return LEGACY_CODEX_SKILLS_ROOT
+
+
+DEFAULT_CODEX_SKILLS_ROOT = default_user_skills_root()
 _METADATA_KEYS = {"name", "description"}
 _REDACTIONS = (
     (re.compile(r"(?i)\bBearer\s+[^\s,;]+"), "Bearer [REDACTED]"),
@@ -39,7 +55,7 @@ def _parser() -> argparse.ArgumentParser:
         "--codex-skills-root",
         type=Path,
         default=DEFAULT_CODEX_SKILLS_ROOT,
-        help="Codex skills root (default: ~/.codex/skills)",
+        help="User skills root (default: ~/.agents/skills, falling back to ~/.codex/skills)",
     )
     return parser
 

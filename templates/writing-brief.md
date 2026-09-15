@@ -5,6 +5,10 @@
 
 - article_id:
 - candidate_id:
+- production_contract: `article-first-v1`
+- brief_contract: `writing-brief-v2`
+- title_contract: `title-pack-v1`
+- legacy_compatibility: `false`
 - article_first_contract_version: `article-first-v1`
 - state: `brief_locked | drafting_content | content_review | content_passed`
 - run_profile: `two_article_daily | three_slot_controlled`
@@ -21,6 +25,8 @@
 - reader_question: （文章要回答的一个阅读问题，不是标题承诺）
 - target_reader: （具体读者，不写“所有人”）
 - article_type: `资讯 | 市场观察 | 人物评论 | 文化评论 | 作品评论 | 其他`
+- reference_shape: `workplace_reality_check | relationship_plot_recap | audience_culture_explainer | adaptation_comparison | viewing_commentary | setting_observation`
+- reader_gain_floor: `3 | 5`（信息密集型形态为 5；设定观察为 3）
 - one_sentence_scope: （本篇只处理什么）
 - conflict_or_gap: （人物选择、关系冲突、具体反差或信息缺口）
 - reader_value_hypothesis: （写作前的价值假设；成稿获得感以复核记录为准）
@@ -41,6 +47,7 @@
   - material_refs: （来源/材料 ID 与定位）
   - planned_body_locator: （预计进入哪一段；成稿后须改成实际定位）
 - opening_support_refs: （能让开头直接落地的事实、场面或动作证据）
+- reference_shape_material_fit: （逐条说明当前材料如何满足所选形态；不满足则返回补证或换角度）
 - explanation_mechanism: （为什么这些事实会形成当前的人物/关系/现实问题）
 - must_prove_claim_ids:
 - must_not_say:
@@ -70,6 +77,16 @@
 - reader_takeaway_locator: （正文实际段落定位）
 - content_return_reason:
 - content_return_route: `content_revision | material_return`
+- core_judgment: （正文里读者能转述的一个主判断）
+- judgment_basis:
+  - locator:
+  - fact_or_scene:
+  - explanation:
+- judgment_strength: `supported | too_strong | too_weak`
+- reader_can_repeat: `true | false`
+- unsupported_scenario_boundary: （现有材料不能支持的场面、动机、结果或观众反应）
+- section_increments: （每个主要段落新增的 `fact | scene | action | relationship | mechanism | specific_context | judgment`）
+- section_increment_check: （删掉该段后读者会少知道哪一件事；不能只写“更有共鸣”）
 
 只有 `content_review_result=pass` 才能创建标题包。标题包只能引用已通过的
 `body_draft.md` 与已确认材料；如标题需要新增事实，必须退回正文复核或材料验收。

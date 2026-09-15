@@ -535,7 +535,7 @@ def _markdown_visible_text(value: str) -> str:
     return re.sub(r"\s+", "", text)
 
 
-def _markdown_title_and_paragraphs(markdown_text: str) -> tuple[str, list[str], str]:
+def _markdown_title_and_paragraphs(markdown_text: str) -> tuple[str, list[str], str, str]:
     """Return the first H1 title, body paragraphs, and an optional hook marker."""
     lines = markdown_text.splitlines()
     title = ""
@@ -570,6 +570,7 @@ def _markdown_title_and_paragraphs(markdown_text: str) -> tuple[str, list[str], 
         title = "article-1"
 
     blocks: list[list[str]] = []
+    heading_lines: list[str] = []
     current: list[str] = []
     for raw_line in content_lines:
         if not raw_line.strip():
@@ -581,7 +582,10 @@ def _markdown_title_and_paragraphs(markdown_text: str) -> tuple[str, list[str], 
             if current:
                 blocks.append(current)
                 current = []
-            blocks.append([re.sub(r"^#{2,6}\s+", "", raw_line)])
+            # 2026-09-15（B3 口径修正）：小标题是结构，不是段落。此前把 H2 当成独立
+            # 段落计入 fact_density 分母，系统性低估"事实底座 ≥1/3 段落"（F5）。
+            # HTML 路径本来就只取 <p>，此改动让 Markdown 路径与之一致。
+            heading_lines.append(re.sub(r"^#{2,6}\s+", "", raw_line))
             continue
         current.append(raw_line)
     if current:
@@ -592,17 +596,19 @@ def _markdown_title_and_paragraphs(markdown_text: str) -> tuple[str, list[str], 
         for block in blocks
         if _markdown_visible_text(" ".join(block))
     ]
+    heading_text = "".join(_markdown_visible_text(line) for line in heading_lines)
     # ``frontmatter_seen`` is intentionally only a parsing aid; keeping this
     # local makes the function tolerant of ordinary drafts without metadata.
     del frontmatter_seen, title_index
-    return title, paragraphs, hook
+    return title, paragraphs, hook, heading_text
 
 
 def validate_markdown_text(markdown_text: str, *, hook: str = "") -> dict[str, Any]:
     """Run the reader-facing style gate on one Markdown article."""
-    title, paragraphs, parsed_hook = _markdown_title_and_paragraphs(markdown_text)
+    title, paragraphs, parsed_hook, heading_text = _markdown_title_and_paragraphs(markdown_text)
     declared_hook = hook or parsed_hook
-    full = "".join(paragraphs)
+    # 小标题仍参与红线扫描，只是不再充当段落密度的分母。
+    full = "".join(paragraphs) + heading_text
     hits = scan_style(full)
     hook = opening_hook_check(paragraphs)
     title_result = title_gap_check(title)
@@ -655,19 +661,86 @@ def validate_delivery_file(path: Path) -> dict[str, Any]:
     """
     payload = path.read_bytes()
     result = validate_batch_style(payload.decode("utf-8"))
+    result["artifact_type"] = "html"
     result["artifact_path"] = str(path.resolve())
     result["artifact_sha256"] = hashlib.sha256(payload).hexdigest()
     return result
 
 
+def _detect_artifact_type(text: str, path: Path) -> str:
+    """Classify a delivery artifact so the gate can never scan nothing.
+
+    The historical HTML-only entry point silently returned ``pass: true`` with
+    ``article_count: 0`` for a Markdown file — a green result over zero scanned
+    articles (the trap the workflow notes warn about).  Detection is therefore
+    explicit and fail-closed: Markdown is recognised by heading structure,
+    HTML by a document/body/article element, and anything else is ``unknown``.
+    """
+    stripped = text.lstrip()
+    if re.search(r"<(!doctype|html|body)\b", stripped[:4096], re.IGNORECASE) or re.search(
+        r"<article\b", text, re.IGNORECASE
+    ):
+        return "html"
+    if re.search(r"(?m)^\s{0,3}#\s+\S", text):
+        return "markdown"
+    if path.suffix.lower() in {".md", ".markdown"}:
+        return "markdown"
+    if path.suffix.lower() in {".html", ".htm"}:
+        return "html"
+    return "unknown"
+
+
+def validate_artifact_file(path: Path, *, hook: str = "") -> dict[str, Any]:
+    """Validate a delivery artifact on the surface that matches its content.
+
+    Markdown deliveries go through :func:`validate_markdown_file` (H2 headings
+    excluded from the fact-density denominator, ``review_hook`` bound from the
+    batch manifest); HTML deliveries keep the historical batch surface.  An
+    artifact that cannot be classified is reported as an error instead of
+    passing vacuously.
+    """
+    payload = path.read_bytes()
+    text = payload.decode("utf-8")
+    kind = _detect_artifact_type(text, path)
+    if kind == "markdown":
+        return validate_markdown_file(path, hook=hook)
+    if kind == "html":
+        return validate_delivery_file(path)
+    return {
+        "artifact_type": "unknown",
+        "article_count": 0,
+        "articles": [],
+        "global_hits": [],
+        "pass": False,
+        "error_total": 1,
+        "errors": ["artifact_type_unrecognized"],
+        "artifact_path": str(path.resolve()),
+        "artifact_sha256": hashlib.sha256(payload).hexdigest(),
+    }
+
+
 if __name__ == "__main__":
+    import argparse
     import json
     import sys
     from pathlib import Path
 
-    if len(sys.argv) != 2:
-        print("usage: python -m article_group.style_gate <delivery.html>")
+    parser = argparse.ArgumentParser(
+        description=(
+            "Style gate for a delivery artifact. Markdown and HTML are detected "
+            "automatically; unclassifiable files fail closed."
+        )
+    )
+    parser.add_argument("artifact", type=Path, help="delivery.md or frozen delivery.html")
+    parser.add_argument(
+        "--hook",
+        default="",
+        help="strongest-hook declaration for Markdown deliveries (batch.json review_hook)",
+    )
+    args = parser.parse_args()
+    if not args.artifact.is_file():
+        print(json.dumps({"error": "artifact_missing", "path": str(args.artifact)}, ensure_ascii=False))
         sys.exit(2)
-    result = validate_delivery_file(Path(sys.argv[1]))
+    result = validate_artifact_file(args.artifact, hook=args.hook)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     sys.exit(0 if result["pass"] else 1)

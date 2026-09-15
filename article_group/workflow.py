@@ -14,6 +14,7 @@ from typing import Any
 import json
 import re
 
+from article_group.article_first import ARTICLE_FIRST_CONTRACT_VERSION
 from article_group.run_profile import (
     MAX_CJK_CHARS,
     MIN_CJK_CHARS,
@@ -27,6 +28,14 @@ from article_group.preview_contract import (
 from article_group.review_surface import (
     resolve_review_surface,
     validate_batch_review_surface,
+)
+from article_group.run_contract import (
+    REQUIRED_RUN_CONTRACT,
+    validate_article_first_run_lane,
+    is_explicit_legacy_compatibility,
+    is_strict_run_contract,
+    validate_referenced_contract_artifacts,
+    validate_run_contract,
 )
 
 SLOTS = ("A", "B", "C")
@@ -193,6 +202,31 @@ def validate_batch(batch: dict[str, Any], artifact_root: Path | None = None) -> 
     if not isinstance(batch, dict):
         return ["batch_must_be_a_dict"]
     errors: list[str] = []
+    articles = batch.get("articles", [])
+    article_first_detected = bool(
+        batch.get("article_first_contract_version") == ARTICLE_FIRST_CONTRACT_VERSION
+        or any(
+            isinstance(article, dict)
+            and any(
+                field in article
+                for field in (
+                    "body_draft_path",
+                    "body_path",
+                    "content_fidelity_path",
+                    "content_fidelity_record_path",
+                    "title_pack_path",
+                    "title_review_path",
+                    "delivery_path",
+                )
+            )
+            for article in articles
+        )
+    )
+    errors.extend(validate_article_first_run_lane(batch, detected=article_first_detected))
+    if is_strict_run_contract(batch):
+        errors.extend(validate_run_contract(batch))
+        if artifact_root is not None:
+            errors.extend(validate_referenced_contract_artifacts(artifact_root, batch))
     if batch.get("publication_authorization", "not_authorized") != "not_authorized":
         errors.append("controlled_run_must_not_authorize_publication")
     errors.extend(validate_delivery_authorization(batch))
@@ -217,7 +251,6 @@ def validate_batch(batch: dict[str, Any], artifact_root: Path | None = None) -> 
     )
     errors.extend(validate_batch_preview_mode(batch, require_explicit=False))
 
-    articles = batch.get("articles", [])
     profile_name = batch.get("run_profile")
     normalized_profile_name = profile_name.strip() if isinstance(profile_name, str) else None
     profile = RUN_PROFILES.get(normalized_profile_name) if normalized_profile_name else None
@@ -339,6 +372,11 @@ def build_controlled_run(batch: dict[str, Any], output_dir: Path) -> Path:
         manifest["review_surface"] = resolve_review_surface(batch.get("review_surface"))
     if "preview_mode" in batch:
         manifest["preview_mode"] = resolve_preview_mode(batch.get("preview_mode"))
+    if is_strict_run_contract(batch):
+        for field in REQUIRED_RUN_CONTRACT:
+            manifest[field] = batch[field]
+    elif is_explicit_legacy_compatibility(batch):
+        manifest["legacy_compatibility"] = True
     target = output_dir / "controlled-run-manifest.json"
     target.write_text(json.dumps(manifest, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
     return target

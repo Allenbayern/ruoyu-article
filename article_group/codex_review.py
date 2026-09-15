@@ -6,6 +6,16 @@ state, grants publication authority, or replaces deterministic local gates.
 Modes:
     normal: Codex native ``review`` using the Luna route.
     l2:    read-only Codex ``exec`` using the Sol route and review schema.
+
+``--review-json PATH`` records a structured review produced by any other agent
+harness (for example a dsh subagent): the reviewer command is skipped, the JSON
+is stored in the ordinary ``.log`` sidecar, and the same bindings, hashes and
+completion checks apply.  This keeps the L2 gate available after the Codex CLI
+is retired.  The module and file names are historical identifiers; they are not
+a runtime dependency on the Codex CLI.
+
+The normal record is explicitly repository code-review evidence.  Its successful
+``review_completed`` decision is not an article-independent ``approve``.
 """
 
 from __future__ import annotations
@@ -20,6 +30,9 @@ import shutil
 import subprocess
 import sys
 from typing import Any
+
+from article_group.independent_review import build_independent_review_binding
+from article_group.run_contract import REQUIRED_RUN_CONTRACT, is_strict_run_contract
 
 
 SCHEMA_VERSION = "codex-review-contract-1.0"
@@ -63,7 +76,7 @@ def _build_prompt(args: argparse.Namespace) -> str:
 
 
 def _base_record(args: argparse.Namespace, mode: str, command: list[str]) -> dict[str, Any]:
-    return {
+    record = {
         "schema_version": SCHEMA_VERSION,
         "run_id": _run_id(args.run_root),
         "risk_tier": args.risk,
@@ -78,6 +91,34 @@ def _base_record(args: argparse.Namespace, mode: str, command: list[str]) -> dic
         "coverage_gaps": ["review_not_completed"],
         "publication_authorization": "not_authorized",
     }
+    if mode == "normal":
+        record.update(
+            {
+                "review_kind": "repository_code_review",
+                "review_purpose": "code_review_evidence",
+                "independent_review_eligible": False,
+            }
+        )
+    else:
+        record.update(
+            {
+                "review_kind": "adversarial_code_review_evidence",
+                "review_purpose": "code_review_evidence",
+                "independent_review_eligible": False,
+            }
+        )
+    manifest_path = args.run_root / "batch.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        manifest = None
+    if isinstance(manifest, dict) and is_strict_run_contract(manifest):
+        for field in REQUIRED_RUN_CONTRACT:
+            if field in manifest:
+                record[field] = manifest[field]
+        if isinstance(manifest.get("run_id"), str) and manifest["run_id"].strip():
+            record["created_from_run"] = manifest["run_id"].strip()
+    return record
 
 
 def _parse_l2_output(text: str) -> dict[str, Any] | None:
@@ -94,14 +135,43 @@ def _parse_l2_output(text: str) -> dict[str, Any] | None:
     return None
 
 
+def _load_review_json(text: str) -> dict[str, Any] | None:
+    """Parse an externally produced review document.
+
+    Accepts a bare review object, a JSON array whose last object is a review, or
+    a CLI transcript that contains a structured review line, mirroring
+    ``_parse_l2_output``'s tolerance for surrounding noise.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return None
+    try:
+        value = json.loads(stripped)
+    except json.JSONDecodeError:
+        return _parse_l2_output(text)
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, list):
+        for item in reversed(value):
+            if isinstance(item, dict):
+                return item
+    return None
+
+
 def run_review(args: argparse.Namespace) -> int:
-    codex = shutil.which("codex")
-    if codex is None:
-        raise SystemExit("codex executable not found in PATH")
+    external_review = getattr(args, "review_json", None)
+    codex = None if external_review is not None else shutil.which("codex")
+    if external_review is None and codex is None:
+        raise SystemExit(
+            "codex executable not found in PATH; pass --review-json to record a review "
+            "produced by another agent harness"
+        )
     if not args.run_root.exists():
         raise SystemExit(f"run root does not exist: {args.run_root}")
 
-    if args.mode == "normal":
+    if external_review is not None:
+        command = ["review-json", str(external_review)]
+    elif args.mode == "normal":
         command = [
             codex,
             "review",
@@ -148,6 +218,44 @@ def run_review(args: argparse.Namespace) -> int:
         record["draft_path"] = args.draft_path
     if getattr(args, "draft_sha256", None):
         record["draft_sha256"] = args.draft_sha256
+    artifact_path = getattr(args, "artifact_path", None) or getattr(args, "draft_path", None)
+    body_path = getattr(args, "body_path", None)
+    title_pack_path = getattr(args, "title_pack_path", None)
+    if artifact_path and body_path and title_pack_path:
+        try:
+            record.update(
+                build_independent_review_binding(
+                    args.run_root,
+                    artifact_path=artifact_path,
+                    body_path=body_path,
+                    title_pack_path=title_pack_path,
+                    created_from_run=getattr(args, "created_from_run", None)
+                    or record.get("created_from_run")
+                    or record.get("run_id"),
+                )
+            )
+        except ValueError as exc:
+            record["binding_error"] = str(exc)
+    else:
+        if artifact_path:
+            record["artifact_path"] = artifact_path
+        if body_path:
+            record["body_path"] = body_path
+        if title_pack_path:
+            record["title_pack_path"] = title_pack_path
+        if getattr(args, "created_from_run", None):
+            record["created_from_run"] = args.created_from_run
+    # The independent-review contract keeps the historical draft fields for
+    # the body under review, while the strict binding separately records the
+    # final delivery artifact.  Populate the draft identity from the same
+    # bound files when the CLI caller supplied only the new fields.
+    if artifact_path or body_path:
+        record.setdefault("draft_path", body_path or artifact_path)
+        if not record.get("draft_sha256"):
+            if body_path and record.get("body_sha256"):
+                record["draft_sha256"] = record["body_sha256"]
+            elif artifact_path and record.get("artifact_sha256"):
+                record["draft_sha256"] = record["artifact_sha256"]
     record["attempt"] = getattr(args, "attempt", 1) or 1
     if getattr(args, "l2_required", False):
         record["l2_required"] = True
@@ -162,22 +270,31 @@ def run_review(args: argparse.Namespace) -> int:
     }
     if getattr(args, "timeout_seconds", None):
         run_kwargs["timeout"] = args.timeout_seconds
-    try:
-        completed = subprocess.run(command, **run_kwargs)
-    except subprocess.TimeoutExpired as exc:
-        record["error"] = f"codex_review_timeout:{exc}"
-        record["status"] = "UNVERIFIED"
-        record["decision"] = "timeout"
-        record["coverage_gaps"] = ["review_timeout"]
-        record["timeout_reason"] = "review_deadline_exceeded"
-        record["next_step"] = "resume_single_article" if record.get("article_task_id") else "resume_review"
-        record["scope"] = "single_article" if record.get("article_task_id") else "batch"
+    external_text: str | None = None
+    if external_review is not None:
         completed = None
-    except OSError as exc:
-        record["error"] = f"codex_invocation_failed:{exc}"
-        completed = None
+        try:
+            external_text = external_review.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            record["error"] = f"review_json_unreadable:{exc}"
+            external_text = ""
+    else:
+        try:
+            completed = subprocess.run(command, **run_kwargs)
+        except subprocess.TimeoutExpired as exc:
+            record["error"] = f"codex_review_timeout:{exc}"
+            record["status"] = "UNVERIFIED"
+            record["decision"] = "timeout"
+            record["coverage_gaps"] = ["review_timeout"]
+            record["timeout_reason"] = "review_deadline_exceeded"
+            record["next_step"] = "resume_single_article" if record.get("article_task_id") else "resume_review"
+            record["scope"] = "single_article" if record.get("article_task_id") else "batch"
+            completed = None
+        except OSError as exc:
+            record["error"] = f"codex_invocation_failed:{exc}"
+            completed = None
 
-    output = "" if completed is None else (completed.stdout + completed.stderr)
+    output = external_text if external_text is not None else ("" if completed is None else (completed.stdout + completed.stderr))
     output_path = args.output.with_suffix(".log")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(output, encoding="utf-8")
@@ -196,11 +313,46 @@ def run_review(args: argparse.Namespace) -> int:
                         record[key] = structured[key]
                 record["coverage_gaps"] = structured.get("coverage_gaps", [])
                 record["structured_result"] = True
+                record["status"] = "PASS" if record.get("decision") == "approve" else "FAIL"
             else:
                 record["error"] = "l2_structured_result_missing"
         else:
             record["decision"] = "review_completed" if completed.returncode == 0 else "review_failed"
+            record["status"] = "PASS" if completed.returncode == 0 else "FAIL"
             record["coverage_gaps"] = [] if completed.returncode == 0 else ["codex_review_nonzero_exit"]
+    elif external_review is not None:
+        structured = _load_review_json(output)
+        if args.mode == "l2":
+            if structured is None or "decision" not in structured or "findings" not in structured:
+                record["error"] = "l2_structured_result_missing"
+                record["decision"] = "evidence_insufficient"
+                record["coverage_gaps"] = ["l2_structured_result_missing"]
+                record["exit_code"] = 1
+            else:
+                for key in ("decision", "scope_reviewed", "findings", "non_findings", "coverage_gaps"):
+                    if key in structured:
+                        record[key] = structured[key]
+                record["coverage_gaps"] = structured.get("coverage_gaps", [])
+                record["structured_result"] = True
+                record["status"] = "PASS" if record.get("decision") == "approve" else "FAIL"
+                record["exit_code"] = 0
+                record["review_source"] = "external_review_json"
+        else:
+            decision = structured.get("decision") if structured else None
+            if not isinstance(decision, str) or not decision.strip():
+                decision = "review_completed" if structured is not None else "review_input_unreadable"
+            record["decision"] = decision
+            record["status"] = "PASS" if decision == "review_completed" else "FAIL"
+            if structured is not None:
+                for key in ("findings", "non_findings", "coverage_gaps"):
+                    if key in structured:
+                        record[key] = structured[key]
+                record["coverage_gaps"] = structured.get("coverage_gaps", [])
+                record["review_source"] = "external_review_json"
+                record["exit_code"] = 0 if record["status"] == "PASS" else 1
+            else:
+                record["coverage_gaps"] = ["review_json_invalid"]
+                record["exit_code"] = 1
 
     _write_json(args.output, record)
     print(json.dumps({"output": str(args.output), "exit_code": record.get("exit_code"), "decision": record["decision"]}, ensure_ascii=False))
@@ -208,7 +360,9 @@ def run_review(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run Codex as an evidence-producing review sidecar.")
+    parser = argparse.ArgumentParser(
+        description="Run Codex as an evidence-producing review sidecar, or record a review produced by another agent harness."
+    )
     parser.add_argument("--mode", choices=("normal", "l2"), required=True)
     parser.add_argument("--repo", type=Path, default=Path.cwd())
     parser.add_argument("--run-root", type=Path, required=True)
@@ -224,9 +378,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--article-id")
     parser.add_argument("--draft-path")
     parser.add_argument("--draft-sha256")
+    parser.add_argument("--artifact-path")
+    parser.add_argument("--body-path")
+    parser.add_argument("--title-pack-path")
+    parser.add_argument("--created-from-run")
     parser.add_argument("--attempt", type=int, default=1)
     parser.add_argument("--l2-required", action="store_true")
     parser.add_argument("--l2-risk-basis", default="")
+    parser.add_argument(
+        "--review-json",
+        type=Path,
+        help="Record a structured review JSON produced by another agent harness instead of invoking the Codex CLI.",
+    )
     return parser
 
 

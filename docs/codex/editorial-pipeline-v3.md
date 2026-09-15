@@ -83,6 +83,12 @@ artifact、推进状态或发布文章。
 原文定位、支持内容和不能支持的内容。`claims` 再分为事实、具名/归属观点、观众
 反应和推断，避免把推断写成事实。
 
+当 run 声明 `article-first-v1` 契约时，每条材料还要声明
+`source_capability`，每条 claim 要声明 `claim_level` 并绑定材料；能力按
+`event_exists < character_setup < scene_action < dialogue < audience_reaction < mechanism < outcome`
+排序，超过来源上限的 claim 返回 `claim_level_exceeds_source_capability`。验收结果另分
+`material_ready_for_draft` 与 `editorial_value_ready`，两项均通过才允许写作。
+
 进入 `material_ready` 至少要满足：
 
 - 保持原核心问题；

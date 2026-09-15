@@ -16,6 +16,7 @@ from .article_first import (
     HARD_INFORMATION_TYPES,
     validate_phase_field_boundary,
 )
+from .run_contract import is_strict_run_contract, validate_phase_contract_fields, validate_run_contract
 
 CONTENT_FIDELITY_SCHEMA = "article-content-fidelity-v1"
 CONTENT_RESULTS = ("pass", "return_article", "return_material")
@@ -305,16 +306,127 @@ def _validate_standalone(
     return valid
 
 
+def _validate_core_judgment(
+    record: Mapping[str, Any],
+    body_text: str | None,
+    errors: list[str],
+    *,
+    strict: bool,
+) -> dict[str, Any]:
+    """Validate the judgment a reader should be able to repeat.
+
+    The fields are mandatory only for an explicitly strict run.  If a legacy
+    record contains any of them, validating the supplied subset still catches
+    malformed data without making historical records impossible to read.
+    """
+
+    fields_present = any(
+        field in record
+        for field in (
+            "core_judgment",
+            "judgment_basis",
+            "judgment_strength",
+            "reader_can_repeat",
+            "unsupported_scenario_boundary",
+        )
+    )
+    if not strict and not fields_present:
+        return {"status": "not_applicable", "basis_count": 0}
+
+    core_valid = _nonblank(record.get("core_judgment"))
+    if not core_valid:
+        errors.append("missing:core_judgment")
+    basis = record.get("judgment_basis")
+    if not isinstance(basis, list):
+        errors.append("missing:judgment_basis" if basis is None else "invalid:judgment_basis")
+        basis = []
+    if len(basis) < 2:
+        errors.append("core_judgment_requires_two_bases")
+    seen_locators: set[str] = set()
+    seen_facts: set[str] = set()
+    basis_valid = len(basis) >= 2
+    for index, item in enumerate(basis):
+        if not isinstance(item, Mapping):
+            errors.append(f"invalid:judgment_basis_item:{index}")
+            basis_valid = False
+            continue
+        locator = item.get("locator")
+        fact = item.get("fact_or_scene")
+        explanation = item.get("explanation")
+        if not _nonblank(locator):
+            errors.append(f"missing:judgment_basis_locator:{index}")
+            basis_valid = False
+        elif not _locator_exists(locator, body_text):
+            errors.append(f"judgment_basis_locator_not_found:{index}")
+            basis_valid = False
+        if not _nonblank(fact):
+            errors.append(f"missing:judgment_basis_fact_or_scene:{index}")
+            basis_valid = False
+        if not _nonblank(explanation):
+            errors.append(f"missing:judgment_basis_explanation:{index}")
+            basis_valid = False
+        locator_key = _normalized(locator)
+        fact_key = _normalized(fact)
+        if locator_key and locator_key in seen_locators:
+            errors.append("judgment_basis_not_independent")
+            basis_valid = False
+        if fact_key and fact_key in seen_facts:
+            errors.append("judgment_basis_not_independent")
+            basis_valid = False
+        if locator_key:
+            seen_locators.add(locator_key)
+        if fact_key:
+            seen_facts.add(fact_key)
+
+    strength = record.get("judgment_strength")
+    if strength not in {"supported", "too_strong", "too_weak"}:
+        errors.append("missing:judgment_strength" if strength is None else "invalid:judgment_strength")
+        strength_valid = False
+    else:
+        strength_valid = True
+    if type(record.get("reader_can_repeat")) is not bool:
+        errors.append("missing:reader_can_repeat")
+        reader_repeatable = False
+    else:
+        reader_repeatable = record.get("reader_can_repeat") is True
+    if not _nonblank(record.get("unsupported_scenario_boundary")):
+        errors.append("missing:unsupported_scenario_boundary")
+        boundary_valid = False
+    else:
+        boundary_valid = True
+
+    if strength != "supported":
+        errors.append("judgment_not_supported")
+    if record.get("reader_can_repeat") is not True:
+        errors.append("reader_judgment_not_repeatable")
+    return {
+        "status": "pass"
+        if core_valid
+        and basis_valid
+        and strength_valid
+        and strength == "supported"
+        and reader_repeatable
+        and boundary_valid
+        else "fail",
+        "basis_count": len(basis),
+    }
+
+
 def validate_content_fidelity(
     record: Mapping[str, Any] | object,
     *,
     body_text: str | None = None,
+    strict: bool | None = None,
 ) -> list[str]:
     """Return deterministic content-stage errors; no title is required."""
 
     if not isinstance(record, Mapping):
         return ["record_must_be_an_object"]
+    declared_strict = is_strict_run_contract(record)
+    strict = declared_strict if strict is None else bool(strict or declared_strict)
     errors: list[str] = []
+    if is_strict_run_contract(record):
+        errors.extend(validate_run_contract(record))
     for field in (
         "schema_version",
         "article_id",
@@ -336,7 +448,11 @@ def validate_content_fidelity(
     else:
         _hash_matches(record, body_text, errors)
 
-    errors.extend(validate_phase_field_boundary(record, "content_review"))
+    errors.extend(
+        validate_phase_contract_fields(record, "content_review")
+        if strict
+        else validate_phase_field_boundary(record, "content_review")
+    )
     if body_text is not None:
         if _body_has_h1(body_text):
             errors.append("content_body_must_not_have_h1")
@@ -348,6 +464,7 @@ def validate_content_fidelity(
     _validate_hard_information(record, body_text, errors)
     _validate_section_increments(record, body_text, errors)
     _validate_standalone(record, body_text, errors)
+    _validate_core_judgment(record, body_text, errors, strict=strict)
 
     result = record.get("result", record.get("content_result"))
     if result not in CONTENT_RESULTS:
@@ -361,6 +478,7 @@ def evaluate_content_fidelity(
     record: Mapping[str, Any] | object,
     *,
     body_text: str | None = None,
+    strict: bool | None = None,
 ) -> dict[str, Any]:
     if not isinstance(record, Mapping):
         return {
@@ -369,7 +487,9 @@ def evaluate_content_fidelity(
             "errors": ["record_must_be_an_object"],
             "content_checks": {},
         }
-    errors = validate_content_fidelity(record, body_text=body_text)
+    declared_strict = is_strict_run_contract(record)
+    strict = declared_strict if strict is None else bool(strict or declared_strict)
+    errors = validate_content_fidelity(record, body_text=body_text, strict=strict)
     items = record.get("hard_information")
     count = len(items) if isinstance(items, list) else 0
     kinds = {
@@ -396,6 +516,44 @@ def evaluate_content_fidelity(
         "title_free_standalone": {
             "status": "pass" if "content_body_must_not_have_h1" not in errors and isinstance(standalone, Mapping) and standalone.get("status") == "pass" and not any(error.startswith("standalone_") or error.startswith("missing:standalone") for error in errors) else "fail",
         },
+    }
+    judgment = record.get("judgment_basis")
+    judgment_errors = {
+        error
+        for error in errors
+        if error.startswith(
+            (
+                "core_judgment",
+                "judgment_",
+                "missing:core_judgment",
+                "missing:judgment_",
+                "missing:reader_can_repeat",
+                "missing:unsupported_scenario_boundary",
+                "reader_judgment",
+                "invalid:judgment_",
+            )
+        )
+    }
+    judgment_applicable = strict or isinstance(judgment, list) or any(
+        field in record
+        for field in (
+            "core_judgment",
+            "judgment_basis",
+            "judgment_strength",
+            "reader_can_repeat",
+            "unsupported_scenario_boundary",
+        )
+    )
+    checks["core_judgment"] = {
+        "status": (
+            "pass"
+            if judgment_applicable and not judgment_errors
+            else "not_applicable"
+            if not judgment_applicable
+            else "fail"
+        ),
+        "basis_count": len(judgment) if isinstance(judgment, list) else 0,
+        "minimum": 2,
     }
     result = record.get("result", record.get("content_result"))
     if errors:

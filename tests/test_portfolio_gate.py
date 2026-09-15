@@ -293,3 +293,39 @@ def test_underfull_batch_is_error(tmp_path):
     verdict, code = pg.run_checks(str(path))
     assert code == 1
     assert any(i["id"] == "portfolio.input" for i in verdict["errors"])
+
+
+def test_collect_history_includes_daily_batches(tmp_path):
+    """A-B3: 日更批次必须进入跨批历史，否则跨批查重对日更永久失效。"""
+
+    runs = tmp_path / "runs"
+    for day, name, title in (
+        ("2026-09-14", "daily-001", "《奥德赛》：一次返乡"),
+        ("2026-09-14", "daily-002", "《蜘蛛侠：崭新之日》"),
+        ("2026-09-07", "controlled-002", "受控批次标题"),
+    ):
+        batch_dir = runs / day / name
+        batch_dir.mkdir(parents=True)
+        (batch_dir / "batch.json").write_text(
+            json.dumps({"articles": [{"title": title}]}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+    history = pg.collect_history(limit=10, runs_root=runs)
+    names = [entry["batch_dir"] for entry in history]
+
+    assert "daily-001" in names
+    assert "daily-002" in names
+    assert "controlled-002" in names
+
+
+def test_collect_history_still_excludes_the_current_run(tmp_path):
+    runs = tmp_path / "runs"
+    batch_dir = runs / "2026-09-15" / "daily-004"
+    batch_dir.mkdir(parents=True)
+    (batch_dir / "batch.json").write_text(
+        json.dumps({"articles": [{"title": "当前批次"}]}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    assert pg.collect_history(limit=10, exclude_run="daily-004", runs_root=runs) == []
