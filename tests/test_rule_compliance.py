@@ -32,6 +32,23 @@ def test_rejects_official_synopsis_as_viewing_commentary():
     assert "material_roles_do_not_cover_mode" in errors
 
 
+def test_reported_feature_accepts_media_report_role():
+    # 2026-09-16 扩展：报道式特稿以媒体稿件为主证据是诚实角色。
+    value = record(
+        article_mode="reported_feature",
+        required_source_roles=["media_report"],
+        sources=[{
+            "source_id": "s1",
+            "source_role": "media_report",
+            "supports_mode": ["reported_feature"],
+            "cannot_support": ["scene_action", "dialogue", "audience_consensus", "ending"],
+            "source_capability": "mechanism",
+        }],
+        claims=[{"claim_id": "c1", "claim_level": "mechanism", "source_refs": ["s1"], "source_locators": ["p1"]}],
+    )
+    assert "material_roles_do_not_cover_mode" not in validate_rule_compliance(value, source_stripped_text="人物面对冲突并作出选择。")
+
+
 def test_rejects_missing_cannot_support():
     source = dict(record()["sources"][0]); source.pop("cannot_support")
     assert any(error.startswith("missing:cannot_support") for error in validate_rule_compliance(record(sources=[source]), source_stripped_text="人物面对冲突并作出选择。"))

@@ -20,7 +20,10 @@ ARTICLE_MODES = frozenset({
 MODE_REQUIRED_ROLES = {
     "setting_observation": (frozenset({"official_fact", "mechanism"}),),
     "viewing_commentary": (frozenset({"scene", "review"}),),
-    "reported_feature": (frozenset({"interview", "现场"}),),
+    # reported_feature 的合法证据角色（2026-09-16 扩展）：专访/现场之外，
+    # 报道式特稿以媒体/新闻稿件为主证据同样是诚实角色（capability 层
+    # 早已收录 media_report）。
+    "reported_feature": (frozenset({"interview", "现场", "media_report"}),),
     "fact_explainer": (frozenset({"official_fact"}), frozenset({"cross_check"})),
 }
 MODE_ALLOWED_LEVELS = {

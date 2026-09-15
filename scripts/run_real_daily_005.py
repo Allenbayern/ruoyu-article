@@ -234,6 +234,7 @@ MATERIAL_SPECS = {
     "art-001": {
         "mode": "reported_feature",
         "role": "interview",
+        "role": "interview",
         "source_ids": ["src-jiaofeng-1905", "src-jiaofeng-sina", "src-jiaofeng-dzwww"],
         "question": "《交锋》编剧为什么要抗拒自己最不擅长的师徒关系",
         "mechanism": "编剧用现实调研替换谍战套路，师徒传承因此成为20年跨度的支点",
@@ -264,6 +265,7 @@ MATERIAL_SPECS = {
     },
     "art-002": {
         "mode": "reported_feature",
+        "role": "interview",
         "role": "interview",
         "source_ids": ["src-longcanguan-zuojiawang", "src-longcanguan-rmrb"],
         "question": "《欢迎来龙餐馆》为什么要删掉片名里的一个字",
@@ -346,6 +348,25 @@ RULE_CLAIMS = {
 
 # --------------------------------------------------------------------------
 # Run data (extracted from generator logic, 2026-09-15)
+REJECTED_PRIOR_WORKS = ["空枪", "奥德赛", "蜘蛛侠：崭新之日", "早春晴朗", "兰香如故", "玩具总动员5"]
+
+SLOT_DECISIONS = [
+    {
+        "slot": 1,
+        "article_id": "art-001",
+        "candidate_id": "cand-jiaofeng-wangxiaoqiang-001",
+        "decision": "selected",
+        "event_cluster_id": "jiaofeng-guoxue-drama-creation-choice",
+    },
+    {
+        "slot": 2,
+        "article_id": "art-002",
+        "candidate_id": "cand-longcanguan-jiunian-001",
+        "decision": "selected",
+        "event_cluster_id": "longcanguan-nine-year-craft-and-name",
+    },
+]
+
 # --------------------------------------------------------------------------
 
 BODIES = {
@@ -502,6 +523,7 @@ CONTENT_RECORD_ARGS = [
     {
         "aid": "art-001",
         "mode": "reported_feature",
+        "role": "interview",
         "core_object": "《交锋》的编剧取舍与师徒关系",
         "question": "《交锋》编剧为什么要抗拒自己最不擅长的师徒关系",
         "mechanism": "编剧用现实调研替换谍战套路，师徒传承因此成为20年跨度的支点",
@@ -522,6 +544,7 @@ CONTENT_RECORD_ARGS = [
     {
         "aid": "art-002",
         "mode": "reported_feature",
+        "role": "interview",
         "core_object": "《欢迎来龙餐馆》的片名取舍与创作过程",
         "question": "《欢迎来龙餐馆》为什么要删掉片名里的一个字",
         "mechanism": "创作缘起、采风经验和片名取舍共同决定这部片把战争写成需要吃饭的日常",
@@ -548,12 +571,14 @@ BATCH_SPECS = {
             "jiaofeng-guoxue-drama-creation-choice",
             ["src-jiaofeng-1905", "src-jiaofeng-sina", "src-jiaofeng-dzwww"],
             "A",
+            "A",
         ),
         "art-002": (
             "cand-longcanguan-jiunian-001",
             "欢迎来龙餐馆",
             "longcanguan-nine-year-craft-and-name",
             ["src-longcanguan-zuojiawang", "src-longcanguan-rmrb"],
+            "B",
             "B",
         ),
 }

@@ -97,7 +97,7 @@ def candidates() -> None:
             "selection_rule": "作品级与事件簇去重；发现信号不得直接充当事实",
             "selected_slot_ids": [c["candidate_id"] for c in CANDIDATES],
             "candidates": CANDIDATES,
-            "rejected_prior_works": ["空枪", "奥德赛", "蜘蛛侠：崭新之日", "早春晴朗", "兰香如故", "玩具总动员5"],
+            "rejected_prior_works": REJECTED_PRIOR_WORKS,
             "decision": "accept",
             "publication_authorization": "not_authorized",
         },
@@ -114,22 +114,7 @@ def candidates() -> None:
             "publication_authorization": "not_authorized",
         },
     )
-    decisions = [
-        {
-            "slot": 1,
-            "article_id": "art-001",
-            "candidate_id": "cand-jiaofeng-wangxiaoqiang-001",
-            "decision": "selected",
-            "event_cluster_id": "jiaofeng-guoxue-drama-creation-choice",
-        },
-        {
-            "slot": 2,
-            "article_id": "art-002",
-            "candidate_id": "cand-longcanguan-jiunian-001",
-            "decision": "selected",
-            "event_cluster_id": "longcanguan-nine-year-craft-and-name",
-        },
-    ]
+    decisions = SLOT_DECISIONS
     write_json(
         "slot-decisions.json",
         {
@@ -255,7 +240,7 @@ def briefs_and_tasks() -> None:
             "run_id": RUN_ID,
             "articles": [
                 {"article_task_id": f"at-{aid}", "article_id": aid, "topic_id": aid, "topic_version": 1}
-                for aid in ("art-001", "art-002")
+                for aid, *_rest in BRIEF_SPECS
             ],
             "selection_rerun": True,
             "publication_authorization": "not_authorized",
@@ -353,6 +338,7 @@ def content_record(
     aid: str,
     body: str,
     mode: str,
+    role: str,
     core_object: str,
     question: str,
     mechanism: str,
@@ -373,7 +359,7 @@ def content_record(
     path = ROOT / f"review/{aid}/content-fidelity.json"
     data = json.loads(path.read_text(encoding="utf-8"))
     data["article_mode"] = mode
-    data["required_source_roles"] = ["interview"]
+    data["required_source_roles"] = [role]
     for item, spec in zip(data.get("hard_information", []), hard):
         if spec.get("source_refs"):
             item["source_refs"] = list(spec["source_refs"])
@@ -408,7 +394,7 @@ def reviews_and_delivery(bodies_map: dict[str, str]) -> None:
                 "schema_version": "article-rule-compliance-v1",
                 "article_id": aid,
                 "article_mode": MODES[aid],
-                "required_source_roles": ["interview"],
+                "required_source_roles": [MATERIAL_SPECS[aid]["role"]],
                 "sources": sources,
                 "claims": RULE_CLAIMS[aid],
                 "source_stripped_path": stripped_path,
@@ -427,7 +413,7 @@ def reviews_and_delivery(bodies_map: dict[str, str]) -> None:
         base.topic_cards(aid, title, "按已核验材料解释创作取舍、人物关系与读者问题", SOURCE_IDS[aid][0], f"drafts/{aid}/body_draft.md", delivery_path)
         topic_path = ROOT / f"review/{aid}/topic-card.json"
         topic = json.loads(topic_path.read_text(encoding="utf-8"))
-        topic.update({"run_id": RUN_ID, "article_mode": MODES[aid], "article_type": MODES[aid], "required_source_roles": ["interview"]})
+        topic.update({"run_id": RUN_ID, "article_mode": MODES[aid], "article_type": MODES[aid], "required_source_roles": [MATERIAL_SPECS[aid]["role"]]})
         topic_path.write_text(json.dumps(topic, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         fact_path = ROOT / f"review/{aid}/fact-card.json"
         fact = json.loads(fact_path.read_text(encoding="utf-8"))
@@ -435,7 +421,7 @@ def reviews_and_delivery(bodies_map: dict[str, str]) -> None:
             {
                 "run_id": RUN_ID,
                 "article_mode": MODES[aid],
-                "required_source_roles": ["interview"],
+                "required_source_roles": [MATERIAL_SPECS[aid]["role"]],
                 "sources": [
                     {
                         "source_id": source_id,
@@ -449,31 +435,46 @@ def reviews_and_delivery(bodies_map: dict[str, str]) -> None:
             }
         )
         fact_path.write_text(json.dumps(fact, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        write_json(
-            f"review/{aid}/independent-review.json",
-            {
-                "schema_version": "article-independent-review-v1",
-                "article_task_id": f"at-{aid}",
-                "article_id": aid,
-                "run_id": RUN_ID,
-                "created_from_run": RUN_ID,
-                "artifact_path": delivery_path,
-                "artifact_sha256": digest(ROOT / delivery_path),
-                "draft_path": f"drafts/{aid}/body_draft.md",
-                "draft_sha256": digest(ROOT / f"drafts/{aid}/body_draft.md"),
-                "body_path": f"drafts/{aid}/body_draft.md",
-                "body_sha256": digest(ROOT / f"drafts/{aid}/body_draft.md"),
-                "title_pack_path": f"review/{aid}/title-pack.json",
-                "title_pack_sha256": digest(ROOT / f"review/{aid}/title-pack.json"),
-                "attempt": 1,
-                "max_attempts": 3,
-                "status": "PENDING",
-                "decision": "human_review_required",
-                "next_step": "independent_review_required",
-                "scope": "single_article",
-                "publication_authorization": "not_authorized",
-            },
+        # L2 canonical 记录保护（2026-09-16）：completed 的复核记录是 L2 复核员
+        # 或修稿循环归档后的权威产物，生成器不得回写 PENDING 占位覆盖它
+        # （daily-005 曾因此丢失 controller 已接受的 needs_changes 记录）。
+        review_path = ROOT / f"review/{aid}/independent-review.json"
+        existing = None
+        if review_path.exists():
+            try:
+                existing = json.loads(review_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                existing = None
+        completed = (
+            isinstance(existing, dict)
+            and str(existing.get("status") or "").lower() == "complete"
         )
+        if not completed:
+            write_json(
+                f"review/{aid}/independent-review.json",
+                {
+                    "schema_version": "article-independent-review-v1",
+                    "article_task_id": f"at-{aid}",
+                    "article_id": aid,
+                    "run_id": RUN_ID,
+                    "created_from_run": RUN_ID,
+                    "artifact_path": delivery_path,
+                    "artifact_sha256": digest(ROOT / delivery_path),
+                    "draft_path": f"drafts/{aid}/body_draft.md",
+                    "draft_sha256": digest(ROOT / f"drafts/{aid}/body_draft.md"),
+                    "body_path": f"drafts/{aid}/body_draft.md",
+                    "body_sha256": digest(ROOT / f"drafts/{aid}/body_draft.md"),
+                    "title_pack_path": f"review/{aid}/title-pack.json",
+                    "title_pack_sha256": digest(ROOT / f"review/{aid}/title-pack.json"),
+                    "attempt": 1,
+                    "max_attempts": 3,
+                    "status": "PENDING",
+                    "decision": "human_review_required",
+                    "next_step": "independent_review_required",
+                    "scope": "single_article",
+                    "publication_authorization": "not_authorized",
+                },
+            )
         hook = STRONGEST_HOOKS[aid]
         write_json(f"review/style-gate-markdown-{aid}.json", validate_markdown_file(ROOT / delivery_path, hook=hook))
         write_json(
@@ -576,7 +577,7 @@ def portfolio() -> None:
             "schema_version": "portfolio-gate-v2",
             "run_id": RUN_ID,
             "validated_pool_path": "candidate-pool.json",
-            "selected_articles": ["art-001", "art-002"],
+            "selected_articles": [d["article_id"] for d in SLOT_DECISIONS],
             "distinct_event_clusters": True,
             "status": "PASS" if verdict.get("pass") else "FAIL",
             "exit_code": exit_code,
@@ -599,7 +600,7 @@ def gates() -> None:
 def batch_manifest(bodies_map: dict[str, str]) -> None:
     specs = BATCH_SPECS
     articles = []
-    for aid, (cid, work, cluster, source_refs, slot) in specs.items():
+    for aid, (cid, work, cluster, source_refs, slot, content_map) in specs.items():
         title = json.loads((ROOT / f"review/{aid}/title-pack.json").read_text(encoding="utf-8"))["directions"][0]["title"]
         articles.append(
             {
@@ -609,8 +610,8 @@ def batch_manifest(bodies_map: dict[str, str]) -> None:
                 "work_title": work,
                 "topic_version": 1,
                 "article_mode": MODES[aid],
-                "required_source_roles": ["interview"],
-                "content_map": "A" if aid == "art-001" else "B",
+                "required_source_roles": [MATERIAL_SPECS[aid]["role"]],
+                "content_map": content_map,
                 "event_cluster": cluster,
                 "brief_path": f"briefs/writing-brief-{aid}.md",
                 "task_card_path": f"task-cards/task-card-{aid}.md",
@@ -648,7 +649,7 @@ def batch_manifest(bodies_map: dict[str, str]) -> None:
         **CONTRACT,
         "article_first_contract_version": "article-first-v1",
         "article_rule_compliance_required": True,
-        "article_count": 2,
+        "article_count": len(specs),
         "articles": articles,
         "publication_authorization": "not_authorized",
         "delivery_state": "withheld",
@@ -743,9 +744,13 @@ def batch_manifest(bodies_map: dict[str, str]) -> None:
         "compliance_gate_reason": COMPLIANCE_GATE_REASON,
     }
     write_json("batch.json", batch)
+    article_lines = "".join(
+        f"  - article_id: {aid}\n    body_path: drafts/{aid}/body_draft.md\n"
+        for aid in sorted(bodies_map)
+    )
     write_text(
         "prose-batch.yaml",
-        f"run_id: {RUN_ID}\nreview_surface: markdown_codex\narticles:\n  - article_id: art-001\n    body_path: drafts/art-001/body_draft.md\n  - article_id: art-002\n    body_path: drafts/art-002/body_draft.md\n",
+        f"run_id: {RUN_ID}\nreview_surface: markdown_codex\narticles:\n{article_lines}",
     )
 
 
@@ -754,7 +759,8 @@ def build_run(spec) -> None:
     bind_names = (
         "ROOT", "RUN_ID", "GROUP_ID", "CAPTURED_AT", "CONTRACT",
         "digest", "write_json", "write_text", "ref",
-        "RADAR_RECORDS", "SOURCES", "CANDIDATES",
+        "RADAR_RECORDS", "SOURCES", "CANDIDATES", "REJECTED_PRIOR_WORKS",
+        "SLOT_DECISIONS",
         "TASK_CARD_REQUIRED_FIELDS", "STRONGEST_HOOKS",
         "MATERIAL_SPECS", "BRIEFS", "BRIEF_SPECS", "BODIES",
         "CONTENT_RECORD_ARGS", "TITLES", "SOURCE_IDS", "MODES",
@@ -776,6 +782,7 @@ def build_run(spec) -> None:
             args["aid"],
             body_map[args["aid"]],
             args["mode"],
+            args["role"],
             args["core_object"],
             args["question"],
             args["mechanism"],
