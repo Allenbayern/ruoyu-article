@@ -318,7 +318,6 @@ MATERIAL_SPECS = {
             {"text": "郑合惠子好像有一种魔力，出演配角时总能收获大量关注", "level": "character_setup", "locator": "中国网: 配角体质", "source_id": "src-china-zhh", "plan_kind": "fact"},
             {"text": "杜翠雀擅长女红，做了一批彩胜，让丫鬟小莲送些给林锦岐", "level": "event_exists", "locator": "搜狐: 彩胜局", "source_id": "src-sohu-cuique", "plan_kind": "specific_context"},
             {"text": "她不是没有能力改变命运，只是把所有力气都用在了向别人索取认可上，求而不得之后，又把怨气变成了报复", "level": "mechanism", "locator": "新浪: 人物分析", "source_id": "src-sina-renwu", "plan_kind": "mechanism"},
-            {"text": "9月11日起在CCTV-8和腾讯视频播出", "level": "event_exists", "locator": "官微: 播出信息", "source_id": "src-sina-renwu", "plan_kind": "specific_context"},
         ],
         "by_source": {
             "src-baijia-zhh": [
@@ -369,9 +368,7 @@ MATERIAL_SPECS = {
                 "她的坏并非凭空掉下来。她身上有才华，有野心，也有被环境放大的自卑和虚荣",
                 "那朵翠雀花胜最后和她一起烧尽",
                 "我叫杜翠雀，翠雀是花，不是鸟。金州军户出身，自小读书识字，也学女红药理。本欲凭一身学识做女官，奈何时移世易，此路难通。哥哥一纸家书，便渡江赴金陵",
-                "9月11日起，锁定CCTV-8@CCTV电视剧@腾讯视频独家播出",
-                "林锦岐落入杜氏兄妹圈套，许兰香挺身而出，当众拆穿杜翠雀，力保林家声誉",
-            ],
+                "林锦岐落入杜氏兄妹圈套，许兰香挺身而出，当众拆穿杜翠雀，力保林家声誉",            ],
             "src-sina-rufu": [
                 "“我叫杜翠雀，翠雀是花，不是鸟。”",
                 "柔里有刺，温里有界",
@@ -454,7 +451,7 @@ BODIES = {
 
 《兰香如故》里有一场哭戏：一个姑娘跪在地上，抱着死去的闺蜜放声痛哭，哭到脖子上的青筋暴起，整个人抖得像筛糠。所有人看完都以为她重情重义。结果，人就是她杀的。
 
-这个姑娘叫杜翠雀，郑合惠子演的。剧集9月11日起在CCTV-8和腾讯视频播出。光听名字像小鸟依人，她前期的样子也确实如此——扎两个小辫，笑起来眼睛弯弯，说话轻声细语。可就是这场哭戏之后，弹幕炸了：有人刷“我裂开了”，有人说“这反转我CPU烧了”。
+这个姑娘叫杜翠雀，郑合惠子演的。光听名字像小鸟依人，她前期的样子也确实如此——扎两个小辫，笑起来眼睛弯弯，说话轻声细语。可就是这场哭戏之后，弹幕炸了：有人刷“我裂开了”，有人说“这反转我CPU烧了”。
 
 ## 甜妹脸的壳，藏着什么
 
@@ -578,7 +575,7 @@ core_question: 观众为什么对一个疯批女配又气又放不下
 target_reader: 正在追《兰香如故》、被杜翠雀气得睡不着又在讨论她的观众
 editorial_angle: 她不是天生坏种——军户孤女、考女官路断、寄人篱下，观众气的不是她坏，是她把一身本事用在了最窄的一条路上
 body_route: 从杀闺蜜的哭戏反转进入，再拆甜妹壳下的出身与出路，接着写观众又气又放不下的心理，最后落到命运判断
-evidence_boundary: 只写三份来源中的角色设定、剧情反转、播出信息与讨论现象；不写未出现在来源中的剧情细节
+evidence_boundary: 只写三份来源中的角色设定、剧情反转与讨论现象；不写未出现在来源中的剧情细节
 required_hard_information: 郑合惠子饰杜翠雀；军户孤女寄人篱下；考女官路断；杀闺蜜哭戏反转；与刘学义《花间令》二搭；配角CP上热搜；谭松韵主演大女主剧
 unsupported_boundary: 不能替观众下整体结论，不写未证实的营销内幕，不写演员本人未公开表态
 """,
@@ -642,7 +639,6 @@ CONTENT_RECORD_ARGS = [
             {"information_id": "i7", "text": "郑合惠子好像有一种魔力，出演配角时总能收获大量关注", "kind": "fact", "body_locator": "p8", "source_refs": ["src-china-zhh"], "source_locators": ["中国网: 配角体质"], "independence_key": "zhh-magic"},
             {"information_id": "i8", "text": "杜翠雀擅长女红，做了一批彩胜，让丫鬟小莲送些给林锦岐", "kind": "specific_context", "body_locator": "p7", "source_refs": ["src-sohu-cuique"], "source_locators": ["搜狐: 彩胜局"], "independence_key": "cuique-sheng"},
             {"information_id": "i9", "text": "她不是没有能力改变命运，只是把所有力气都用在了向别人索取认可上，求而不得之后，又把怨气变成了报复", "kind": "mechanism", "body_locator": "p10", "source_refs": ["src-sina-renwu"], "source_locators": ["新浪: 人物分析"], "independence_key": "seek-approval"},
-            {"information_id": "i10", "text": "9月11日起在CCTV-8和腾讯视频播出", "kind": "specific_context", "body_locator": "p2", "source_refs": ["src-sina-renwu"], "source_locators": ["官微: 播出信息"], "independence_key": "broadcast"},
         ],
         "bases": [
             {"locator": "p5", "fact_or_scene": "考女官路断后寄人篱下", "explanation": "才华无处安放是她的坏的全部来处"},
