@@ -44,6 +44,7 @@ SYSTEM_PROMPT = (
     "\"issue\":\"缺什么支撑(≤20字)\",\"suggestion\":\"补账本条目 或 删改(≤20字)\"}\n"
     "只输出 JSON 数组；没有任何缺口就输出 []。禁止输出数组以外的任何文字。"
     "逐段独立判断即可，不要对整篇做全局性长篇推理。"
+    "　特别检查两类易漏断言：①时间跨度（十几年/十多年/这些年/8 年之后…）；②受众行为（台词还在被引用/盘到包浆/如数家珍/网友都在…）。这两类在 daily-008 曾整轮漏过，是 L2 判 major 的主因。"
 )
 
 
@@ -102,15 +103,43 @@ def check_quotes(delivery: str, ledger: list[str]) -> list[dict]:
     return unmatched
 
 
+def assertion_gaps(run_root: Path, aid: str) -> dict:
+    """确定性断言缺口（时间跨度/受众行为/数字/引号）+ 账本孤儿条目。
+
+    2026-09-17：daily-008 的 L2 第一轮判的 2 条 major 都属于"读者面有、账本无"
+    的断言，而当时预检只有逐字引号比对 + LLM 抽查，两类正好漏过。这里接入
+    article_group.assertion_ledger_coverage 的确定性检查，LLM 不可用时照常出结果。
+    """
+    from article_group.assertion_ledger_coverage import check_coverage
+
+    report = check_coverage(run_root, aid)
+    return {
+        "assertion_errors": list(report.get("errors") or []),
+        "assertion_warnings": list(report.get("warnings") or []),
+        "assertion_uncovered": list(report.get("uncovered") or []),
+        "orphan_ledger": list(report.get("orphan_ledger") or []),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-root", required=True)
     parser.add_argument("--aid", required=True)
+    parser.add_argument("--force", action="store_true",
+                        help="在已收尾的 run 上强制重跑并覆盖预检产物（默认拒绝）")
     args = parser.parse_args()
 
     run_root = Path(args.run_root)
+    # 2026-09-17：已收尾的 run 是封存证据，默认不得覆盖。
+    from article_group.run_state import closed_reason
+
+    closed = closed_reason(run_root)
+    if closed and not getattr(args, "force", False):
+        print(f"拒绝执行：run 已收尾（{closed}）。加 --force 才会覆盖预检产物。", file=sys.stderr)
+        return 2
     delivery, ledger = load_run_inputs(run_root, args.aid)
     quotes = check_quotes(delivery, ledger)
+    assertion = assertion_gaps(run_root, args.aid)
 
     llm_gaps: list[dict] = []
     llm_status = "skipped"
@@ -160,9 +189,11 @@ def main() -> int:
         "ledger_entries": len(ledger),
         "paragraphs": len(paragraphs),
         "quote_unmatched": quotes,
+        **assertion,
         "llm_gaps": llm_gaps,
         "llm_status": llm_status,
-        "note": "预检只报缺口不阻断；判断句/作者观点不计硬事实；L2 复核仍为最终口径。",
+        "note": "预检只报缺口不阻断；判断句/作者观点不计硬事实；L2 复核仍为最终口径。"
+                " 断言缺口为确定性检查（时间跨度/受众行为 error，数字/引号 warning）。",
         "publication_authorization": "not_authorized",
     }
     out = run_root / "review" / args.aid / "ledger-coverage-precheck.json"
@@ -170,6 +201,9 @@ def main() -> int:
     out.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     print(f"{args.aid}: 账本 {len(ledger)} 条 | 段落 {len(paragraphs)} | 引号未命中 {len(quotes)} | LLM 缺口 {len(llm_gaps)}（{llm_status}）")
+    print(f"  确定性断言缺口: error {len(assertion['assertion_errors'])} | warning {len(assertion['assertion_warnings'])} | 孤儿账本条目 {len(assertion['orphan_ledger'])}")
+    for item in assertion["assertion_uncovered"]:
+        print(f"  [{item['severity']}] p{item['paragraph']} {item['category']}: {item['claim']}")
     for q in quotes:
         print(f"  [quote] {q['quote'][:50]}")
     for g in llm_gaps:

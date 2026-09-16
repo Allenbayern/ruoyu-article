@@ -162,6 +162,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--run-root", required=True, type=Path)
     parser.add_argument("--apply", action="store_true", help="真正写入失效状态与报告")
+    parser.add_argument("--force", action="store_true",
+                        help="在已收尾的 run 上强制应用（默认拒绝改写封存证据）")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--strict", action="store_true", help="存在失效记录时以非零码退出")
     return parser
@@ -169,6 +171,13 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
+    if args.apply and not getattr(args, "force", False):
+        from article_group.run_state import closed_reason
+
+        closed = closed_reason(args.run_root)
+        if closed:
+            print(f"拒绝执行：run 已收尾（{closed}）。加 --force 才会改写封存证据。", file=sys.stderr)
+            return 2
     report = reconcile(args.run_root, apply=args.apply)
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
