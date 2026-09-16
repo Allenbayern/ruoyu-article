@@ -819,6 +819,21 @@ def wechat_render_step() -> dict:
     return status
 
 
+def _write_step_log_markdown(run_root) -> None:
+    """把步骤日志渲染成 Markdown 版（STEP-LOG.md），随 RUN-RECORD 一起看。
+
+    2026-09-17：daily-008 的证据文件被最后一次打包在同一秒重写，事后无法复原
+    步骤顺序；步骤日志是 append-only 的，打包覆盖不了它。
+    """
+    from pathlib import Path as _Path
+
+    from article_group.step_log import render_markdown, timeline
+
+    _Path(run_root).joinpath("STEP-LOG.md").write_text(
+        render_markdown(timeline(run_root)), encoding="utf-8"
+    )
+
+
 def build_run(spec) -> None:
     """Execute every pipeline stage using a per-run spec module's data."""
     bind_names = (
@@ -833,17 +848,27 @@ def build_run(spec) -> None:
     )
     globals().update({name: getattr(spec, name) for name in bind_names})
 
-    discovery()
-    source_manifest()
-    candidates()
-    briefs_and_tasks()
+    from article_group.step_log import StepLog
+
+    def step(name, fn, *args, **kwargs):
+        """跑一个阶段并写一条步骤日志（失败也记，异常照常抛出）。"""
+        with StepLog(ROOT, name):
+            return fn(*args, **kwargs)
+
+
+    step("discovery", discovery)
+    step("source_manifest", source_manifest)
+    step("candidates", candidates)
+    step("briefs_and_tasks", briefs_and_tasks)
     for aid in MATERIAL_SPECS:
-        material_pack(aid)
-    body_map = bodies()
-    for aid, body in body_map.items():
-        write_text(f"drafts/{aid}/body_draft.md", body)
+        step(f"material_pack:{aid}", material_pack, aid)
+    body_map = step("bodies", bodies)
+    with StepLog(ROOT, "drafts_write"):
+        for aid, body in body_map.items():
+            write_text(f"drafts/{aid}/body_draft.md", body)
     for args in CONTENT_RECORD_ARGS:
-        content_record(
+        with StepLog(ROOT, f"content_record:{args['aid']}"):
+            content_record(
             args["aid"],
             body_map[args["aid"]],
             args["mode"],
@@ -857,12 +882,14 @@ def build_run(spec) -> None:
             args["boundary"],
             args["source_ids"],
         )
-    reviews_and_delivery(body_map)
-    portfolio()
-    gates()
-    batch_manifest(body_map)
-    wechat_status = wechat_render_step()
-    write_json(
+    step("reviews_and_delivery", reviews_and_delivery, body_map)
+    step("portfolio", portfolio)
+    step("gates", gates)
+    step("batch_manifest", batch_manifest, body_map)
+    wechat_status = step("wechat_render", wechat_render_step)
+    step(
+        "run_manifest",
+        write_json,
         "run-manifest.json",
         {
             "schema_version": "run-manifest-v1",
@@ -871,6 +898,9 @@ def build_run(spec) -> None:
             "source_manifest_path": "source-manifest.json",
             "selection_path": "discovery/discovery-radar-r0.json",
             "wechat_render": wechat_status,
+            "step_log": "step-log.jsonl",
             "publication_authorization": "not_authorized",
         },
     )
+    step("step_log_markdown", _write_step_log_markdown, ROOT)
+
