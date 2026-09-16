@@ -24,6 +24,13 @@ from pathlib import Path
 API = "https://api.anysearch.com"
 ENV_FILE = Path.home() / ".config" / "anysearch" / "env"
 
+# 额度/限流类错误关键词：命中即按"降级"处理，不重试（重试只会烧额度）。
+QUOTA_MARKERS = ("rate limit", "quota", "额度", "次数", "limit exceeded", "too many")
+
+
+class QuotaError(RuntimeError):
+    """额度耗尽/限流：调用方应降级到 web_search/web_fetch，而非重试。"""
+
 
 def load_key() -> str:
     key = os.environ.get("ANYSEARCH_API_KEY", "")
@@ -50,6 +57,9 @@ def call(path: str, payload: dict | None, key: str, timeout: int = 60) -> dict:
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         body = json.loads(resp.read().decode("utf-8"))
     if body.get("code") != 0:
+        message = str(body.get("message") or "")
+        if any(marker in message.lower() for marker in QUOTA_MARKERS):
+            raise QuotaError(message)
         raise SystemExit(f"AnySearch error: code={body.get('code')} message={body.get('message')}")
     return body
 
@@ -114,7 +124,14 @@ def main() -> int:
     p_extract.set_defaults(func=cmd_extract)
 
     args = parser.parse_args()
-    return args.func(args, load_key())
+    try:
+        return args.func(args, load_key())
+    except QuotaError as exc:
+        print(
+            f"[anysearch] 额度/限流：{exc}。不重试——本次调研降级改用 web_search/web_fetch。",
+            file=sys.stderr,
+        )
+        return 3  # 退出码 3 = 额度耗尽，与一般错误(1)区分，便于调用方识别降级
 
 
 if __name__ == "__main__":
