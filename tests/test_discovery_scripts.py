@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
+
+import pytest
 
 from scripts.llm_client import parse_json_array
 
@@ -134,3 +137,52 @@ def test_classify_fallback_when_llm_down(tmp_path, monkeypatch):
     record = json.loads((snapshot_dir / "2026-09-16.classified.json").read_text(encoding="utf-8"))
     assert record["stats"]["heuristic_fallback"] == 2
     assert all(item["method"] == "heuristic-fallback" for item in record["items"])
+
+
+def test_load_snapshot_default_requires_today(tmp_path, monkeypatch):
+    """鲜度守卫：默认分支只有昨天的快照时必须拒绝，不能静默选中旧快照。"""
+    from scripts import dailyhot_talk_filter
+
+    snapshot_dir = tmp_path / "runs/radar/dailyhot"
+    snapshot_dir.mkdir(parents=True)
+    (snapshot_dir / "2026-09-15.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "dailyhot-radar-v1",
+                "captured_at": "2026-09-15T08:30:00+08:00",
+                "date": "2026-09-15",
+                "boards": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(dailyhot_talk_filter, "SNAPSHOT_DIR", snapshot_dir)
+    today = datetime.now().strftime("%Y-%m-%d")
+    with pytest.raises(SystemExit) as exc:
+        dailyhot_talk_filter.load_snapshot(None)
+    assert "2026-09-15" not in str(exc.value)
+    assert today in str(exc.value)
+    assert "dailyhot_radar" in str(exc.value)
+
+
+def test_load_snapshot_explicit_historical_date_still_works(tmp_path, monkeypatch):
+    """鲜度守卫只作用于默认分支：--date 显式指定历史日期仍可回放。"""
+    from scripts import dailyhot_talk_filter
+
+    snapshot_dir = tmp_path / "runs/radar/dailyhot"
+    snapshot_dir.mkdir(parents=True)
+    (snapshot_dir / "2026-09-15.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "dailyhot-radar-v1",
+                "captured_at": "2026-09-15T08:30:00+08:00",
+                "date": "2026-09-15",
+                "boards": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(dailyhot_talk_filter, "SNAPSHOT_DIR", snapshot_dir)
+    path, snapshot = dailyhot_talk_filter.load_snapshot("2026-09-15")
+    assert path.name == "2026-09-15.json"
+    assert snapshot["date"] == "2026-09-15"

@@ -55,7 +55,7 @@ def heuristic_judge(title: str, desc: str) -> tuple[bool, int, str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--date", help="快照日期（默认最新）")
+    parser.add_argument("--date", help="快照日期（默认当天，历史日期需显式指定）")
     parser.add_argument("--top", type=int, default=20, help="摘要输出条数")
     parser.add_argument("--chunk", type=int, default=CHUNK_SIZE)
     args = parser.parse_args()

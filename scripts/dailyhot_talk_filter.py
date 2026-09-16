@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 
 SNAPSHOT_DIR = Path("runs/radar/dailyhot")
@@ -71,16 +72,21 @@ def load_snapshot(date: str | None) -> tuple[Path, dict]:
         if not path.exists():
             raise SystemExit(f"快照不存在: {path}")
     else:
-        candidates = sorted(SNAPSHOT_DIR.glob("*.json"))
-        if not candidates:
-            raise SystemExit(f"{SNAPSHOT_DIR} 下没有快照，先跑 scripts/dailyhot_radar.py")
-        path = candidates[-1]
+        # 鲜度守卫：默认只认"今天"的快照，目录里有任何其他 json 都不被静默选中。
+        # 取不到 → 非零退出并报错，而不是退回旧快照污染验收。
+        today = datetime.now().strftime("%Y-%m-%d")
+        path = SNAPSHOT_DIR / f"{today}.json"
+        if not path.exists():
+            raise SystemExit(
+                f"今天({today})的快照不存在: {path}；先跑 scripts/dailyhot_radar.py，"
+                "或对历史日期显式指定 --date"
+            )
     return path, json.loads(path.read_text(encoding="utf-8"))
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--date", help="快照日期（默认最新）")
+    parser.add_argument("--date", help="快照日期（默认当天，历史日期需显式指定）")
     parser.add_argument("--top", type=int, default=30, help="输出条数上限")
     parser.add_argument("--out", help="过滤结果落盘路径（可选）")
     args = parser.parse_args()
