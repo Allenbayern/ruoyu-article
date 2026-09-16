@@ -50,6 +50,13 @@
   hupu 10、ngabbs 201、zhihu 30、toutiao 50），每条含可回溯 url。
 - ✅ **筛选演示版**：`scripts/dailyhot_talk_filter.py`（影视向+争议度+禁区过滤），
   首日 351 条命中 9 条影视向；单字词误伤与游戏语境误报已记录，待 7 天语料校准。
+- ✅ **LLM 分类层已接通（controller 指认凭据后落地）**：
+  `scripts/dailyhot_classify.py` 用 dsh 的 shenwendp provider（deepseek-v4.1-flash，
+  reasoning_effort=low）30 条/请求批量分类影视向+争议度；凭据经
+  `~/.config/ruoyu-llm/env`（600，自读，不入 crontab/仓库/日志）；单批失败一次
+  严格重试后降级关键词启发式并标注 method；cron 08:35 每日自动跑，产出
+  `<date>.classified.json`。首日实测：344/351 LLM 分类、0 降级、7 条禁区过滤、
+  影视向 18 条（电竞/游戏按 prompt 边界剔除）。
 - ✅ **选题调研搜索助手（controller 提供 key）**：`scripts/anysearch_search.py`
   （search/extract，密钥在 `~/.config/anysearch/env`，600 权限不入仓库）。边界：
   只用于找角度/找候选来源，extract 的 Markdown 不替代 sources/ 的 HTML 捕获物，
