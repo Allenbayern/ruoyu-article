@@ -39,6 +39,18 @@
 | 微信指数/百度指数 | 中 | 低（无官方 API，易碎） | 0 | 高 | 中 | ❌ 不碰 |
 | 即刻圈子 | 中 | 低（无 API，需逆向） | 0 | 高 | 中 | ❌ 人工看 |
 
+## 落地状态（2026-09-16 更新）
+
+- ✅ **第 1 步已落地**：Linux 主机 docker 容器 `dailyhot-api`（`imsyy/dailyhot-api:latest`，
+  `--restart unless-stopped`，仅绑定 `127.0.0.1:6688` 内网只读）；薄适配器
+  `scripts/dailyhot_radar.py`（仓库内，已提交）每日抓取 6 路由写快照
+  `runs/radar/dailyhot/<date>.json`；cron 每日 08:30（Asia/Shanghai）低频只读一次，
+  日志 `~/radar/dailyhot.log`。
+- 首日快照（2026-09-16）：6 路由 351 条全成功（douban-group 30 ≥20、tieba 30、
+  hupu 10、ngabbs 201、zhihu 30、toutiao 50），每条含可回溯 url。
+- 7 日连续验收进行中（cron 自动跑）；第 2 步（LLM 争议度/立场分类 + 蝉小红人工
+  试用）待首周数据积累后启动。
+
 ## 三步推荐路径（每步含验收标准）
 
 **第 1 步（0 成本，1-2 天）**：Linux 主机 Docker 部署 DailyHotApi，只开
