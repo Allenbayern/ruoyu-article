@@ -839,6 +839,23 @@ def _write_step_log_markdown(run_root) -> None:
     )
 
 
+def evidence_rebind_step() -> dict:
+    """2026-09-17：交付内容一变，依赖它的 approve 立即失效（不重绑哈希）。
+
+    daily-008 当时靠手工脚本把记录里的哈希改成当前文件哈希，approve 因此被
+    保住；现在改为判失效：记录退回 PENDING/待复核，由复核与门禁重新判定。
+    """
+    from article_group.evidence_rebind import reconcile
+
+    report = reconcile(ROOT, apply=True)
+    return {
+        "status": "ok",
+        "changes": len(report["changes"]),
+        "stale_records": report["stale_records"],
+        "publication_authorization": "not_authorized",
+    }
+
+
 def build_run(spec) -> None:
     """Execute every pipeline stage using a per-run spec module's data."""
     bind_names = (
@@ -888,6 +905,7 @@ def build_run(spec) -> None:
             args["source_ids"],
         )
     step("reviews_and_delivery", reviews_and_delivery, body_map)
+    step("evidence_rebind", evidence_rebind_step)
     step("portfolio", portfolio)
     step("gates", gates)
     step("batch_manifest", batch_manifest, body_map)
