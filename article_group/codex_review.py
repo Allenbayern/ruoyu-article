@@ -364,6 +364,30 @@ def run_review(args: argparse.Namespace) -> int:
                 record["coverage_gaps"] = ["review_json_invalid"]
                 record["exit_code"] = 1
 
+    # 2026-09-17：标题包冻结闸门。L2 只能绑定"已冻结且未被改动"的标题包；
+    # 不满足时不得记 approve（daily-008 的旧 approve 正是被手工 rebind 保住的）。
+    if args.mode == "l2":
+        from article_group.title_freeze import BLOCKING_STATUSES, check as _title_freeze_check
+
+        _aid = str(getattr(args, "article_id", "") or "").strip()
+        if _aid:
+            freeze_report = _title_freeze_check(args.run_root, _aid)
+            record["title_freeze_status"] = freeze_report["status"]
+            record["title_freeze_reason"] = freeze_report.get("reason", "")
+            if freeze_report.get("title_pack_sha256"):
+                record["title_pack_sha256"] = freeze_report["title_pack_sha256"]
+            if freeze_report["status"] in BLOCKING_STATUSES and not getattr(
+                args, "allow_unfrozen_title", False
+            ):
+                record["title_freeze_violation"] = freeze_report
+                # 只拦"通过"：UNVERIFIED/未产出结果要保留原样，
+                # 否则会掩盖"复核没跑成"与"复核判不通过"的区别（既有测试守这条）。
+                if str(record.get("decision") or "") in {"approve", "approve-with-notes"}:
+                    record["decision"] = "needs_changes"
+                    record["status"] = "FAIL"
+                    record["coverage_gaps"] = list(record.get("coverage_gaps") or []) + [
+                        f"title_freeze:{freeze_report['status']}"
+                    ]
     _write_json(args.output, record)
     print(json.dumps({"output": str(args.output), "exit_code": record.get("exit_code"), "decision": record["decision"]}, ensure_ascii=False))
     return 0 if record.get("exit_code") == 0 and record["decision"] not in {"evidence_insufficient", "review_failed"} else 1
@@ -399,6 +423,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--base-review",
         type=Path,
         help="上一轮已归档的 L2 记录：声明本轮为 diff-only 增量复核并记录基线哈希。",
+    )
+    parser.add_argument(
+        "--allow-unfrozen-title",
+        action="store_true",
+        help="显式放行未冻结的标题包（默认禁止；放行事实会写进 L2 记录）",
     )
     parser.add_argument(
         "--review-json",

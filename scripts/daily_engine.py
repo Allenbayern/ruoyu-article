@@ -461,6 +461,11 @@ def reviews_and_delivery(bodies_map: dict[str, str]) -> None:
             }
         )
         fact_path.write_text(json.dumps(fact, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        # 标题包冻结（2026-09-17）：L2 复核必须绑定已冻结的标题包哈希；
+        # 标题在 L2 之后被改，会让旧 approve 失效而不是被 rebind 保住。
+        from article_group.title_freeze import freeze as _freeze_title_pack
+
+        _freeze_title_pack(ROOT, aid)
         # L2 canonical 记录保护（2026-09-16）：completed 的复核记录是 L2 复核员
         # 或修稿循环归档后的权威产物，生成器不得回写 PENDING 占位覆盖它
         # （daily-005 曾因此丢失 controller 已接受的 needs_changes 记录）。
