@@ -787,6 +787,38 @@ def batch_manifest(bodies_map: dict[str, str]) -> None:
     )
 
 
+def wechat_render_step() -> dict:
+    """2026-09-16：交付封存后生成"可直接粘贴进公众号后台"的排版版。
+
+    这是内容交付之后的便利步骤，不是门禁：渲染器不可用（没装 docker、
+    没网）时只记录 status/reason，绝不影响已经通过的内容交付，也不构成
+    任何发布授权。
+    """
+    import os
+
+    from article_group.wechat_render import render_run
+
+    try:
+        report = render_run(ROOT, editor_url=os.environ.get("WECHAT_EDITOR_URL", ""))
+    except Exception as exc:  # noqa: BLE001 - 后置步骤不允许影响主流程
+        return {
+            "status": "error",
+            "reason": f"{type(exc).__name__}:{exc}",
+            "publication_authorization": "not_authorized",
+        }
+    status: dict = {
+        "status": report["status"],
+        "theme": report["theme"],
+        "publication_authorization": "not_authorized",
+    }
+    if report.get("index_path"):
+        status["index_path"] = report["index_path"]
+    if report.get("reason"):
+        status["reason"] = report["reason"]
+    status["articles"] = [item["article_id"] for item in report["articles"]]
+    return status
+
+
 def build_run(spec) -> None:
     """Execute every pipeline stage using a per-run spec module's data."""
     bind_names = (
@@ -829,6 +861,7 @@ def build_run(spec) -> None:
     portfolio()
     gates()
     batch_manifest(body_map)
+    wechat_status = wechat_render_step()
     write_json(
         "run-manifest.json",
         {
@@ -837,6 +870,7 @@ def build_run(spec) -> None:
             "batch_path": "batch.json",
             "source_manifest_path": "source-manifest.json",
             "selection_path": "discovery/discovery-radar-r0.json",
+            "wechat_render": wechat_status,
             "publication_authorization": "not_authorized",
         },
     )
