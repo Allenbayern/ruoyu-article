@@ -106,12 +106,14 @@ def test_run_all_gates_writes_artifacts_and_reports_fail_without_exit(tmp_path):
     assert summary["claim_source_provenance"] == "fail"
     assert summary["editorial_protocol"] == "fail"
     assert summary["independent_review"] == "fail"
+    assert summary["topic_five_questions"] == "fail"
     assert summary["compliance_gate"] == "not_run"
     assert set(writes) == {
         "task-hierarchy-validation-report.json",
         "review/gates/claim-source-check.json",
         "review/gates/editorial-protocol.json",
         "review/gates/independent-review.json",
+        "review/gates/topic-five-questions.json",
         "review/gates/git-hygiene.json",
         "review/gates/compliance-gate.json",
     }
@@ -127,6 +129,9 @@ def test_run_all_gates_writes_artifacts_and_reports_fail_without_exit(tmp_path):
     independent = writes["review/gates/independent-review.json"]
     assert independent["pass"] is False
     assert "missing:article_tasks" in independent["errors"]
+    five_questions = writes["review/gates/topic-five-questions.json"]
+    assert five_questions["pass"] is False
+    assert "missing:topic_five_questions" in five_questions["errors"]
 
 
 def test_run_all_gates_reports_social_five_gates_failure(tmp_path):

@@ -207,6 +207,33 @@ def build_independent_review_gate(run_root: str | Path) -> dict[str, Any]:
     }
 
 
+def build_topic_five_questions_gate(run_root: str | Path) -> dict[str, Any]:
+    """Enforce the five-question topic preflight (2026-09-16 user-approved).
+
+    Structural failures (missing/invalid five-question fields on a selected
+    candidate) block the run; quality warnings are reported but never block.
+    Reads the artifact written by the generator's candidates() stage.
+    """
+    root = Path(run_root)
+    report = _load_json_mapping(root / "review" / "topic-five-questions.json")
+    if report is None:
+        return {
+            "schema_version": "topic-five-questions-gate-v1",
+            "pass": False,
+            "errors": ["missing:topic_five_questions"],
+            "warnings": [],
+            "publication_authorization": "not_authorized",
+        }
+    errors = [str(e) for e in report.get("errors", [])]
+    return {
+        "schema_version": "topic-five-questions-gate-v1",
+        "pass": not errors,
+        "errors": sorted(set(errors)),
+        "warnings": sorted({str(w) for w in report.get("warnings", [])}),
+        "publication_authorization": "not_authorized",
+    }
+
+
 def run_all_gates(
     run_root: str | Path,
     write_json: WriteFn,
@@ -238,12 +265,16 @@ def run_all_gates(
     compliance = build_compliance_gate_record(pool)
     write_json("review/gates/compliance-gate.json", compliance)
 
+    five_questions = build_topic_five_questions_gate(run_root)
+    write_json("review/gates/topic-five-questions.json", five_questions)
+
     compliance_failed = compliance.get("full_gate") == "run" and not compliance.get("pass")
     if fail_on_error and (
         not hierarchy_report["pass"]
         or not claim_report["pass"]
         or not editorial_report["pass"]
         or not independent_report["pass"]
+        or not five_questions["pass"]
         or compliance_failed
     ):
         payload = {
@@ -251,6 +282,7 @@ def run_all_gates(
             "claim_source_check": claim_report,
             "editorial_protocol": editorial_report,
             "independent_review_gate": independent_report,
+            "topic_five_questions": five_questions,
             "compliance_gate": compliance,
         }
         print(
@@ -264,6 +296,7 @@ def run_all_gates(
         "claim_source_provenance": "pass" if claim_report["pass"] else "fail",
         "editorial_protocol": "pass" if editorial_report["pass"] else "fail",
         "independent_review": "pass" if independent_report["pass"] else "fail",
+        "topic_five_questions": "pass" if five_questions["pass"] else "fail",
         "git_hygiene_infra": "pass" if hygiene["pass"] else "fail",
         "compliance_gate": (
             "not_run"
@@ -282,5 +315,6 @@ __all__ = [
     "build_git_hygiene_snapshot",
     "build_independent_review_gate",
     "build_task_hierarchy_report",
+    "build_topic_five_questions_gate",
     "run_all_gates",
 ]

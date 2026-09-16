@@ -20,6 +20,7 @@ from article_group.prose_pilot import analyze_text
 from article_group.run_gates import COMPLIANCE_GATE_REASON, run_all_gates
 from article_group.style_gate import validate_markdown_file
 from article_group.title_pack_fidelity import evaluate_title_pack
+from article_group.topic_preflight import evaluate as evaluate_five_questions
 
 def discovery() -> None:
     write_json(
@@ -126,29 +127,38 @@ def candidates() -> None:
         },
     )
     by_id = {c["candidate_id"]: c for c in CANDIDATES}
+    selected = [
+        {
+            "article_id": d["article_id"],
+            "candidate_id": d["candidate_id"],
+            "work": by_id[d["candidate_id"]]["work_title"],
+            "work_title": by_id[d["candidate_id"]]["work_title"],
+            "reader_question": by_id[d["candidate_id"]]["core_question"],
+            "event_cluster_id": d["event_cluster_id"],
+            "content_map": by_id[d["candidate_id"]]["content_map"],
+            "topic_mode": by_id[d["candidate_id"]]["topic_mode"],
+            # 五问选题预检（2026-09-16 用户拍板）：结构必填 + 枚举 + 质量警告。
+            # 字段取自候选卡，缺一即阻断；内容质量由 controller/L2 判断。
+            "reader": by_id[d["candidate_id"]].get("reader", ""),
+            "landing": by_id[d["candidate_id"]].get("landing", ""),
+            "emotion": by_id[d["candidate_id"]].get("emotion", ""),
+            "remove_timestamp_test": by_id[d["candidate_id"]].get("remove_timestamp_test", ""),
+            "social_motive": by_id[d["candidate_id"]].get("social_motive", ""),
+            "editorial_value_score": by_id[d["candidate_id"]]["editorial_value_score"],
+            "evidence_readiness": "ready",
+        }
+        for d in decisions
+    ]
     write_json(
         "review/selected-candidates.json",
         {
             "schema_version": "selected-candidates-v1",
             "run_id": RUN_ID,
-            "selected": [
-                {
-                    "article_id": d["article_id"],
-                    "candidate_id": d["candidate_id"],
-                    "work": by_id[d["candidate_id"]]["work_title"],
-                    "reader_question": by_id[d["candidate_id"]]["core_question"],
-                    "event_cluster_id": d["event_cluster_id"],
-                    "content_map": by_id[d["candidate_id"]]["content_map"],
-                    "topic_mode": by_id[d["candidate_id"]]["topic_mode"],
-                    "remove_timestamp_test": "pass",
-                    "editorial_value_score": by_id[d["candidate_id"]]["editorial_value_score"],
-                    "evidence_readiness": "ready",
-                }
-                for d in decisions
-            ],
+            "selected": selected,
             "publication_authorization": "not_authorized",
         },
     )
+    write_json("review/topic-five-questions.json", evaluate_five_questions(selected))
 
 
 def briefs_and_tasks() -> None:
@@ -663,12 +673,16 @@ def batch_manifest(bodies_map: dict[str, str]) -> None:
         "task_hierarchy_validation_path": "task-hierarchy-validation-report.json",
     }
     report = base.evaluate_batch_rule_compliance(ROOT, batch)
+    five_questions = json.loads(
+        (ROOT / "review/gates/topic-five-questions.json").read_text(encoding="utf-8")
+    )
+    five_questions_pass = bool(five_questions.get("pass"))
     write_json(
         "preflight-report.json",
         {
             "schema_version": "preflight-report-v1",
             "run_id": RUN_ID,
-            "status": "PASS",
+            "status": "PASS" if five_questions_pass else "FAIL",
             "article_rule_compliance": report["status"],
             "article_rule_compliance_report": report,
             "checks": {
@@ -678,6 +692,7 @@ def batch_manifest(bodies_map: dict[str, str]) -> None:
                 "article_count": "pass",
                 "distinct_event_clusters": "pass",
                 "article_rule_compliance": report["status"].lower(),
+                "topic_five_questions": "pass" if five_questions_pass else "fail",
                 "publication_authorization": "pass",
                 "task_hierarchy_contract": "pass",
                 "git_hygiene_infra": "pass",
@@ -728,9 +743,11 @@ def batch_manifest(bodies_map: dict[str, str]) -> None:
     independent_report = json.loads((ROOT / "review/gates/independent-review.json").read_text(encoding="utf-8"))
     hygiene_report = json.loads((ROOT / "review/gates/git-hygiene.json").read_text(encoding="utf-8"))
     compliance_report = json.loads((ROOT / "review/gates/compliance-gate.json").read_text(encoding="utf-8"))
+    five_questions_report = json.loads((ROOT / "review/gates/topic-five-questions.json").read_text(encoding="utf-8"))
     batch["run_gates"] = {
         "portfolio_gate": "pass" if portfolio_report.get("pass") else "fail",
         "task_hierarchy_contract": "pass" if hierarchy_report.get("pass") else "fail",
+        "topic_five_questions": "pass" if five_questions_report.get("pass") else "fail",
         "claim_source_provenance": "pass" if claim_report.get("pass") else "fail",
         "editorial_protocol": "pass" if editorial_report.get("pass") else "fail",
         "independent_review": "pass" if independent_report.get("pass") else "fail",

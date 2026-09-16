@@ -135,10 +135,15 @@
 
 ## 落地与待办
 
-1. **五问检查表制度化（未决）**：把卡片 A 的三问/五技巧 + 内部五问（读者/落点/
-   情绪/删节点测试/社交原动力）写成 candidate-card 必填字段，由 portfolio_gate/
-   preflight 校验——是否上机器门禁待 controller 决定；
-2. **发现源扩展（未决）**：谈资型版面（小红书/豆瓣小组）是否纳入 R0 雷达候选；
+1. **五问检查表制度化（已落地，2026-09-16 用户拍板）**：候选卡五问字段
+   （读者/落点/情绪/删节点测试/社交原动力）结构必填 error 级、社交原动力枚举
+   （显摆新知/找同类/表达立场/送温暖）、内容质量只警告不阻断；接入
+   preflight-report 与 run_gates blocking 门禁（`article_group/topic_preflight.py`，
+   测试 `tests/test_topic_preflight.py`）；
+2. **发现源扩展（调研完成，待拍板）**：谈资型版面（豆瓣小组/小红书）方案调研已
+   落盘 `docs/codex/talk-material-discovery-plan-2026-09.md`——第一步 DailyHotApi
+   （豆瓣小组讨论精选等 48 路由，Docker 零成本），小红书爬虫有判例红线仅人工
+   工具流；
 3. **本文档与 playbook 的关系**：本文档是借用方法的台账；playbook 与本组门禁仍是
    唯一执行依据。daily-007 两篇成稿即按卡片 A/B/C/E 选代执行（art-001 情绪顿悟型
    +无量仙翁模式；art-002 立场宣判型+平淡日子里的刺）。
