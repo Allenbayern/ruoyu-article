@@ -392,6 +392,75 @@ def title_gap_check(title: str) -> dict[str, Any]:
     }
 
 
+# 薄小节检查（2026-09-16，daily-008 扩写实验）：
+# 该期原稿 1032 字，两个小节各只有 111 字（"6.7分"节＝分数+票房+三个差评词，
+# "姜文没变"节＝一句标题式判断），是把本该展开的机制压成了提纲。
+# 同材料扩写版与补料版的最薄小节分别为 210 / 215 字，门禁全绿。
+# 判据：任一 H2+ 小节正文 < 150 CJK 字 → warning（补材料或合并小节，不放行空转）。
+THIN_SECTION_MIN_CJK = 150
+_CJK_COUNT_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
+
+
+def _markdown_sections(markdown_text: str) -> list[tuple[str, int]]:
+    """Return (heading, body CJK count) for every H2+ section."""
+    sections: list[tuple[str, int]] = []
+    heading: str | None = None
+    body: list[str] = []
+    frontmatter = False
+    for index, raw_line in enumerate(markdown_text.splitlines()):
+        line = raw_line.strip()
+        if index == 0 and line == "---":
+            frontmatter = True
+            continue
+        if frontmatter:
+            if line == "---":
+                frontmatter = False
+            continue
+        match = re.match(r"^#{2,6}\s+(.+?)\s*$", raw_line)
+        if match:
+            if heading is not None:
+                sections.append((heading, len(_CJK_COUNT_RE.findall("".join(body)))))
+            heading = _markdown_visible_text(match.group(1))
+            body = []
+            continue
+        if heading is not None:
+            body.append(line)
+    if heading is not None:
+        sections.append((heading, len(_CJK_COUNT_RE.findall("".join(body)))))
+    return sections
+
+
+def thin_section_check(
+    sections: list[tuple[str, int]],
+    *,
+    minimum: int = THIN_SECTION_MIN_CJK,
+) -> dict[str, Any]:
+    """Flag outline-style sections that carry too little text to explain anything."""
+    if not sections:
+        return {"status": "info", "reason": "无 H2 小节：按单段文本判定", "sections": []}
+    thin = [
+        {"heading": heading, "cjk": count}
+        for heading, count in sections
+        if count < minimum
+    ]
+    if thin:
+        detail = "、".join(f"{item['heading']}({item['cjk']}字)" for item in thin)
+        return {
+            "status": "warning",
+            "reason": f"薄小节 {len(thin)}/{len(sections)} 节 <{minimum} CJK 字：{detail}"
+                      "——该节缺材料展开，应补材料或合并小节",
+            "thin_sections": thin,
+            "sections": len(sections),
+        }
+    counts = [count for _, count in sections]
+    return {
+        "status": "ok",
+        "reason": f"最薄小节 {min(counts)} CJK 字 (≥{minimum})",
+        "thin_sections": [],
+        "sections": len(sections),
+    }
+
+
 def fact_density_check(paragraphs: list[str]) -> dict[str, Any]:
     """Estimate fact-base thickness per article (P2: 八仙篇事实底座最薄教训).
 
@@ -629,6 +698,7 @@ def validate_markdown_text(markdown_text: str, *, hook: str = "") -> dict[str, A
     hook = opening_hook_check(paragraphs)
     title_result = title_gap_check(title)
     density = fact_density_check(paragraphs)
+    thin = thin_section_check(_markdown_sections(markdown_text))
     closing = closing_interaction_check(paragraphs)
     hook_result = hook_declaration_check(declared_hook, full)
     article = {
@@ -641,6 +711,7 @@ def validate_markdown_text(markdown_text: str, *, hook: str = "") -> dict[str, A
         "opening_hook": hook,
         "title_gap": title_result,
         "fact_density": density,
+        "thin_section": thin,
         "closing_interaction": closing,
         "hook_declaration": hook_result,
     }

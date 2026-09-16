@@ -103,28 +103,90 @@ def _source_texts(run_root: Path, pack: Mapping[str, Any]) -> dict[str, str]:
     return texts
 
 
+_TITLE_TAG_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.S | re.I)
+
+
+def source_titles(run_root: Path, source_ids: list[str]) -> dict[str, str]:
+    """Normalized headline of each captured source (manifest title, else <title>)."""
+    titles: dict[str, str] = {}
+    manifest = _load_json_mapping(run_root / "source-manifest.json")
+    declared: dict[str, str] = {}
+    artifact_map: dict[str, str] = {}
+    if manifest is not None:
+        for source in manifest.get("sources", []):
+            if not isinstance(source, Mapping) or not source.get("source_id"):
+                continue
+            key = str(source["source_id"])
+            declared[key] = str(source.get("title") or "")
+            artifact_map[key] = str(source.get("artifact_path") or "")
+    for source_id in source_ids:
+        raw_title = declared.get(source_id) or ""
+        if not raw_title:
+            rel = artifact_map.get(source_id) or ""
+            if rel:
+                try:
+                    raw = (Path(run_root) / rel).read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    raw = ""
+                match = _TITLE_TAG_RE.search(raw)
+                raw_title = match.group(1) if match else ""
+        titles[source_id] = normalize_text(html.unescape(raw_title))
+    return titles
+
+
+def body_only_text(text: str, title: str) -> str:
+    """Drop headline occurrences so a headline-only anchor becomes detectable.
+
+    A claim that exists *only* in a source's headline is not body evidence:
+    daily-008 shipped three "conclusions" taken verbatim from source titles
+    ("姜文没变，观众和时代变了" 等) and no gate noticed.
+    """
+    if not title or not text:
+        return text
+    return text.replace(title, "")
+
+
 def check_material_pack(run_root: str | Path, pack: Mapping[str, Any]) -> dict[str, Any]:
-    """Verify every obtained fact and content_value_plan item of a pack."""
+    """Verify every obtained fact and content_value_plan item of a pack.
+
+    Two severities:
+    - `errors`: a fact that cannot be anchored anywhere in its source artifact;
+    - `warnings`: a fact anchored **only in the source headline** (title as
+      evidence). Warnings never flip ``pass`` so historical runs stay green,
+      but they surface in the gate report for the controller.
+    """
     root = Path(run_root)
     texts = _source_texts(root, pack)
+    titles = source_titles(root, sorted(texts))
+    bodies = {source_id: body_only_text(text, titles.get(source_id, ""))
+              for source_id, text in texts.items()}
     results: list[dict[str, Any]] = []
     errors: list[str] = []
+    warnings: list[str] = []
 
     by_source = pack.get("obtained_facts_by_source") or {}
     for source_id, facts in by_source.items():
         source_text = texts.get(str(source_id), "")
+        body_text = bodies.get(str(source_id), "")
         for fact in facts if isinstance(facts, list) else []:
             if not isinstance(fact, str):
                 continue
             anchored, windows = fact_anchors_in_source(fact, source_text)
+            title_only = False
+            if anchored and source_text != body_text:
+                in_body, _ = fact_anchors_in_source(fact, body_text)
+                title_only = not in_body
             results.append({
                 "source_id": source_id,
                 "fact": fact,
                 "anchored": anchored,
+                "title_only": title_only,
                 "matched_windows": windows,
             })
             if not anchored:
                 errors.append(f"fact_not_anchored:{source_id}:{fact[:32]}")
+            elif title_only:
+                warnings.append(f"title_only_anchor:{source_id}:{fact[:32]}")
 
     plan = pack.get("content_value_plan") or {}
     for item in (plan.get("hard_information_plan") or []) if isinstance(plan, Mapping) else []:
@@ -138,11 +200,76 @@ def check_material_pack(run_root: str | Path, pack: Mapping[str, Any]) -> dict[s
             anchored, _ = fact_anchors_in_source(gain, source_text)
             if not anchored:
                 errors.append(f"plan_not_anchored:{ref}:{item.get('plan_id', '?')}")
+                continue
+            in_body, _ = fact_anchors_in_source(gain, bodies.get(str(ref), ""))
+            if not in_body:
+                warnings.append(f"title_only_anchor:{ref}:{item.get('plan_id', '?')}")
 
     return {
         "schema_version": "claim-source-check-v1",
         "pass": not errors,
         "errors": sorted(set(errors)),
+        "warnings": sorted(set(warnings)),
+        "results": results,
+        "publication_authorization": "not_authorized",
+    }
+
+
+def check_content_fidelity(run_root: str | Path, fidelity: Mapping[str, Any]) -> dict[str, Any]:
+    """Ledger-side title-as-evidence check for a delivery fidelity record.
+
+    ``content-fidelity.json`` hard_information items carry ``source_refs`` and
+    a ``text``; if that text anchors only in the referenced source's headline,
+    it is a signal (heat-list title / editorial headline) masquerading as
+    evidence.
+    """
+    root = Path(run_root)
+    items = fidelity.get("hard_information")
+    items = items if isinstance(items, list) else []
+    refs = sorted({
+        str(ref)
+        for item in items if isinstance(item, Mapping)
+        for ref in (item.get("source_refs") or [])
+    })
+    pack = {"sources": [{"source_id": ref} for ref in refs]}
+    texts = _source_texts(root, pack)
+    titles = source_titles(root, refs)
+    bodies = {ref: body_only_text(texts.get(ref, ""), titles.get(ref, "")) for ref in refs}
+    warnings: list[str] = []
+    errors: list[str] = []
+    results: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, Mapping):
+            continue
+        text = item.get("text")
+        if not isinstance(text, str) or not text.strip():
+            continue
+        item_id = str(item.get("information_id") or "?")
+        anchored_anywhere = False
+        title_only = False
+        for ref in (item.get("source_refs") or []):
+            ref = str(ref)
+            in_full, _ = fact_anchors_in_source(text, texts.get(ref, ""))
+            in_body, _ = fact_anchors_in_source(text, bodies.get(ref, ""))
+            anchored_anywhere = anchored_anywhere or in_full
+            if in_full and not in_body:
+                title_only = True
+        results.append({
+            "information_id": item_id,
+            "text": text,
+            "anchored": anchored_anywhere,
+            "title_only": title_only,
+        })
+        if not anchored_anywhere:
+            errors.append(f"fidelity_not_anchored:{item_id}:{text[:32]}")
+        elif title_only:
+            warnings.append(f"title_only_anchor:{item_id}:{text[:32]}")
+    return {
+        "schema_version": "claim-source-check-v1",
+        "scope": "content_fidelity",
+        "pass": not errors,
+        "errors": sorted(set(errors)),
+        "warnings": sorted(set(warnings)),
         "results": results,
         "publication_authorization": "not_authorized",
     }
@@ -153,6 +280,7 @@ def check_run_material_packs(run_root: str | Path) -> dict[str, Any]:
     root = Path(run_root)
     pack_reports: list[dict[str, Any]] = []
     errors: list[str] = []
+    warnings: list[str] = []
     packs_dir = root / "material-packs"
     paths = sorted(packs_dir.glob("*.json")) if packs_dir.is_dir() else []
     if not paths:
@@ -165,11 +293,13 @@ def check_run_material_packs(run_root: str | Path) -> dict[str, Any]:
         report = check_material_pack(root, pack)
         pack_reports.append({"pack": path.name, **report})
         errors.extend(f"{path.name}:{item}" for item in report["errors"])
+        warnings.extend(f"{path.name}:{item}" for item in report.get("warnings", []))
     return {
         "schema_version": "claim-source-check-v1",
         "run_id": f"{root.parent.name}/{root.name}" if root.parent.name[:4].isdigit() else root.name,
         "pass": not errors,
         "errors": sorted(set(errors)),
+        "warnings": sorted(set(warnings)),
         "packs": pack_reports,
         "publication_authorization": "not_authorized",
     }
@@ -179,6 +309,9 @@ __all__ = [
     "WINDOW_SIZE",
     "normalize_text",
     "fact_anchors_in_source",
+    "body_only_text",
+    "source_titles",
     "check_material_pack",
     "check_run_material_packs",
+    "check_content_fidelity",
 ]

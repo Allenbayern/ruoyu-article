@@ -10,6 +10,10 @@ from .article_first import (
     HARD_INFORMATION_TYPES,
     validate_phase_field_boundary,
 )
+from .material_requirements import (
+    evaluate_material_requirements,
+    validate_material_requirements,
+)
 from .run_contract import (
     is_strict_run_contract,
     validate_phase_contract_fields,
@@ -250,6 +254,9 @@ def validate_material_acceptance_record(
         )
     errors.extend(_validate_content_value_plan(record, strict=strict))
     errors.extend(_validate_title_directions(record, sources, strict=strict))
+    # 2026-09-16：材料等级门槛（opt-in）。只有声明了 `material_requirements`
+    # 的材料包才受约束：篇幅上限由材料等级决定，缺场面层时不能按长稿验收。
+    errors.extend(validate_material_requirements(record))
     return sorted(set(errors))
 
 
@@ -490,6 +497,7 @@ def evaluate_material_acceptance(
         "decision": decision if decision in DECISIONS else None,
         "material_ready_for_draft": material_ready is True,
         "editorial_value_ready": editorial_ready is True,
+        "material_requirements": evaluate_material_requirements(record),
     }
 
 
