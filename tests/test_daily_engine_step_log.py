@@ -117,6 +117,7 @@ def test_build_run_logs_every_stage_in_order(wired):
         "drafts_write",
         "content_record:art-001",
         "reviews_and_delivery",
+        "evidence_rebind",
         "portfolio",
         "gates",
         "batch_manifest",
