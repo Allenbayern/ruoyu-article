@@ -56,6 +56,7 @@ scripts/*
 !scripts/dailyhot_classify.py
 !scripts/llm_client.py
 !scripts/ledger_coverage_precheck.py
+!scripts/record_controller_acceptance.py
 references/learning-samples/
 
 # media-intel-aios 仓内备份已移除（2026-09-15）：磁盘副本在
