@@ -75,6 +75,18 @@ def split_paragraphs(delivery: str) -> list[tuple[int, str]]:
     return paragraphs
 
 
+_QUOTE_TRAILING_PUNCT = "。！？，、；："
+
+
+def _quote_matches(quote: str, ledger_blob: str) -> bool:
+    if quote in ledger_blob:
+        return True
+    # 中文引号常把句末标点包进引号内；账本条目按页面原文可能不含该标点，
+    # 剥掉尾部标点再比一次，避免纯标点差异的误报。
+    stripped = quote.rstrip(_QUOTE_TRAILING_PUNCT)
+    return bool(stripped) and stripped in ledger_blob
+
+
 def check_quotes(delivery: str, ledger: list[str]) -> list[dict]:
     ledger_blob = "\n".join(ledger)
     unmatched = []
@@ -85,7 +97,7 @@ def check_quotes(delivery: str, ledger: list[str]) -> list[dict]:
             if quote in seen:
                 continue
             seen.add(quote)
-            if quote not in ledger_blob:
+            if not _quote_matches(quote, ledger_blob):
                 unmatched.append({"quote": quote, "issue": "引号内容未在账本逐字命中"})
     return unmatched
 

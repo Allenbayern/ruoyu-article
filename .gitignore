@@ -50,6 +50,7 @@ scripts/*
 !scripts/generate_daily_001.py
 !scripts/run_real_daily_006.py
 !scripts/run_real_daily_007.py
+!scripts/run_real_daily_008.py
 !scripts/dailyhot_radar.py
 !scripts/dailyhot_talk_filter.py
 !scripts/anysearch_search.py

@@ -186,3 +186,21 @@ def test_load_snapshot_explicit_historical_date_still_works(tmp_path, monkeypatc
     path, snapshot = dailyhot_talk_filter.load_snapshot("2026-09-15")
     assert path.name == "2026-09-15.json"
     assert snapshot["date"] == "2026-09-15"
+
+
+def test_quote_check_tolerates_trailing_punctuation():
+    from scripts.ledger_coverage_precheck import check_quotes
+
+    delivery = "影评人写道：“重复多了，会给创作打上一个死结。”"
+    ledger = ["重复多了，会给创作打上一个死结"]
+    assert check_quotes(delivery, ledger) == []
+
+
+def test_quote_check_flags_real_mismatch():
+    from scripts.ledger_coverage_precheck import check_quotes
+
+    delivery = "他说的“真相”没人知道。"
+    ledger = ["完全无关的条目"]
+    result = check_quotes(delivery, ledger)
+    assert len(result) == 1
+    assert result[0]["quote"] == "真相"
