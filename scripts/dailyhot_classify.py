@@ -24,25 +24,19 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
-import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.dailyhot_talk_filter import (  # noqa: E402
-    DISPUTE_KEYWORDS,
-    FILM_KEYWORDS,
-    QUESTION_MARKERS,
     dispute_score,
     is_excluded,
     is_film_relevant,
     load_snapshot,
 )
+from scripts.llm_client import LlmUnavailable, chat as llm_chat, load_env, parse_json_array  # noqa: E402
 
-ENV_FILE = Path.home() / ".config" / "ruoyu-llm" / "env"
 CHUNK_SIZE = 30
-MAX_TOKENS = 6000
 
 SYSTEM_PROMPT = (
     "你是影视内容选题助理。对每条候选信号判断两件事并只输出 JSON：\n"
@@ -52,73 +46,6 @@ SYSTEM_PROMPT = (
     "2=激烈争吵、站队、翻车级事件。\n"
     '输出格式（严格 JSON 数组，不要任何解释文字）：[{"i":序号,"film":true,"dispute":1,"why":"≤10字原因"}]'
 )
-
-
-class LlmUnavailable(RuntimeError):
-    """LLM 调用失败：调用方降级到关键词启发式。"""
-
-
-def load_env() -> dict[str, str]:
-    values: dict[str, str] = {}
-    if ENV_FILE.exists():
-        for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
-            if "=" in line:
-                k, v = line.split("=", 1)
-                values[k.strip()] = v.strip()
-    values.update({k: v for k, v in os.environ.items() if k.startswith("RUOYU_LLM_")})
-    if not values.get("RUOYU_LLM_API_KEY"):
-        raise SystemExit("未找到 RUOYU_LLM_API_KEY（~/.config/ruoyu-llm/env 或环境变量）")
-    return values
-
-
-def llm_chat(env: dict[str, str], system: str, user: str) -> str:
-    payload = {
-        "model": env.get("RUOYU_LLM_MODEL", "deepseek-v4.1-flash"),
-        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-        "max_tokens": MAX_TOKENS,
-        "reasoning_effort": "low",
-    }
-    req = urllib.request.Request(
-        f"{env['RUOYU_LLM_BASE_URL']}/chat/completions",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {env['RUOYU_LLM_API_KEY']}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=180) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
-    except Exception as exc:  # noqa: BLE001
-        raise LlmUnavailable(f"{type(exc).__name__}: {exc}") from exc
-    if body.get("error"):
-        raise LlmUnavailable(str(body["error"])[:200])
-    message = (body.get("choices") or [{}])[0].get("message") or {}
-    content = message.get("content")
-    if not content:
-        raise LlmUnavailable("empty_content")
-    return content
-
-
-def parse_json_array(text: str) -> list[dict] | None:
-    stripped = text.strip()
-    if stripped.startswith("```"):
-        lines = stripped.splitlines()
-        if lines and lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].strip().startswith("```"):
-            lines = lines[:-1]
-        stripped = "\n".join(lines).strip()
-    start = stripped.find("[")
-    end = stripped.rfind("]")
-    if start == -1 or end <= start:
-        return None
-    try:
-        value = json.loads(stripped[start : end + 1])
-        return value if isinstance(value, list) else None
-    except json.JSONDecodeError:
-        return None
 
 
 def heuristic_judge(title: str, desc: str) -> tuple[bool, int, str]:

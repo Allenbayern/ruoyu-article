@@ -87,6 +87,22 @@ def source_manifest() -> None:
     )
 
 
+def _normalize_rejected_works(works: object) -> list[dict]:
+    """落选作品结构化（2026-09-16）：字符串兼容旧 spec，统一为 {work, reason}。
+
+    自 daily-007 起 spec 可给带 reason 的落选记录；历史裸字符串补
+    "理由未留痕（历史期）"，不伪造理由。
+    """
+    normalized: list[dict] = []
+    for entry in works or []:
+        if isinstance(entry, str):
+            normalized.append({"work": entry, "reason": "理由未留痕（历史期）"})
+        elif isinstance(entry, dict) and entry.get("work"):
+            reason = str(entry.get("reason") or "").strip() or "理由未留痕"
+            normalized.append({"work": str(entry["work"]), "reason": reason})
+    return normalized
+
+
 def candidates() -> None:
     write_json(
         "candidate-pool.json",
@@ -98,7 +114,7 @@ def candidates() -> None:
             "selection_rule": "作品级与事件簇去重；发现信号不得直接充当事实",
             "selected_slot_ids": [c["candidate_id"] for c in CANDIDATES],
             "candidates": CANDIDATES,
-            "rejected_prior_works": REJECTED_PRIOR_WORKS,
+            "rejected_prior_works": _normalize_rejected_works(REJECTED_PRIOR_WORKS),
             "decision": "accept",
             "publication_authorization": "not_authorized",
         },

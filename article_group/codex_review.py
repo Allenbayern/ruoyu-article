@@ -107,6 +107,16 @@ def _base_record(args: argparse.Namespace, mode: str, command: list[str]) -> dic
                 "independent_review_eligible": False,
             }
         )
+    if getattr(args, "base_review", None):
+        # L2 增量复核协议（2026-09-16）：--base-review 指向上一轮已归档记录，
+        # 本轮声明为 diff-only 复核（只验证改动清单 + 抽查），基线哈希入库留痕。
+        base = Path(args.base_review)
+        record["scope_mode"] = "diff_only"
+        record["base_review"] = str(base)
+        if base.exists():
+            record["base_review_sha256"] = _sha256(base)
+        else:
+            record["base_review_missing"] = True
     manifest_path = args.run_root / "batch.json"
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -385,6 +395,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--attempt", type=int, default=1)
     parser.add_argument("--l2-required", action="store_true")
     parser.add_argument("--l2-risk-basis", default="")
+    parser.add_argument(
+        "--base-review",
+        type=Path,
+        help="上一轮已归档的 L2 记录：声明本轮为 diff-only 增量复核并记录基线哈希。",
+    )
     parser.add_argument(
         "--review-json",
         type=Path,

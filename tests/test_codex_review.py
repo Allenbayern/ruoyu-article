@@ -338,3 +338,75 @@ def test_l2_review_json_fails_closed_on_an_invalid_document(tmp_path: Path, monk
     assert record["decision"] == "evidence_insufficient"
     assert record["error"] == "l2_structured_result_missing"
     assert record["coverage_gaps"] == ["l2_structured_result_missing"]
+
+
+def test_l2_record_marks_diff_only_scope_with_base_review(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    # 增量复核协议（2026-09-16）：--base-review 指向上一轮归档记录，
+    # canonical 记录应带 scope_mode=diff_only 与基线哈希。
+    run_root = tmp_path / "run"
+    run_root.mkdir()
+    output = run_root / "review.json"
+    base = run_root / "codex-l2-review-r1-needs-changes.json"
+    base.write_text('{"decision": "needs_changes"}', encoding="utf-8")
+
+    class Completed:
+        returncode = 0
+        stdout = json.dumps(
+            {
+                "decision": "approve",
+                "scope_reviewed": ["artifact"],
+                "findings": [],
+                "non_findings": [],
+                "coverage_gaps": [],
+            }
+        )
+        stderr = ""
+
+    monkeypatch.setattr(codex_review.shutil, "which", lambda _: "/usr/bin/codex")
+    monkeypatch.setattr(codex_review.subprocess, "run", lambda *args, **kwargs: Completed())
+
+    exit_code = codex_review.run_review(
+        codex_review.build_parser().parse_args(
+            [
+                "--mode",
+                "l2",
+                "--run-root",
+                str(run_root),
+                "--output",
+                str(output),
+                "--request",
+                "verify the two fixes only",
+                "--base-review",
+                str(base),
+            ]
+        )
+    )
+
+    record = json.loads(output.read_text(encoding="utf-8"))
+    assert exit_code == 0
+    assert record["scope_mode"] == "diff_only"
+    assert record["base_review"] == str(base)
+    assert len(record["base_review_sha256"]) == 64
+
+
+def test_l2_record_marks_missing_base_review():
+    # 基线路径不存在也要如实留痕（scope_mode 仍声明 diff_only）。
+    args = codex_review.build_parser().parse_args(
+        [
+            "--mode",
+            "l2",
+            "--run-root",
+            "/tmp/nonexistent-run",
+            "--output",
+            "/tmp/nonexistent-review.json",
+            "--request",
+            "r",
+            "--base-review",
+            "/tmp/no-such-base.json",
+        ]
+    )
+    record = codex_review._base_record(args, "l2", ["review-json", "/tmp/x.json"])
+    assert record["scope_mode"] == "diff_only"
+    assert record["base_review_missing"] is True

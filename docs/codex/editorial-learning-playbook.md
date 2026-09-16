@@ -158,3 +158,21 @@ forbidden_claim_levels: [viewing_experience, audience_consensus, ending]
 沿用两篇、Markdown、1500–2200 通常目标及 1000–2700 接受带。`CONTENT_READY` 只有在标题选定、`title-pack-review.json`、最终复核和当前交付文件都通过后才产生；R8 治理和发布授权另行报告，不代发布。正文一旦改动，旧标题包立即失效，必须重新做内容复核；标题改动则只重做标题复核并更新交付文件、证据和 SHA-256。
 
 发布后如能取得同口径曝光、点击、完读、转发、收益和 RPM，再按题材记录中位数和样本量。单篇偏好、模型评分和外部爆文不能直接升级为长期规律。
+
+## 10. 成稿→L2 的工序顺序（2026-09-16 重排，P0）
+
+L2 对抗复核绑定交付哈希，复核通过后任何正文改动都会让批准失效、需要重核一轮。
+为避免一稿多轮，工序固定为：
+
+1. 生成（正文 → delivery）；
+2. 机器门禁全跑（claim-source、style_gate 含 fact_density、task-card fidelity、
+   editorial protocol、preflight 五问等），全绿才往下走；
+3. **读者面↔账本预检**（`scripts/ledger_coverage_precheck.py`：引号逐字核对 +
+   LLM 缺口检查），发现的"读者面有、账本无"先修掉；
+4. 人工偏好确认（controller 的写法偏好、禁区、发布边界——如播出通告句、字数）；
+5. **最后才进 L2**，目标是 approval 一次过；小改动修复轮用增量复核
+   （`codex_review --base-review`，diff-only + 抽查，基线哈希入库）；
+6. final_review → content_delivery。
+
+除非 controller 在 L2 之后提出新改动，否则 L2 每篇一轮即闭环；多轮是流程故障，
+应在 RUN-RECORD §8 记录轮次与原因。
