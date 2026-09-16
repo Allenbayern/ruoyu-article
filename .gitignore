@@ -51,6 +51,7 @@ scripts/*
 !scripts/run_real_daily_006.py
 !scripts/run_real_daily_007.py
 !scripts/dailyhot_radar.py
+!scripts/dailyhot_talk_filter.py
 references/learning-samples/
 
 # media-intel-aios 仓内备份已移除（2026-09-15）：磁盘副本在
