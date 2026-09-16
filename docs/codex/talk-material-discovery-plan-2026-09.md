@@ -57,12 +57,18 @@
   严格重试后降级关键词启发式并标注 method；cron 08:35 每日自动跑，产出
   `<date>.classified.json`。首日实测：344/351 LLM 分类、0 降级、7 条禁区过滤、
   影视向 18 条（电竞/游戏按 prompt 边界剔除）。
+  - 快照鲜度守卫（c840e7f，2026-09-16 补）：`load_snapshot` 默认只认
+    `<当天>.json`，缺失即非零退出并报错（历史日期显式 `--date` 回放不受影响），
+    杜绝 radar 失败时静默回退旧快照、覆盖已验证产物却退出码 0 的假连续性；
+    单测 +2，全量 pytest 1226 passed。另以 cron 完全同形
+    （`env -i HOME PATH=/usr/bin:/bin` + `/usr/bin/python3`）全量 351 条跑通：
+    344 LLM/0 降级/7 禁区、退出码 0，负路径（无当天快照）实测退出码 1。
 - ✅ **选题调研搜索助手（controller 提供 key）**：`scripts/anysearch_search.py`
   （search/extract，密钥在 `~/.config/anysearch/env`，600 权限不入仓库）。边界：
   只用于找角度/找候选来源，extract 的 Markdown 不替代 sources/ 的 HTML 捕获物，
   事实仍走 claim↔账本锚定。
-- 7 日连续验收进行中（cron 自动跑）；第 2 步（LLM 争议度/立场分类 + 蝉小红人工
-  试用）待首周数据积累后启动。
+- 7 日连续验收进行中（cron 自动跑，鲜度守卫保证快照缺失日响亮失败而非假绿）；
+  第 2 步（LLM 争议度/立场分类 + 蝉小红人工试用）待首周数据积累后启动。
 
 ## 三步推荐路径（每步含验收标准）
 
