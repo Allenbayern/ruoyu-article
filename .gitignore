@@ -53,6 +53,7 @@ scripts/*
 !scripts/dailyhot_radar.py
 !scripts/dailyhot_talk_filter.py
 !scripts/anysearch_search.py
+!scripts/dailyhot_classify.py
 references/learning-samples/
 
 # media-intel-aios 仓内备份已移除（2026-09-15）：磁盘副本在
