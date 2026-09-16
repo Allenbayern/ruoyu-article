@@ -48,6 +48,12 @@
   日志 `~/radar/dailyhot.log`。
 - 首日快照（2026-09-16）：6 路由 351 条全成功（douban-group 30 ≥20、tieba 30、
   hupu 10、ngabbs 201、zhihu 30、toutiao 50），每条含可回溯 url。
+- ✅ **筛选演示版**：`scripts/dailyhot_talk_filter.py`（影视向+争议度+禁区过滤），
+  首日 351 条命中 9 条影视向；单字词误伤与游戏语境误报已记录，待 7 天语料校准。
+- ✅ **选题调研搜索助手（controller 提供 key）**：`scripts/anysearch_search.py`
+  （search/extract，密钥在 `~/.config/anysearch/env`，600 权限不入仓库）。边界：
+  只用于找角度/找候选来源，extract 的 Markdown 不替代 sources/ 的 HTML 捕获物，
+  事实仍走 claim↔账本锚定。
 - 7 日连续验收进行中（cron 自动跑）；第 2 步（LLM 争议度/立场分类 + 蝉小红人工
   试用）待首周数据积累后启动。
 
