@@ -157,3 +157,43 @@ def test_viral_library_index_cli_refuses_sealed_output(tmp_path: Path):
     assert "封存" in result.stderr
     assert "Traceback" not in result.stderr
     assert not (root / "review" / "index.json").exists()
+
+
+def test_viral_research_attach_evidence_cli_refuses_sealed_run(tmp_path: Path):
+    """给人签字的凭证补录工具：撞上封存 run 也要一句人话（008 那类补证会用到它）。"""
+    from article_group.run_state import seal
+    from tests.test_viral_research_cards import _build_package, _write_evidence
+
+    package_root, sample_id = _build_package(tmp_path)
+    evidence = _write_evidence(tmp_path)
+    seal(tmp_path, identity="owner")  # 把整棵 tmp_path 变成封存区
+
+    result = _run(["scripts/codex_viral_research_attach_evidence.py",
+                   "--package-root", str(package_root), "--sample-id", sample_id,
+                   "--evidence-file", str(evidence),
+                   "--output-revision", str(package_root / "revisions" / "rev-001")])
+    assert result.returncode == 2
+    assert "封存" in result.stderr and "--force" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert not (package_root / "revisions").exists()
+
+
+def test_viral_distill_cli_refuses_sealed_output(tmp_path: Path):
+    from article_group.run_state import seal
+    from tests.test_viral_research_distill import _criteria, _prepare_and_write_cards
+
+    prepare_path, cards_root, _ = _prepare_and_write_cards(tmp_path)
+    package_root = cards_root.parent / "package"
+    seal(tmp_path, identity="owner")
+
+    result = _run(["scripts/codex_viral_distill.py", "finalize",
+                   "--prepared", str(prepare_path), "--package-root", str(package_root),
+                   "--cards-root", str(cards_root),
+                   "--platform", _criteria().platform, "--medium", _criteria().medium,
+                   "--content-domain", _criteria().content_domain,
+                   "--narrative-purpose", _criteria().narrative_purpose,
+                   "--output", str(tmp_path / "review.json")])
+    assert result.returncode == 2
+    assert "封存" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert not (tmp_path / "review.json").exists()

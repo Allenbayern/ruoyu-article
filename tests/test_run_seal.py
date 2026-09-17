@@ -193,3 +193,24 @@ def test_verify_cli_exit_codes(tmp_path: Path) -> None:
     drifted = _cli()
     assert drifted.returncode == run_seal.EXIT_DRIFTED
     assert "无账" in drifted.stdout and "batch.json" in drifted.stdout
+
+
+def test_sandbox_copy_is_not_reported_as_drift(tmp_path: Path) -> None:
+    """演练副本里 SEALED 被改名，对它报"SELED 不见了"是假漂移——直接说"不适用"。"""
+    from scripts.run_sandbox import make_sandbox
+
+    root = _sealed_run(tmp_path)
+    sandbox = Path(make_sandbox(root, dest=tmp_path / "sandbox")["dest"])
+
+    report = run_seal.verify(sandbox)
+    assert report["status"] == "not_applicable"
+    assert "副本" in report["reason"] and report["changes"] == []
+
+    result = subprocess.run(
+        [sys.executable, "-m", "article_group.run_seal", "--run-root", str(sandbox)],
+        cwd=REPO_ROOT, capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == run_seal.EXIT_NOT_APPLICABLE
+    assert "不适用" in result.stdout
+    # 源 run 仍然照常校验
+    assert run_seal.verify(root)["status"] == "intact"

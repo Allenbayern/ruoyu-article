@@ -49,6 +49,8 @@ EXCLUDED_REASONS: dict[str, str] = {
 EXIT_INTACT = 0
 EXIT_DRIFTED = 2
 EXIT_UNVERIFIABLE = 3
+EXIT_NOT_APPLICABLE = 4
+SANDBOX_MARKER = "SANDBOX.json"
 
 
 def manifest_path(run_dir: str | Path) -> Path:
@@ -174,6 +176,16 @@ def _changelog_index(run_dir: Path) -> dict[str, dict[str, Any]]:
 def verify(run_dir: str | Path) -> dict[str, Any]:
     """逐项重算清单，返回 {status, changes, …}（只读）。"""
     root = Path(run_dir)
+    if (root / SANDBOX_MARKER).is_file():
+        # 演练副本（scripts/run_sandbox.py）：SEALED 被改名为 SEALED.from-source，
+        # 副本本来就该可写。对它跑封存校验只会报"SEALED 不见了"这种假漂移。
+        return {
+            "status": "not_applicable",
+            "run_dir": str(root),
+            "reason": "这是演练副本（存在 SANDBOX.json），封存校验不适用于副本；"
+                      "要校验请对源 run 跑。",
+            "changes": [],
+        }
     manifest = load_manifest(root)
     if manifest is None:
         return {
@@ -318,6 +330,8 @@ def _describe(report: dict[str, Any]) -> str:
     status = report.get("status")
     if status == "unverifiable":
         return f"无法验证：{report.get('reason')}\n  {report.get('remedy', '')}"
+    if status == "not_applicable":
+        return f"不适用：{report.get('reason')}"
     lines = [
         f"封存完整性：{status}（核对 {report.get('checked_files')} 个文件，"
         f"append-only {report.get('append_only_checked')} 个）",
@@ -340,7 +354,7 @@ def _describe(report: dict[str, Any]) -> str:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m article_group.run_seal",
-        description="校验（或事后补录）run 的封存全量清单：0 完好 / 2 有漂移 / 3 无法验证",
+        description="校验（或事后补录）run 的封存全量清单：0 完好 / 2 有漂移 / 3 无法验证 / 4 副本不适用",
     )
     parser.add_argument("--run-root", required=True, type=Path)
     parser.add_argument("--backfill", action="store_true",
@@ -362,6 +376,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "intact": EXIT_INTACT,
         "drifted": EXIT_DRIFTED,
         "unverifiable": EXIT_UNVERIFIABLE,
+        "not_applicable": EXIT_NOT_APPLICABLE,
     }.get(str(report.get("status")), EXIT_UNVERIFIABLE)
 
 
@@ -370,8 +385,10 @@ __all__ = [
     "EXCLUDED_REASONS",
     "EXIT_DRIFTED",
     "EXIT_INTACT",
+    "EXIT_NOT_APPLICABLE",
     "EXIT_UNVERIFIABLE",
     "MANIFEST_NAME",
+    "SANDBOX_MARKER",
     "SCHEMA_VERSION",
     "backfill",
     "build_manifest",
