@@ -1,6 +1,6 @@
 # 若雨爆款文章库到 Codex 的迁移
 
-更新时间：2026-08-25
+更新时间：2026-08-25（2026-09-17 追加「包通道」一节；其余内容与判断未变）
 
 ## 结论
 
@@ -27,8 +27,38 @@ Codex 不需要继承 Hermes 的 memory、session 或私有知识库。爆款文
 | 微信正文快照 | `runs/2026-08-11/viral-research/raw_articles/` | 本机忽略目录，可能缺失 | 真实全文研究证据 |
 | 微信文章卡/指标 | `runs/2026-08-11/viral-research/wechat-viral/` | 本机忽略目录，可能缺失 | qualification、结构观察和表现证据 |
 | B 站公开指标包 | `runs/2026-08-11/viral-research/bilibili-public-metrics/` | 本机忽略目录，可能缺失 | 数据通道验证/观察层；标题形态不直接作为若雨正向标题样本 |
+| **批次包（新）** | `runs/<run-id>/viral-research/package/` | 由生产端产出，本机忽略目录 | 规范化、逐文件 SHA-256 锚定的证据包；见下节 |
 | 资格与蒸馏代码 | `article_group/case_contract.py`, `article_group/case_distill.py` | 已在项目 | 机械校验和候选生成 |
 | Canonical 治理 | Hermes Knowledge Vault | 项目外只读参考 | 生产规则和治理权威，不自动复制或回写 |
+
+## 包通道：`viral-research-package-v1`（2026-09-17 接入）
+
+上面表格前三条是 2026-08-11 那批**手工整理**的 lane 布局。自 2026-09-17 起，同一批证据也可以由
+生产端 `scripts/codex_viral_research_package.py` 封成**可复现的包**，消费端会把它作为第三条证据通道读取。
+
+包固定为四个文件：
+
+| 文件 | 内容 |
+|---|---|
+| `manifest.json` | `schema_version`、`run_id`、`status`、`created_at`、`source_lanes`、`samples[]`、`exclusions_ref`、`errors[]` |
+| `samples.jsonl` | 每行一个规范化样本：`sample_id`、`platform`、`account_id`、`title`、`canonical_url`、`published_at`、`capture_status`、`raw_ref`、`clean_ref`、`metadata_ref`、`evidence_cluster`、`shape`、`qualification_status` |
+| `exclusions.jsonl` | 被排除的样本及其 `exclusion_reason` |
+| `integrity.json` | 上述三个文件的逐个 SHA-256 |
+
+两条硬约束（生产端与消费端都强制）：
+
+1. **证据不得越界**：`--capture-manifest` 与 `--output-root` 必须在批次 `RUN_ROOT` 之内（越界报
+   `path_escape`）；产物不可覆盖（`artifact_exists`）。
+2. **完整性实校、失败即关闭**：消费端读包时会重算三个文件的 SHA-256。`integrity.json` 缺失记
+   `integrity_missing`；任何一项对不上记 `integrity_failed` 并在 `integrity.mismatches` 列出；
+   两种情况下列入的样本一律**不计入** `usable_for_positive_patterns`。生产端自述 `status` 不作为
+   消费端判定依据 —— 只作为 `package_status` 原样透出供核对。
+
+包内样本的 `raw_ref` / `clean_ref` / `metadata_ref` 相对**批次的 `RUN_ROOT`** 书写，
+即 `--evidence-run` 所给目录（`<RUN_ROOT>/viral-research`）的父级。
+
+生产端证据不完整时仍会落包：`status: blocked` + `errors[]` 列出缺口，同时写 `integrity.json` ——
+失败同样留痕可审计。
 
 ## 如何让 Codex 使用
 
@@ -45,7 +75,12 @@ python scripts/codex_viral_library_index.py --project-root .
 - 实证包的 `qualification_status` 计数；
 - 每个样本的 card、正文快照和表现证据是否能在本机解析；
 - 缺失证据和蒸馏候选的数量；
+- 批次包通道的 `status`（`available` / `integrity_missing` / `integrity_failed` / `invalid`
+  / `unavailable`）、`integrity.verified` 与 `integrity.mismatches`；
 - 不把 `observed_pending`/`research_only` 当作正向爆款证据的机器可读策略。
+
+带批次包时用 `--evidence-run "$RUN_ROOT/viral-research"`（见 `README.zh-CN.md` 的
+「爆款研究库」一节，那里有从建包到 finalize 的完整命令序列）。
 
 Codex 的调用顺序由 `.agents/skills/ruoyu-viral-library/SKILL.md` 固定：先索引，再读卡，再按引用读取少量正文和指标，最后才做跨样本比较。
 

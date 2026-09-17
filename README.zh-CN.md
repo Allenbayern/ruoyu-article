@@ -216,7 +216,9 @@ uv run python scripts/codex_viral_distill.py prepare \
 # 4) 语义 pass：由人工明确触发的**一次 agent 会话**，只读 prepare.json 及其
 #    SHA-256 证据引用，为每个 selected sample 按 schemas/viral-research-case-card.json
 #    生成 "$RUN_ROOT/viral-research/cards/<sample_id>.json"，并写 cards/manifest.json
-#    （记录 prepare/package 两个摘要、criteria、selected_sample_ids 及每张卡的 SHA-256）。
+#    （schema_version=viral-research-card-batch-v1，记录三个摘要 —— prepare、
+#    package manifest、package integrity —— 以及 criteria、selected_sample_ids
+#    和每张卡的 SHA-256；finalize 会逐项核对这些摘要，对不上即拒绝）。
 #    只做结构观察与负向模式记录；不读取其它样本、不改 qualification_status、
 #    不写 Vault、不发布、不推进状态。
 #    注：本机执行模型是 agent 会话（dsh），历史材料里的 `codex exec` 调用不再适用
