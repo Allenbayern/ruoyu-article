@@ -41,6 +41,18 @@ already closed and published run, with no backup.
 - **Reopening a sealed run needs an explicit controller instruction** and uses
   `unseal` (renames `SEALED` → `SEALED.revoked.<stamp>` and logs it); re-seal after
   the change. `--force` on a sealed run is a controller decision, not an agent one.
+- **The guard does not rely on each entry point remembering**: importing
+  `article_group` installs a process-wide PEP 578 audit hook (`article_group.runs_guard`)
+  that rejects any write/create/delete/rename under a directory containing `SEALED`,
+  with `SealedWriteBlocked`. The only way through is `evidence_write(..., force=True)`
+  or `unseal()` — both snapshot and log. Appending in place to `step-log.jsonl` /
+  `evidence-changelog.jsonl` is allowed by contract; rewriting or deleting them is not.
+  **Out-of-process writers** (editor, `rsync`, `git checkout`, a `python -c` that never
+  imports the package) are *not* covered by the hook — that is the filesystem-layer /
+  hash-manifest gap, not a claim the hook makes.
+- The list of modules that can write into a run, plus the debt of those still
+  bypassing the snapshot channel, lives in `tests/test_runs_write_coverage.py`;
+  the test fails when a new writer appears unclassified or a listed module goes stale.
 - These rules are repository-operational. Changing the Vault's canonical notes
   still requires explicit write-back authorization.
 

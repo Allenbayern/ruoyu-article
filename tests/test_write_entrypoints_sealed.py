@@ -104,8 +104,12 @@ def test_evidence_rebind_refuses_apply_on_sealed_run(tmp_path: Path, monkeypatch
 
 def test_evidence_rebind_force_writes_and_logs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     root = _sealed_run(tmp_path)
-    # 制造真实的"交付变了"：封存后改稿，旧 approve 必须被判失效
-    (root / "delivery" / "art-001" / "delivery.md").write_text("# 标题\n\n改过的正文。\n", encoding="utf-8")
+    # 制造真实的"交付变了"：封存后改稿，旧 approve 必须被判失效。
+    # 这是**模拟外部改动**，测试里显式申请令牌（真实场景这类写入应被 runs_guard 拦下）。
+    from article_group import runs_guard
+
+    with runs_guard.sealed_write_token(root, reason="test:simulate-out-of-band-change", author="tester"):
+        (root / "delivery" / "art-001" / "delivery.md").write_text("# 标题\n\n改过的正文。\n", encoding="utf-8")
     monkeypatch.setattr(sys, "argv", ["x", "--run-root", str(root), "--apply", "--force"])
     assert evidence_rebind.main() == 0
     record = json.loads((root / "review" / "art-001" / "independent-review.json").read_text(encoding="utf-8"))

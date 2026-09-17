@@ -14,8 +14,16 @@ from datetime import datetime
 import hashlib
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any, NoReturn, Sequence
+
+# 封存护栏（2026-09-17）：本 runner 会往 run 侧写消费清单，因此必须让 runs_guard
+# 在这个进程里生效——覆盖 lint（tests/test_runs_write_coverage.py）会检查这一点。
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from article_group import runs_guard as _runs_guard  # noqa: E402
+
+_runs_guard.install()
 
 try:  # Support package imports and direct ``python scripts/...`` execution.
     from .codex_viral_library_context import build_library_context

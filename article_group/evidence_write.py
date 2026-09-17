@@ -115,38 +115,53 @@ def write_evidence(
     author: str = "agent",
     force: bool = False,
 ) -> dict[str, Any]:
-    """写一个 run 证据文件：留底 → 记账 → 写入。返回本次写入的账目条目。"""
+    """写一个 run 证据文件：留底 → 记账 → 写入。返回本次写入的账目条目。
+
+    封存 run 上只有 `force=True` 才写；此时本函数显式进入 `runs_guard` 的写入令牌，
+    于是"留底 + 记账 + 落盘"这一整段是护栏认可的唯一通道。
+    """
+    import contextlib
+
+    from article_group import runs_guard
+
     root = Path(run_dir)
     target = _resolve_target(root, path)
+    runs_guard.refresh()  # 别让探测缓存把刚封存/刚 unseal 的状态判旧
     blocked = sealed_reason(root)
     if blocked and not force:
         raise RunSealedError(f"run 已封存（{blocked}）：加 force 才会改写封存证据")
 
     payload = content.encode("utf-8") if isinstance(content, str) else content
-    existed = target.is_file()
-    before_sha = sha256_bytes(target.read_bytes()) if existed else ""
-    moment = _now()
-    snapshot = ""
-    if existed:
-        relative = target.relative_to(root) if target.is_relative_to(root) else Path(target.name)
-        backup = snapshot_dir(root, moment) / relative
-        backup.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(target, backup)
-        snapshot = str(backup.relative_to(root))
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(payload)
-
-    return append_changelog(
-        root,
-        path=str(target.relative_to(root)) if target.is_relative_to(root) else str(target),
-        reason=reason,
-        author=author,
-        existed=existed,
-        before_sha256=before_sha,
-        after_sha256=sha256_bytes(payload),
-        snapshot_path=snapshot,
-        forced=bool(force and blocked),
+    token = (
+        runs_guard.sealed_write_token(root, reason=reason, author=author)
+        if force
+        else contextlib.nullcontext()
     )
+    with token:
+        existed = target.is_file()
+        before_sha = sha256_bytes(target.read_bytes()) if existed else ""
+        moment = _now()
+        snapshot = ""
+        if existed:
+            relative = target.relative_to(root) if target.is_relative_to(root) else Path(target.name)
+            backup = snapshot_dir(root, moment) / relative
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(target, backup)
+            snapshot = str(backup.relative_to(root))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(payload)
+
+        return append_changelog(
+            root,
+            path=str(target.relative_to(root)) if target.is_relative_to(root) else str(target),
+            reason=reason,
+            author=author,
+            existed=existed,
+            before_sha256=before_sha,
+            after_sha256=sha256_bytes(payload),
+            snapshot_path=snapshot,
+            forced=bool(force and blocked),
+        )
 
 
 def write_evidence_json(

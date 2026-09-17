@@ -196,6 +196,13 @@ daily-008 上重跑，覆盖了 `review/art-001/ledger-coverage-precheck.json`
 4. **"停"是自动的，"放开"要人点头**。改封存 run 只有两条路，都需 controller 明确指令：
    `--force` 直写（留底+记账，可还原）；或先 `unseal`（`SEALED` 改名为
    `SEALED.revoked.<时间戳>` 并记账，run 恢复可写），改完重新收尾再封存。
+5. **护栏不靠记性**（2026-09-17 补）。`import article_group` 即装上进程级写入护栏
+   （`article_group.runs_guard`，PEP 578 audit hook）：写/删/改名封存 run 内的路径一律
+   抛 `SealedWriteBlocked`，唯一通道是留底通道的 `force` 与 `unseal`。
+   `step-log.jsonl` / `evidence-changelog.jsonl` 按契约允许原地**追加**，重写/删除仍拦。
+   覆盖范围是**进程内**：编辑器、`rsync`、`git checkout`、没 import 本包的脚本不在其内
+   （那属于文件系统只读与全量哈希清单）。能写 run 的模块清单与"仍绕过留底通道"的欠账
+   在 `tests/test_runs_write_coverage.py` 里维护——清单过期或新写手未分类，测试就 fail。
 
 配套的两条流水证据，每期都会自动生成，复盘时先看它们：
 

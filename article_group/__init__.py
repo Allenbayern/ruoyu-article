@@ -92,6 +92,12 @@ from .rule_compliance import (
     validate_rule_compliance,
 )
 
+# 封存 run 的进程级写入护栏（2026-09-17）：import 本包即自动生效，见 runs_guard 模块说明。
+# 放在最后：护栏是兜底网，不参与契约层导入顺序。
+from . import runs_guard as _runs_guard
+
+_runs_guard.install()
+
 __all__ = [
     "ALLOWED_TRANSITIONS",
     "BatchValidationError",

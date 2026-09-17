@@ -121,6 +121,21 @@ def write_close_out_section(run_dir: Path, body: str, *, force: bool = False) ->
     return str(path)
 
 
+def write_step_log_markdown(run_dir: Path, *, force: bool = False) -> str:
+    """把 step-log.jsonl 渲染成 STEP-LOG.md（同样走留底+记账；此前是裸写）。"""
+    from article_group.evidence_write import write_evidence
+
+    path = run_dir / "STEP-LOG.md"
+    write_evidence(
+        path,
+        render_markdown(timeline(run_dir)),
+        run_dir=run_dir,
+        reason="close_out:step_log_markdown",
+        force=force,
+    )
+    return str(path)
+
+
 def close_out(
     run_dir: str | Path,
     *,
@@ -139,6 +154,9 @@ def close_out(
     root = Path(run_dir)
     repo = repo_root or Path.cwd()
     run = runner or _subprocess_runner
+    # 子进程写手（验收记录/总复核/机器记录）自己守门：force 必须一路传下去，
+    # 否则 close_out --force 会在中途被"另一个入口"拒掉，等于 force 半生效。
+    passthrough = ["--force"] if force else []
     report: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "run_dir": str(root),
@@ -173,11 +191,11 @@ def close_out(
 
     _run_step(report, root, "controller_acceptance", lambda: run(
         [sys.executable, "scripts/record_controller_acceptance.py",
-         "--run-root", str(root), "--identity", identity, "--ref", ref], repo))
+         "--run-root", str(root), "--identity", identity, "--ref", ref, *passthrough], repo))
     _run_step(report, root, "final_review", lambda: run(
-        [sys.executable, "-m", "article_group.final_review", "--batch", str(root)], repo))
+        [sys.executable, "-m", "article_group.final_review", "--batch", str(root), *passthrough], repo))
     _run_step(report, root, "run_record_machine", lambda: run(
-        [sys.executable, "-m", "article_group.run_record", str(root)], repo))
+        [sys.executable, "-m", "article_group.run_record", str(root), *passthrough], repo))
 
     from article_group.wechat_render import render_run
 
@@ -187,8 +205,7 @@ def close_out(
 
     _run_step(report, root, "run_record_section", lambda: write_close_out_section(
         root, _section_body(root, identity, ref, wechat.get("index_path", "")), force=force))
-    _run_step(report, root, "step_log_markdown", lambda: (root / "STEP-LOG.md").write_text(
-        render_markdown(timeline(root)), encoding="utf-8"))
+    _run_step(report, root, "step_log_markdown", lambda: write_step_log_markdown(root, force=force))
 
     from article_group.run_state import seal, seal_articles
 

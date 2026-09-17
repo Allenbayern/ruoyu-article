@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -187,10 +188,26 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="组装 run 的 RUN-RECORD 机器节")
     parser.add_argument("run_dir", help="run 根目录（如 runs/2026-09-15/daily-005）")
     parser.add_argument("-o", "--output", help="输出路径；默认 run_dir/RUN-RECORD.machine.md")
+    parser.add_argument("--force", action="store_true",
+                        help="run 已封存时仍写入（controller 决定；走留底+记账）")
     args = parser.parse_args(argv)
     root = Path(args.run_dir)
-    out = Path(args.output) if args.output else root / "RUN-RECORD.machine.md"
-    out.write_text(build_run_record(root), encoding="utf-8")
+    body = build_run_record(root)
+    if args.output:
+        out = Path(args.output)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(body, encoding="utf-8")
+        print(f"已写入: {out}")
+        return 0
+
+    from article_group.evidence_write import RunSealedError, write_evidence
+
+    out = root / "RUN-RECORD.machine.md"
+    try:
+        write_evidence(out, body, run_dir=root, reason="run_record:machine", force=args.force)
+    except RunSealedError as exc:  # 封存拒绝要给一句人话，不要 traceback
+        print(f"run_record 拒绝写入：{exc}", file=sys.stderr)
+        return 2
     print(f"已写入: {out}")
     return 0
 

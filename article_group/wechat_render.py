@@ -320,7 +320,8 @@ def render_run(
         return report
 
     out_dir = root / "wechat"
-    out_dir.mkdir(parents=True, exist_ok=True)
+    # 不在这里 mkdir：目录由 write_evidence 在令牌内按需创建（force 时才进令牌，
+    # 显式 mkdir 会在封存 run 上被 runs_guard 拦下，等于 force 半生效）。
     index_items: list[dict[str, str]] = []
     for article_id, md_path in deliveries:
         markdown = md_path.read_text(encoding="utf-8")

@@ -14,6 +14,10 @@
 用法：
     python3 scripts/record_controller_acceptance.py --run-root runs/2026-09-16/daily-007 \
         --identity owner [--aid art-001] [--ref "controller 会话确认"]
+
+2026-09-17：三处写入改走 `article_group.evidence_write` 留底通道（此前是裸写：既不
+留 before image、也不进 evidence-changelog，封存 run 上还会被 runs_guard 拦成 traceback）。
+`--force` 与别处同义：run 已封存时仍写，但必须由 controller 决定。
 """
 from __future__ import annotations
 
@@ -23,6 +27,8 @@ import hashlib
 import json
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
 def sha256(path: Path) -> str:
@@ -35,7 +41,11 @@ def main() -> int:
     parser.add_argument("--aid", action="append", help="可重复；缺省 = batch 里全部文章")
     parser.add_argument("--identity", default="owner", help="controller 署名（不得含 agent/model/ai 等字样）")
     parser.add_argument("--ref", default="controller 在会话中明确验收通过")
+    parser.add_argument("--force", action="store_true",
+                        help="run 已封存时仍写入（controller 决定；走留底+记账）")
     args = parser.parse_args()
+
+    from article_group.evidence_write import RunSealedError, write_evidence_json
 
     root = Path(args.run_root)
     batch_path = root / "batch.json"
@@ -44,56 +54,65 @@ def main() -> int:
     aids = args.aid or [str(a.get("article_id")) for a in articles]
     reviewed_at = dt.datetime.now().astimezone().isoformat(timespec="seconds")
 
-    for aid in aids:
-        delivery = root / "delivery" / aid / "delivery.md"
-        stripped = root / "review" / aid / "source-stripped.md"
-        if not delivery.is_file():
-            print(f"{aid}: delivery 缺失，跳过", file=sys.stderr)
-            continue
+    try:
+        for aid in aids:
+            delivery = root / "delivery" / aid / "delivery.md"
+            stripped = root / "review" / aid / "source-stripped.md"
+            if not delivery.is_file():
+                print(f"{aid}: delivery 缺失，跳过", file=sys.stderr)
+                continue
 
-        readability_path = root / "review" / aid / "source-stripped-readability.json"
-        readability = json.loads(readability_path.read_text(encoding="utf-8"))
-        readability.update(
-            {
-                "source_stripped_readability": "PASS",
-                "reviewer_id": args.identity,
+            readability_path = root / "review" / aid / "source-stripped-readability.json"
+            readability = json.loads(readability_path.read_text(encoding="utf-8"))
+            readability.update(
+                {
+                    "source_stripped_readability": "PASS",
+                    "reviewer_id": args.identity,
+                    "reviewer_role": "human_editor",
+                    "reviewed_artifact_sha256": sha256(delivery),
+                    "reviewed_source_stripped_sha256": sha256(stripped) if stripped.is_file() else readability.get("reviewed_source_stripped_sha256"),
+                    "reviewed_at": reviewed_at,
+                    "decision": "PASS",
+                    "publication_authorization": "not_authorized",
+                }
+            )
+            write_evidence_json(
+                readability_path, readability, run_dir=root,
+                reason="controller_acceptance:readability", author=args.identity, force=args.force,
+            )
+
+            attestation = {
+                "schema_version": "human-attestation-v3",
+                "article_id": aid,
+                "reviewer_kind": "human",
                 "reviewer_role": "human_editor",
-                "reviewed_artifact_sha256": sha256(delivery),
-                "reviewed_source_stripped_sha256": sha256(stripped) if stripped.is_file() else readability.get("reviewed_source_stripped_sha256"),
+                "reviewer_identity": args.identity,
                 "reviewed_at": reviewed_at,
-                "decision": "PASS",
+                "decision": "accept",
+                "attestation_ref": args.ref,
+                "markdown_path": f"delivery/{aid}/delivery.md",
+                "markdown_sha256": sha256(delivery),
                 "publication_authorization": "not_authorized",
             }
+            write_evidence_json(
+                root / "review" / "attestation" / f"{aid}.human.json", attestation, run_dir=root,
+                reason="controller_acceptance:attestation", author=args.identity, force=args.force,
+            )
+
+            for article in articles:
+                if str(article.get("article_id")) == aid:
+                    gate = article.setdefault("gate_status", {})
+                    gate["controller_acceptance"] = "accepted"
+                    article["delivery_state"] = "controller_accepted"
+            print(f"{aid}: 验收已记录（readability PASS + attestation v3 + controller_acceptance=accepted）")
+
+        write_evidence_json(
+            batch_path, batch, run_dir=root,
+            reason="controller_acceptance:batch", author=args.identity, force=args.force,
         )
-        readability_path.write_text(json.dumps(readability, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-        attestation_dir = root / "review" / "attestation"
-        attestation_dir.mkdir(parents=True, exist_ok=True)
-        attestation = {
-            "schema_version": "human-attestation-v3",
-            "article_id": aid,
-            "reviewer_kind": "human",
-            "reviewer_role": "human_editor",
-            "reviewer_identity": args.identity,
-            "reviewed_at": reviewed_at,
-            "decision": "accept",
-            "attestation_ref": args.ref,
-            "markdown_path": f"delivery/{aid}/delivery.md",
-            "markdown_sha256": sha256(delivery),
-            "publication_authorization": "not_authorized",
-        }
-        (attestation_dir / f"{aid}.human.json").write_text(
-            json.dumps(attestation, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-        )
-
-        for article in articles:
-            if str(article.get("article_id")) == aid:
-                gate = article.setdefault("gate_status", {})
-                gate["controller_acceptance"] = "accepted"
-                article["delivery_state"] = "controller_accepted"
-        print(f"{aid}: 验收已记录（readability PASS + attestation v3 + controller_acceptance=accepted）")
-
-    batch_path.write_text(json.dumps(batch, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    except RunSealedError as exc:  # 封存拒绝要给一句人话，不要 traceback
+        print(f"验收记录拒绝写入：{exc}", file=sys.stderr)
+        return 2
     print(f"batch.json 已更新: {batch_path}")
     return 0
 

@@ -1,0 +1,138 @@
+"""覆盖 lint：能写 run 的模块，必须在护栏内，或在名单上写明理由。
+
+为什么需要（2026-09-17）：护栏（`runs_guard` 的 audit hook）只在 **import 过
+`article_group` 的进程**里生效；留底通道（`evidence_write`）又要求写手主动接入。
+两者都靠"记得"，而记忆会漏。本测试把"谁能够写 run"变成一张**必须维护的清单**：
+
+- 新写手出现 → 测试失败，直到你把它登记成"护栏内 / 范围外（附理由）/ 待收口（附下一步）"；
+- 名单里过期条目（模块已删或不再写 run）→ 同样失败，防止名单变成摆设；
+- `PENDING` 是**明处的欠账**，不是许可：它们只是被运行时护栏兜住，仍应逐个接入留底通道。
+
+探针是启发式的（`run_dir|run_root|batch_dir` + 常见写调用）；它的失效方向是**漏检**，
+所以它不构成"已全保"的证明——真正的保证来自 `runs_guard` 的运行时拦截。
+"""
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+RUN_HINTS = re.compile(r"\brun_dir\b|\brun_root\b|\bbatch_dir\b")
+WRITE_CALLS = re.compile(
+    r"write_text\(|write_bytes\(|json\.dump\(|shutil\.copy|shutil\.move|copytree\(|"
+    r"rmtree\(|os\.replace\(|os\.remove\(|os\.unlink\(|os\.rename\(|os\.makedirs\(|"
+    r"\.mkdir\(|\bopen\([^)]*[\"'][wax]"
+)
+GUARD_IMPORT = re.compile(r"^\s*(?:from|import)\s+article_group", re.M)
+SCAN_DIRS = ("article_group", "scripts")
+
+# ── 范围外：验证过"写不到封存 run 的证据"的模块，附理由（不是豁免，是判定） ──
+OUT_OF_SCOPE: dict[str, str] = {
+    # 只写自己的 CLI 产物 / 报告，不写 run 内证据
+    "article_group/toutiao_capture.py": "抓取快照：'x' 独占创建，文件已存在即失败，不覆盖既有证据",
+    "article_group/wechat_capture.py": "抓取快照：'x' 独占创建，同上",
+    "article_group/step_log.py": "append-only 时间线：护栏按契约放行追加（'a' 同目录同文件），重写/删除仍拦",
+    "scripts/markdown_review_audit.py": "只写显式 --output 审计报告",
+    "scripts/markdown_style_audit.py": "只写显式 --output 报告目录",
+    "scripts/codex_viral_library_index.py": "只写显式 --output 索引报告（读 run 卡，不写 run）",
+    "scripts/article_group_controller.py": "只写显式 --output 控制面产物",
+    "scripts/mp_fetch.py": "写 runs/<date>/ 抓取候选（日目录，非 run 目录）",
+    "scripts/mp_search.py": "写 runs/<date>/ 抓取候选（日目录，非 run 目录）",
+    "scripts/sogou_fetch.py": "写 runs/<date>/ 抓取候选（日目录，非 run 目录）",
+    "scripts/run_sandbox.py": "只写 /tmp 副本（副本内 SEALED 已改名为 from-source）",
+    # 历史/一次性
+    "scripts/run_daily_005_record_review.py": "历史一次性脚本（daily-005 录制复核），已定格不再用于新 run",
+    "scripts/run_real_daily_004.py": "历史一次性生成器（daily-004），已定格",
+    "scripts/patches/2026-09-17-mac/patch_closed_run_guard.py": "一次性补丁：改仓库源码，不写 run",
+    "scripts/patches/2026-09-17-mac/patch_daily_engine_step_log.py": "一次性补丁：改仓库源码，不写 run",
+    "scripts/patches/2026-09-17-mac/patch_evidence_write.py": "一次性补丁：改仓库源码，不写 run",
+    "scripts/patches/2026-09-17-mac/patch_ledger_precheck.py": "一次性补丁：改仓库源码，不写 run",
+    "scripts/patches/2026-09-17-mac/patch_title_freeze.py": "一次性补丁：改仓库源码，不写 run",
+    # 破坏性工具（按设计销毁，且自带 --purge --yes 双确认）
+    "scripts/purge_quarantine.py": "隔离区清理工具：按设计整 run 删除（--purge --yes 双确认）；不属写入通道，"
+                                   "但它清空的 run 若是封存 run，等于绕开护栏——需 controller 决定是否禁止",
+}
+
+# ── 待收口：确实写 run 内证据、但还没走留底通道（运行时由护栏兜住） ──
+PENDING: dict[str, str] = {
+    "article_group/assertion_ledger_coverage.py": "写账本覆盖报告进 run：下一步改 write_evidence_json(force=…)",
+    "article_group/codex_review.py": "L2 复核记录 --output：下一步改 write_evidence_json(force=…) 并加 --force",
+    "article_group/content_delivery.py": "交付记录落盘：下一步接入留底通道",
+    "article_group/delivery.py": "交付纯文本副本：下一步接入留底通道",
+    "article_group/v4/verification.py": "旁路校验产物（v4 冻结层）：接入前先确认是否仍在用",
+    "article_group/v5/verification.py": "旁路校验产物（v5 冻结层）：同上",
+    "scripts/daily_engine.py": "日更引擎的 briefs/drafts 产物：写手分散，需按阶段逐个接入",
+}
+
+
+def _scan() -> dict[str, dict[str, bool]]:
+    found: dict[str, dict[str, bool]] = {}
+    for base in SCAN_DIRS:
+        for path in sorted((REPO_ROOT / base).rglob("*.py")):
+            if "__pycache__" in path.parts:
+                continue
+            text = path.read_text(encoding="utf-8")
+            if not (RUN_HINTS.search(text) and WRITE_CALLS.search(text)):
+                continue
+            relative = path.relative_to(REPO_ROOT).as_posix()
+            found[relative] = {
+                "in_package": relative.startswith("article_group/"),
+                "imports_package": bool(GUARD_IMPORT.search(text)),
+            }
+    return found
+
+
+def _guard_covered(info: dict[str, bool]) -> bool:
+    """in-package 的模块必然经包 __init__ 导入 → 护栏自动装上。"""
+    return info["in_package"] or info["imports_package"]
+
+
+def test_every_run_writer_is_classified() -> None:
+    found = _scan()
+    assert found, "探针失效：一个 run 写手都没扫到，检查 RUN_HINTS/WRITE_CALLS"
+
+    unclassified = sorted(
+        name for name, info in found.items()
+        if not _guard_covered(info) and name not in OUT_OF_SCOPE and name not in PENDING
+    )
+    assert not unclassified, (
+        "以下模块能写 run，却既不在护栏内（未 import article_group），也没登记理由：\n  "
+        + "\n  ".join(unclassified)
+        + "\n请二选一：① 让它 import article_group（护栏生效）；"
+          "② 写清为什么它写不到封存 run 的证据，加进 OUT_OF_SCOPE；"
+          "③ 确认是真欠账，加进 PENDING 并写下下一步。"
+    )
+
+    unguarded_pending = sorted(
+        name for name in PENDING
+        if not _guard_covered(found.get(name, {"in_package": False, "imports_package": False}))
+    )
+    assert not unguarded_pending, (
+        "PENDING 里的模块连运行时护栏都没兜住（未 import article_group）：\n  "
+        + "\n  ".join(unguarded_pending)
+        + "\n先让它 import article_group，再谈接入留底通道。"
+    )
+
+
+def test_classification_lists_have_no_stale_entries() -> None:
+    found = _scan()
+    stale = sorted(name for name in list(OUT_OF_SCOPE) + list(PENDING) if name not in found)
+    assert not stale, (
+        "名单里有过期条目（模块已删或不再写 run）：\n  " + "\n  ".join(stale)
+        + "\n名单是清单不是纪念册：删掉或修正它。"
+    )
+
+
+def test_reasons_are_written_out() -> None:
+    empty = sorted(name for name, reason in {**OUT_OF_SCOPE, **PENDING}.items() if not reason.strip())
+    assert not empty, f"这些条目没有理由：{empty}（名单必须能被人复核，不能只是名字）"
+
+
+def test_pending_debt_is_visible() -> None:
+    """欠账要能一眼数出来（在报告里如实写，不要藏在绿测试后面）。"""
+    pending = sorted(PENDING)
+    print(f"\n[runs 覆盖 lint] 范围内模块 {len(_scan())} 个；待收口 {len(pending)} 个：")
+    for name in pending:
+        print(f"  - {name}：{PENDING[name]}")
+    assert pending == sorted(pending)

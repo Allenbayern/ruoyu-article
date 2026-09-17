@@ -65,6 +65,9 @@ def seal(
     }
     path = sealed_path(root)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    from article_group import runs_guard
+
+    runs_guard.refresh()  # 护栏的探测缓存立刻改判：本进程后续写入必须被拦
     return {**payload, "status": "sealed"}
 
 
@@ -81,7 +84,12 @@ def unseal(run_dir: str | Path, *, reason: str, identity: str) -> dict[str, Any]
         return {"status": "not_sealed", "run_dir": str(root)}
     stamp = _dt.datetime.now().astimezone().strftime("%Y%m%dT%H%M%S")
     revoked = root / f"{SEALED_NAME}.revoked.{stamp}"
-    shutil.move(str(sealed_path(root)), str(revoked))
+    from article_group import runs_guard
+
+    # 改名本身也是"写封存 run"：走显式令牌，且不记账就动不了 SEALED。
+    with runs_guard.sealed_write_token(root, reason=f"unseal:{reason}", author=identity):
+        shutil.move(str(sealed_path(root)), str(revoked))
+    runs_guard.refresh()
 
     from article_group.evidence_write import append_changelog
 

@@ -839,20 +839,33 @@ def validate_final_review_record(
     return list(dict.fromkeys(errors))
 
 
+def _persist_final_review(root: Path, report: dict, *, force: bool = False) -> Path:
+    """落盘 final-review.json——走留底通道（封存 run 上必须显式 force）。"""
+    from article_group.evidence_write import write_evidence_json
+
+    path = root / "review" / "final-review.json"
+    write_evidence_json(path, report, run_dir=root, reason="final_review", force=force)
+    return path
+
+
 def write_final_review_report(
     batch_dir: str | Path,
     output: str | Path | None = None,
+    *,
+    force: bool = False,
 ) -> Path:
     """Persist a freshly evaluated and byte-bound final-review record."""
 
     root = Path(batch_dir)
-    target = Path(output) if output is not None else root / "review" / "final-review.json"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(
-        json.dumps(build_final_review_record(root), ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    return target
+    report = build_final_review_record(root)
+    if output is not None:
+        target = Path(output)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+        return target
+    return _persist_final_review(root, report, force=force)
 
 
 def _article_delivery_htmls(
@@ -1722,18 +1735,21 @@ def _find_prose_chars(prose: dict | None, title: str) -> int:
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--batch", required=True, type=Path, help="批次目录 runs/<date>/controlled-NNN")
+    parser.add_argument("--force", action="store_true",
+                        help="run 已封存时仍写入（controller 决定；走留底+记账）")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     report = build_final_review_record(args.batch)
-    final_review_path = args.batch / "review" / "final-review.json"
-    final_review_path.parent.mkdir(parents=True, exist_ok=True)
-    final_review_path.write_text(
-        json.dumps(report, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    from article_group.evidence_write import RunSealedError
+
+    try:
+        _persist_final_review(args.batch, report, force=args.force)
+    except RunSealedError as exc:  # 封存拒绝要给一句人话，不要 traceback
+        print(f"final_review 拒绝写入：{exc}", file=sys.stderr)
+        return 2
     print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
     return 0 if report["verdict"] == PUBLISHABLE else 1
 
