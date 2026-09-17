@@ -309,6 +309,7 @@ def backfill(run_dir: str | Path, *, author: str = "agent", reason: str = "") ->
             author=author,
             existed=False,
             after_sha256=_sha256_bytes(manifest_path(root).read_bytes()),
+            forced=True,  # 目标 run 已封存：这是经令牌的显式写入，照实记
         )
     return {"status": "backfilled", **{key: payload[key] for key in ("backfilled_at", "file_count")}}
 

@@ -166,7 +166,9 @@ def test_backfill_records_that_it_cannot_prove_history(tmp_path: Path) -> None:
     assert "不能证明封存时刻" in manifest["backfill_note"]
     report = run_seal.verify(root)
     assert report["status"] == "intact" and report["backfilled"] is True
-    assert any(entry["reason"].startswith("run_seal:backfill") for entry in read_changelog(root))
+    entries = [entry for entry in read_changelog(root) if entry["reason"].startswith("run_seal:backfill")]
+    assert entries and entries[-1]["forced"] is True  # 目标 run 已封存：照实记为显式写入
+    assert entries[-1]["author"] == "owner"
 
     # 补录之后再改动，verify 照样抓得住
     with _token(root):
