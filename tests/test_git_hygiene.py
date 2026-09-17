@@ -209,3 +209,54 @@ def test_validate_workspace_status_daily_mode_rejects_only_non_string_staged():
     }
     errors = validate_workspace_status(status, mode="daily_commit")
     assert "daily_commit_path_must_be_a_str:None" in errors
+
+
+# ---- 当前 run 命名（daily-NNN）回归 ----------------------------------------
+# 2026-09-17 发现：run 目录自 runs/2026-08-14 起改用 daily-NNN（此前是
+# controlled-NNN），但 _DAILY_RUN_RE 一直只认旧命名，导致该门禁对当时全部 25 个
+# run 都判 daily_commit_invalid_run_path —— 门禁对现状完全失效，且此前无测试覆盖
+# （全部用例只走 controlled-007）。以下两例锁定两种命名都必须被接受。
+
+
+def test_validate_daily_commit_paths_accepts_current_daily_run_naming():
+    from article_group.git_hygiene import classify_path, validate_daily_commit_paths
+
+    paths = [
+        "runs/2026-09-16/daily-008/delivery/art-001/delivery.md",
+        "runs/2026-09-16/daily-008/RUN-RECORD.md",
+        "runs/2026-09-16/daily-008/review/gates/claim-source-check.json",
+    ]
+    assert classify_path(paths[0]) == "daily_run"
+    assert validate_daily_commit_paths(paths) == []
+
+
+def test_validate_daily_commit_paths_still_accepts_legacy_controlled_naming():
+    from article_group.git_hygiene import validate_daily_commit_paths
+
+    assert validate_daily_commit_paths(
+        ["runs/2026-07-28/controlled-007/articles/A/article-draft.md"]
+    ) == []
+
+
+def test_validate_daily_commit_paths_rejects_two_different_daily_runs():
+    from article_group.git_hygiene import validate_daily_commit_paths
+
+    errors = validate_daily_commit_paths(
+        [
+            "runs/2026-09-15/daily-005/RUN-RECORD.md",
+            "runs/2026-09-16/daily-008/RUN-RECORD.md",
+        ]
+    )
+    assert any(err.startswith("daily_commit_multiple_run_ids:") for err in errors)
+
+
+def test_validate_daily_commit_paths_rejects_infra_mixed_into_daily_naming():
+    from article_group.git_hygiene import validate_daily_commit_paths
+
+    errors = validate_daily_commit_paths(
+        [
+            "runs/2026-09-16/daily-008/RUN-RECORD.md",
+            "article_group/git_hygiene.py",
+        ]
+    )
+    assert "daily_commit_contains_non_run_path:article_group/git_hygiene.py" in errors

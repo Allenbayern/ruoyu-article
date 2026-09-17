@@ -45,7 +45,10 @@ REQUIRED_INFRA_PATHS: tuple[str, ...] = (
 )
 
 _DAILY_RUN_RE = re.compile(
-    r"^runs/(?P<date>\d{4}-\d{2}-\d{2})/(?P<run>controlled-\d{3})(?:/.*)?$"
+    # run 目录有两种命名：runs/2026-08-14 之前是 controlled-NNN，之后是 daily-NNN。
+    # 只认前者会让本门禁对当前每一个 run 都判 invalid_run_path（2026-09-17 修正）。
+    r"^runs/(?P<date>\d{4}-\d{2}-\d{2})/"
+    r"(?P<run>(?:controlled|daily)-\d{3})(?:/.*)?$"
 )
 _CACHE_RE = re.compile(r"(^|/)" r"__pycache__(/|$)" r"|\.pyc$")
 
