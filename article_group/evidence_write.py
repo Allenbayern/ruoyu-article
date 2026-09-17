@@ -55,6 +55,57 @@ def snapshot_dir(run_dir: str | Path, stamp: _dt.datetime | None = None) -> Path
     return Path(run_dir) / BEFORE_DIR / moment.strftime("%Y%m%dT%H%M%S")
 
 
+def _resolve_target(root: Path, path: str | Path) -> Path:
+    """把调用方给的路径解析成 run 内文件，避免"已是 run 内路径"被二次拼接。
+
+    2026-09-17 事故：调用方传 `root / "SEALED"`（相对路径），本模块又拼了一次
+    run_dir，产物落到 `<run>/runs/<date>/<run>/SEALED`。
+
+    规则：绝对路径原样；以 run 目录开头的相对路径视为已拼接；其余按 run 内解析。
+    """
+    raw = Path(path)
+    if raw.is_absolute():
+        return raw
+    prefix = str(root).rstrip("/") + "/"
+    if str(raw).startswith(prefix):
+        return raw
+    return root / raw
+
+
+def append_changelog(
+    run_dir: str | Path,
+    *,
+    path: str,
+    reason: str,
+    author: str = "agent",
+    existed: bool = False,
+    before_sha256: str = "",
+    after_sha256: str = "",
+    snapshot_path: str = "",
+    forced: bool = False,
+) -> dict[str, Any]:
+    """只记账不写文件（供撤销封存这类"元操作"留痕）。"""
+    root = Path(run_dir)
+    entry: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "at": _now().replace(microsecond=0).isoformat(),
+        "author": author,
+        "reason": reason,
+        "path": path,
+        "existed": existed,
+        "before_sha256": before_sha256,
+        "after_sha256": after_sha256,
+        "snapshot_path": snapshot_path,
+        "forced": forced,
+        "publication_authorization": "not_authorized",
+    }
+    log = root / CHANGELOG_NAME
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with log.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    return entry
+
+
 def write_evidence(
     path: str | Path,
     content: str | bytes,
@@ -66,9 +117,7 @@ def write_evidence(
 ) -> dict[str, Any]:
     """写一个 run 证据文件：留底 → 记账 → 写入。返回本次写入的账目条目。"""
     root = Path(run_dir)
-    target = Path(path)
-    if not target.is_absolute():
-        target = root / target
+    target = _resolve_target(root, path)
     blocked = sealed_reason(root)
     if blocked and not force:
         raise RunSealedError(f"run 已封存（{blocked}）：加 force 才会改写封存证据")
@@ -87,24 +136,17 @@ def write_evidence(
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(payload)
 
-    entry: dict[str, Any] = {
-        "schema_version": SCHEMA_VERSION,
-        "at": moment.replace(microsecond=0).isoformat(),
-        "author": author,
-        "reason": reason,
-        "path": str(target.relative_to(root)) if target.is_relative_to(root) else str(target),
-        "existed": existed,
-        "before_sha256": before_sha,
-        "after_sha256": sha256_bytes(payload),
-        "snapshot_path": snapshot,
-        "forced": bool(force and blocked),
-        "publication_authorization": "not_authorized",
-    }
-    log = changelog_path(root)
-    log.parent.mkdir(parents=True, exist_ok=True)
-    with log.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    return entry
+    return append_changelog(
+        root,
+        path=str(target.relative_to(root)) if target.is_relative_to(root) else str(target),
+        reason=reason,
+        author=author,
+        existed=existed,
+        before_sha256=before_sha,
+        after_sha256=sha256_bytes(payload),
+        snapshot_path=snapshot,
+        forced=bool(force and blocked),
+    )
 
 
 def write_evidence_json(
@@ -183,6 +225,7 @@ __all__ = [
     "RunSealedError",
     "changelog_path",
     "snapshot_dir",
+    "append_changelog",
     "write_evidence",
     "write_evidence_json",
     "read_changelog",

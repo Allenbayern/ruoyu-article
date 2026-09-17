@@ -68,6 +68,41 @@ def seal(
     return {**payload, "status": "sealed"}
 
 
+def unseal(run_dir: str | Path, *, reason: str, identity: str) -> dict[str, Any]:
+    """撤销封存以便修改：SEALED 改名留痕（不删除），并在证据变更日志记账。
+
+    撤销后该 run 恢复可写；改完应重新 seal（close_out 会做）。
+    """
+    import shutil
+
+    root = Path(run_dir)
+    record = sealed_record(root)
+    if not record:
+        return {"status": "not_sealed", "run_dir": str(root)}
+    stamp = _dt.datetime.now().astimezone().strftime("%Y%m%dT%H%M%S")
+    revoked = root / f"{SEALED_NAME}.revoked.{stamp}"
+    shutil.move(str(sealed_path(root)), str(revoked))
+
+    from article_group.evidence_write import append_changelog
+
+    entry = append_changelog(
+        root,
+        path=str(revoked.relative_to(root)),
+        reason=f"unseal:{reason}",
+        author=identity,
+        existed=True,
+    )
+    return {
+        "status": "unsealed",
+        "run_dir": str(root),
+        "revoked_path": str(revoked.relative_to(root)),
+        "original": dict(record),
+        "changelog": entry,
+        "note": "已撤销封存；改完请重新收尾（close_out 会重新写 SEALED）",
+        "publication_authorization": "not_authorized",
+    }
+
+
 def sealed_reason(run_dir: str | Path) -> str:
     """已封存时返回原因（供报错信息用），未封存返回空串。"""
     record = sealed_record(run_dir)
@@ -131,6 +166,7 @@ __all__ = [
     "sealed_record",
     "sealed_reason",
     "seal",
+    "unseal",
     "seal_articles",
     "is_sealed",
     "closed_reason",
