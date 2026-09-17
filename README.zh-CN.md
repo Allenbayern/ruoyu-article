@@ -239,6 +239,12 @@ uv run python scripts/codex_viral_distill.py finalize \
 证据不完整时产出 `status: blocked` 并在 `errors[]` 列出缺口，同时仍写入 `integrity.json`
 （逐文件 SHA-256）——失败同样留痕可审计。
 
+`codex_viral_library_index.py` 同时盘点三条证据通道：历史 lane 布局（`wechat-viral/`、
+`bilibili-public-metrics/`）与新的 `package/`。读包时会**实校 `integrity.json` 的逐文件 SHA-256**：
+缺失或任何一项对不上，整包样本一律不计入 `usable_for_positive_patterns`（fail-closed），
+原因落在 `integrity.mismatches`。包内样本的 `raw_ref` / `clean_ref` / `metadata_ref` 相对**批次的
+`RUN_ROOT`** 书写（即 `--evidence-run` 所给目录的父级）。
+
 需要为已入包的单个样本补挂表现证据时用 `scripts/codex_viral_research_attach_evidence.py`
 （`--package-root` / `--sample-id` / `--evidence-file` / `--output-revision`），产出新 revision 而非原地改包。
 

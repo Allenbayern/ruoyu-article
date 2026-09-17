@@ -36,6 +36,10 @@ LEGACY_DIRS = (
 
 DEFAULT_EVIDENCE_RUN = Path("runs/2026-08-11/viral-research")
 
+# 生产端 article_group/viral_research_package.py 的产物契约。
+PACKAGE_SCHEMA_VERSION = "viral-research-package-v1"
+PACKAGE_INTEGRITY_SCHEMA_VERSION = "viral-research-package-integrity-v1"
+
 
 def _safe_resolve(root: Path, candidate: Path) -> Path | None:
     """Resolve an allow-listed candidate without permitting path escape."""
@@ -314,6 +318,209 @@ def _bilibili_pack(root: Path, run_root: Path) -> dict[str, Any]:
     }
 
 
+def _read_jsonl(path: Path) -> tuple[list[dict[str, Any]], str | None]:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return [], "unreadable"
+    records: list[dict[str, Any]] = []
+    for number, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            return [], f"invalid_jsonl_line:{number}"
+        if not isinstance(value, dict):
+            return [], f"jsonl_line_not_object:{number}"
+        records.append(value)
+    return records, None
+
+
+def _viral_package(root: Path, run_root: Path) -> dict[str, Any]:
+    """Read a ``viral-research-package-v1`` built by the viral-research producer.
+
+    Additive: the historical lane layout (``wechat-viral/``,
+    ``bilibili-public-metrics/``) is untouched.  A package must carry
+    ``integrity.json``; when it is missing or any digest disagrees, no sample is
+    usable for positive patterns — the producer's fail-closed guarantee is only
+    worth anything if this side actually checks it.
+    """
+    pack_dir = run_root / "package"
+    manifest_path = pack_dir / "manifest.json"
+    samples_path = pack_dir / "samples.jsonl"
+    exclusions_path = pack_dir / "exclusions.jsonl"
+    integrity_path = pack_dir / "integrity.json"
+
+    result: dict[str, Any] = {
+        "pack": "viral-research-package",
+        "path": _relative(root, pack_dir),
+        "status": "unavailable",
+        "manifest": {"path": _relative(root, manifest_path), "present": False},
+        "integrity": {
+            "path": _relative(root, integrity_path),
+            "present": integrity_path.is_file(),
+            "verified": False,
+            "mismatches": [],
+        },
+        "run_id": None,
+        "package_status": None,
+        "source_lanes": [],
+        "declared_errors": [],
+        "qualification_status_counts": {},
+        "samples": [],
+        "qualified_usable_count": 0,
+        "qualified_missing_evidence": [],
+        "exclusions": {
+            "path": _relative(root, exclusions_path),
+            "present": False,
+            "count": 0,
+        },
+        "parse_errors": [],
+    }
+    if not manifest_path.is_file():
+        return result
+
+    result["manifest"] = {"path": _relative(root, manifest_path), "present": True}
+    manifest, error = _read_json(manifest_path)
+    if error or not isinstance(manifest, dict):
+        result["status"] = "invalid"
+        result["parse_errors"].append(
+            {"path": _relative(root, manifest_path), "error": error or "invalid_manifest"}
+        )
+        return result
+    if manifest.get("schema_version") != PACKAGE_SCHEMA_VERSION:
+        result["status"] = "invalid"
+        result["parse_errors"].append(
+            {
+                "path": _relative(root, manifest_path),
+                "error": f"unexpected_schema_version:{manifest.get('schema_version')}",
+            }
+        )
+        return result
+
+    result["run_id"] = manifest.get("run_id")
+    result["package_status"] = manifest.get("status")
+    lanes = manifest.get("source_lanes")
+    result["source_lanes"] = sorted(lanes) if isinstance(lanes, list) else []
+    declared = manifest.get("errors")
+    result["declared_errors"] = (
+        sorted(str(item) for item in declared) if isinstance(declared, list) else []
+    )
+
+    samples, samples_error = _read_jsonl(samples_path)
+    if samples_error:
+        result["status"] = "invalid"
+        result["parse_errors"].append(
+            {"path": _relative(root, samples_path), "error": samples_error}
+        )
+        return result
+    exclusions, exclusions_error = _read_jsonl(exclusions_path)
+    if exclusions_error:
+        result["parse_errors"].append(
+            {"path": _relative(root, exclusions_path), "error": exclusions_error}
+        )
+    else:
+        result["exclusions"]["present"] = exclusions_path.is_file()
+        result["exclusions"]["count"] = len(exclusions)
+
+    mismatches: list[str] = []
+    if integrity_path.is_file():
+        integrity, integrity_error = _read_json(integrity_path)
+        if integrity_error or not isinstance(integrity, dict):
+            mismatches.append(f"integrity.json:{integrity_error or 'invalid_integrity'}")
+        elif integrity.get("schema_version") != PACKAGE_INTEGRITY_SCHEMA_VERSION:
+            mismatches.append(
+                "integrity.json:unexpected_schema_version:"
+                f"{integrity.get('schema_version')}"
+            )
+        else:
+            for filename, path in (
+                ("manifest.json", manifest_path),
+                ("samples.jsonl", samples_path),
+                ("exclusions.jsonl", exclusions_path),
+            ):
+                expected = integrity.get(f"{filename.split('.')[0]}_sha256")
+                actual = _sha256(path) if path.is_file() else None
+                if expected != actual:
+                    mismatches.append(f"{filename}:sha256_mismatch")
+    verified = integrity_path.is_file() and not mismatches
+    result["integrity"]["verified"] = verified
+    result["integrity"]["mismatches"] = mismatches
+
+    records: list[dict[str, Any]] = []
+    # 生产端的样本 ref 是相对**它拿到的 run_root**（即 `--output-root` 的祖父，
+    # 也就是本消费端 run_root 的父目录）写的；同时容忍 ref 相对包目录或
+    # run_root 本身，避免两边约定再漂移一次。
+    ref_bases = (run_root.parent, run_root, pack_dir)
+    for item in samples:
+        status = item.get("qualification_status", "unknown")
+        snapshot_ref = item.get("snapshot_ref") or item.get("clean_ref")
+        performance_ref = item.get("performance_evidence_ref") or item.get("metadata_ref")
+        snapshot = _resolve_ref(root, snapshot_ref, ref_bases)
+        performance = _resolve_ref(root, performance_ref, ref_bases)
+        sample_id = item.get("sample_id", "")
+        card_path = run_root / "cards" / f"{sample_id}.json"
+        card_present = bool(sample_id) and card_path.is_file()
+        observations = 0
+        if card_present:
+            card, card_error = _read_json(card_path)
+            if (
+                not card_error
+                and isinstance(card, dict)
+                and isinstance(card.get("technique_observations"), list)
+            ):
+                observations = len(card["technique_observations"])
+        records.append(
+            {
+                "sample_id": sample_id,
+                "qualification_status": status,
+                "platform": item.get("platform", ""),
+                "shape": item.get("shape", ""),
+                "card_ref": _relative(root, card_path) if card_present else "",
+                "card_present": card_present,
+                "snapshot_ref": _strip_ref(snapshot_ref),
+                "snapshot_present": snapshot is not None,
+                "performance_evidence_ref": _strip_ref(performance_ref),
+                "performance_evidence_present": performance is not None,
+                "technique_observation_count": observations,
+                "usable_for_positive_patterns": verified
+                and status == "qualified_viral"
+                and snapshot is not None
+                and performance is not None,
+            }
+        )
+
+    if not integrity_path.is_file():
+        result["status"] = "integrity_missing"
+    elif mismatches:
+        result["status"] = "integrity_failed"
+    else:
+        result["status"] = "available"
+    result["samples"] = records
+    result["qualification_status_counts"] = _status_counts(records)
+    result["qualified_usable_count"] = sum(
+        record["usable_for_positive_patterns"] for record in records
+    )
+    result["qualified_missing_evidence"] = [
+        {
+            "sample_id": record["sample_id"],
+            "missing": [
+                field
+                for field, present in (
+                    ("snapshot", record["snapshot_present"]),
+                    ("performance_evidence", record["performance_evidence_present"]),
+                )
+                if not present
+            ],
+        }
+        for record in records
+        if record["qualification_status"] == "qualified_viral"
+        and not record["usable_for_positive_patterns"]
+    ]
+    return result
+
+
 def build_index(
     project_root: str | Path = ".",
     evidence_run: str | Path = DEFAULT_EVIDENCE_RUN,
@@ -330,6 +537,7 @@ def build_index(
         evidence_packs = [
             _wechat_cards(root, run_root),
             _bilibili_pack(root, run_root),
+            _viral_package(root, run_root),
         ]
     else:
         evidence_packs = [
@@ -348,6 +556,15 @@ def build_index(
                 "status": "unavailable",
                 "samples": [],
                 "qualified_usable_count": 0,
+                "parse_errors": [],
+            },
+            {
+                "pack": "viral-research-package",
+                "path": Path(evidence_run, "package").as_posix(),
+                "status": "unavailable",
+                "samples": [],
+                "qualified_usable_count": 0,
+                "qualified_missing_evidence": [],
                 "parse_errors": [],
             },
         ]

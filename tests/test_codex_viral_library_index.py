@@ -333,3 +333,210 @@ def test_index_cli_refuses_output_inside_external_library_root(
 
     assert database.read_bytes() == sentinel
     assert capsys.readouterr().out.strip() == "output_readback_failed"
+
+
+# ---- viral-research-package-v1 兼容层 ---------------------------------------
+# 生产端 article_group/viral_research_package.py 把抓爬证据封成
+# <RUN_ROOT>/viral-research/package/ 下的 manifest.json + samples.jsonl +
+# exclusions.jsonl + integrity.json（逐文件 SHA-256）。
+# 消费端此前只认 2026-08-11 那套手工 lane 布局（wechat-viral/、
+# bilibili-public-metrics/），读不到包；以下补上包格式的读取与完整性校验。
+
+
+def _digest(text: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _package_sample(sample_id: str, status: str = "qualified_viral") -> dict:
+    return {
+        "sample_id": sample_id,
+        "platform": "wechat",
+        "account_id": "acct-1",
+        "title": "样例标题",
+        "canonical_url": "https://example.invalid/a",
+        "published_at": "2026-08-01T00:00:00+08:00",
+        "capture_status": "complete",
+        "raw_ref": f"raw/{sample_id}.html#sha256={'a' * 64}",
+        "clean_ref": f"clean/{sample_id}.md#sha256={'b' * 64}",
+        "metadata_ref": f"metadata/{sample_id}.json#sha256={'c' * 64}",
+        "evidence_cluster": "cluster-1",
+        "shape": "wechat_long_form",
+        "qualification_status": status,
+    }
+
+
+def _write_package(
+    tmp_path: Path,
+    run: Path,
+    samples: list[dict],
+    *,
+    status: str = "research_only",
+    errors: list[str] | None = None,
+    tamper_samples: bool = False,
+    omit_integrity: bool = False,
+) -> Path:
+    pack = tmp_path / run / "package"
+    pack.mkdir(parents=True, exist_ok=True)
+    manifest_text = json.dumps(
+        {
+            "schema_version": "viral-research-package-v1",
+            "run_id": "fixture-run",
+            "status": status,
+            "created_at": "2026-09-17T00:00:00+08:00",
+            "source_lanes": ["wechat_long_form"],
+            "samples": samples,
+            "exclusions_ref": "",
+            "errors": errors or [],
+        },
+        ensure_ascii=False,
+    )
+    samples_text = "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in samples)
+    exclusions_text = ""
+    (pack / "manifest.json").write_text(manifest_text, encoding="utf-8")
+    (pack / "samples.jsonl").write_text(samples_text, encoding="utf-8")
+    (pack / "exclusions.jsonl").write_text(exclusions_text, encoding="utf-8")
+    if not omit_integrity:
+        _write_json(
+            pack / "integrity.json",
+            {
+                "schema_version": "viral-research-package-integrity-v1",
+                "manifest_sha256": _digest(manifest_text),
+                "samples_sha256": _digest(samples_text),
+                "exclusions_sha256": _digest(exclusions_text),
+            },
+        )
+    if tamper_samples:
+        (pack / "samples.jsonl").write_text(
+            samples_text + '{"sample_id":"injected"}\n', encoding="utf-8"
+        )
+    return pack
+
+
+def _package_pack(result: dict) -> dict:
+    return next(
+        item
+        for item in result["evidence_library"]["packs"]
+        if item["pack"] == "viral-research-package"
+    )
+
+
+def test_viral_package_maps_samples_and_verifies_integrity(tmp_path: Path) -> None:
+    run = Path("run/viral-research")
+    _write_package(tmp_path, run, [_package_sample("s1")])
+    # 生产端的 ref 相对它拿到的 run_root（= 本消费端 run_root 的父目录）书写
+    for ref, body in (("clean/s1.md", "正文"), ("metadata/s1.json", "{}")):
+        target = tmp_path / "run" / ref
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(body, encoding="utf-8")
+
+    pack = _package_pack(build_index(tmp_path, run))
+
+    assert pack["status"] == "available"
+    assert pack["integrity"]["verified"] is True
+    assert pack["run_id"] == "fixture-run"
+    assert pack["source_lanes"] == ["wechat_long_form"]
+    record = pack["samples"][0]
+    assert record["sample_id"] == "s1"
+    assert record["qualification_status"] == "qualified_viral"
+    assert record["snapshot_ref"] == "clean/s1.md"
+    assert record["snapshot_present"] is True
+    assert record["performance_evidence_ref"] == "metadata/s1.json"
+    assert record["performance_evidence_present"] is True
+    assert record["usable_for_positive_patterns"] is True
+    assert pack["qualified_usable_count"] == 1
+
+
+def test_viral_package_integrity_mismatch_fails_closed(tmp_path: Path) -> None:
+    run = Path("run/viral-research")
+    _write_package(tmp_path, run, [_package_sample("s1")], tamper_samples=True)
+    for ref, body in (("clean/s1.md", "正文"), ("metadata/s1.json", "{}")):
+        target = tmp_path / "run" / ref
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(body, encoding="utf-8")
+
+    pack = _package_pack(build_index(tmp_path, run))
+
+    assert pack["status"] == "integrity_failed"
+    assert pack["integrity"]["verified"] is False
+    assert "samples.jsonl" in " ".join(pack["integrity"]["mismatches"])
+    assert pack["qualified_usable_count"] == 0
+    assert all(not item["usable_for_positive_patterns"] for item in pack["samples"])
+
+
+def test_viral_package_without_integrity_is_untrusted(tmp_path: Path) -> None:
+    run = Path("run/viral-research")
+    _write_package(tmp_path, run, [_package_sample("s1")], omit_integrity=True)
+
+    pack = _package_pack(build_index(tmp_path, run))
+
+    assert pack["status"] == "integrity_missing"
+    assert pack["integrity"]["present"] is False
+    assert pack["qualified_usable_count"] == 0
+
+
+def test_viral_package_surfaces_producer_blocked_errors(tmp_path: Path) -> None:
+    run = Path("run/viral-research")
+    _write_package(
+        tmp_path,
+        run,
+        [],
+        status="blocked",
+        errors=["sample-x:missing_ref"],
+    )
+
+    pack = _package_pack(build_index(tmp_path, run))
+
+    assert pack["status"] == "available"
+    assert pack["package_status"] == "blocked"
+    assert pack["declared_errors"] == ["sample-x:missing_ref"]
+
+
+def test_missing_viral_package_is_unavailable_and_legacy_stays_intact(
+    tmp_path: Path,
+) -> None:
+    result = build_index(tmp_path, "runs/missing")
+    pack = _package_pack(result)
+
+    assert pack["status"] == "unavailable"
+    assert pack["samples"] == []
+    assert pack["parse_errors"] == []
+    assert [item["pack"] for item in result["evidence_library"]["packs"]] == [
+        "wechat-viral",
+        "bilibili-public-metrics",
+        "viral-research-package",
+    ]
+
+
+def test_viral_package_roundtrip_from_real_producer(tmp_path: Path) -> None:
+    """用真生产端建包再交给消费端，防止两边格式各自漂移。"""
+    import shutil
+
+    from article_group.viral_research_package import build_package
+
+    fixture = Path(__file__).parent / "fixtures" / "viral_research" / "capture"
+    run_root = tmp_path / "runroot"
+    shutil.copytree(fixture, run_root)
+    build_package(
+        run_root / "manifest.json",
+        run_root=run_root,
+        output_root=run_root / "viral-research" / "package",
+    )
+
+    pack = _package_pack(build_index(tmp_path, "runroot/viral-research"))
+
+    assert pack["status"] == "available"
+    assert pack["integrity"]["verified"] is True
+    assert pack["run_id"] == "fixture-viral-research"
+    assert pack["samples"], "生产端建出的包应当含样本"
+    # ref 必须真的解析得到：这里曾因「消费端 run_root 是包目录的父级」而全部落空，
+    # 导致 qualified_viral 样本被静默判为不可用。
+    resolved = [s for s in pack["samples"] if s["snapshot_present"]]
+    assert resolved, "生产端的 clean_ref 应当能被消费端解析到"
+    qualified = [s for s in resolved if s["qualification_status"] == "qualified_viral"]
+    assert qualified, "夹具里应当有合格样本"
+    assert all(
+        s["performance_evidence_present"] and s["usable_for_positive_patterns"]
+        for s in qualified
+    ), "合格样本的 ref 解析到之后应当可用于正向模式"
