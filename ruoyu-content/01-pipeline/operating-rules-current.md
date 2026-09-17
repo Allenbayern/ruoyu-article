@@ -21,7 +21,7 @@
 3. 🟡 [SHOULD] 每环节重试 ≤1 次；重试仍失败则该环节 fail，记台账，不硬闯。
 4. 🟡 [SHOULD] kanban 派发 workspace 必须绝对路径 `dir:/home/allen/Projects/ruoyu-film-daily/runs/<date>/controlled-NNN`；`--skill ruoyu-controlled-production` 仅用于已注册该 skill 的 worker profile。
 5. 🔴 [MUST] 未修改 `v2_contract/` 与 `article_group/` 核心代码（本文件外的流程规则变更需 Allen 确认）。
-6. 🔴 [MUST] 成品禁：来源自证、审稿腔、流程标识、自我提醒句、无源断言；档期断言须做撤档史版本核验。
+6. 🔴 [MUST] 成品禁：来源自证、审稿腔、流程标识、自我提醒句、无源断言；🟡 [SHOULD] 普通档期/上映日期核对当前权威来源，只有正文明确涉及撤档、改档、提档、延期、重定档或档期反复主线时才触发档期历史专项记录，该专项不单独 BLOCKED。
 
 ## 1. 批次命名（H4 · run_id 唯一化）
 
@@ -67,7 +67,7 @@
 ### 5.1 批次验收（M2 起每批必跑）
 
 - 🔴 [MUST] 每批收尾执行：`python -m article_group.final_review --batch runs/<date>/controlled-NNN`
-- 🔴 [MUST] **收尾链路（L2 教训定）**：冻结后 → 对最终 frozen HTML 重跑 `style_gate.py <frozen.html>` 覆盖落盘 `style-gate-art-00X.json`（draft 有修改就必须重跑，禁用手工复制旧报告）→ 再跑 final_review。evidence 时间戳必须晚于冻结时间戳。
+- 🔴 [MUST] **收尾链路（L2 教训定）**：冻结后 → 对最终 frozen HTML 重跑 `style_gate.py <frozen.html>` 覆盖落盘 `style-gate-art-00X.json`（draft 有修改就必须重跑，禁用手工复制旧报告）→ 再跑 final_review。style-gate 报告必须带 `artifact_path` + `artifact_sha256`，并逐一覆盖当前交付 HTML；evidence 时间戳必须晚于冻结时间戳。
 - 🔴 [MUST] 验收标准：`PUBLISHABLE` 才允许进入交付预览映射；`BLOCKED` 记台账并回修复环节；`PENDING` 挂人工判定（每周六判定会）。
 - 🟢 [MAY] 参考基线（2026-08-16 定）：**丢失文件/证据链不完整的批次无参考意义**（001–012 缺 review/、013–018 无 batch.json、020 编号冲突），不作为对照基线；只有证据完整批次（019/020 少量 + 021 起全部新批）参与对照。
 
@@ -105,5 +105,7 @@
 | 2026-08-16 | 爆文视角复核候选观察（026 两篇，research_only 待发布数据验证，见 `docs/reviews/viral-lens-026.md`）：① 数据型选题挂载人物/影片后潜力回升**双例同向**（022 裸数据=低 → 026 花开锦绣挂剧+角色+反差问=中 → 026 龙餐馆全程挂人物+制作故事=中高，三级递进）；② **候选观察⑦（结尾互动问句）连续两批空转**（021-025 十篇未执行 + 026 两篇未执行）——仅入规则日志不足驱动执行，须把⑦纳入 style_gate/final_review 机械检查点或任务卡写作要求；③ 情绪密度与人物锚「人物原话优先」原则得第 2-3 批次同向证据（龙餐馆有沈腾原话=中高 vs 花开锦绣纯设定拆解=中）；④ 标题问句若正文全收束则张力平（花开锦绣问「口碑为何两极」→ 结尾完全解答无留白，可留 2-3 成悬念或反抛读者侧问题）；⑤ 026 两篇首屏信息差/标题反转/数据挂载全部落地，022 裸数据盲区未重现 | 流程（候选观察） | docs/reviews/viral-lens-026.md 两篇 frozen 版通读评估 |
 | 2026-08-16 | **cross_batch 去重盲区修复**（026 final_review BLOCKED 实证 + Allen 确认 A 方案）：① `collect_history` 只收 `ruoyu-articles-*.html`（016 及以前整批合并命名），021 起 frozen 为 `ruoyu-art-00*.html` 单篇 → **021+ 整段漏窗、跨批去重从未生效**（H6 盲区机器侧根源）；修复为优先根目录交付副本、否则聚合 review/frozen 下 `ruoyu-articles-*.html`+`ruoyu-art-00*.html` 全部指纹。② h2 标题反衬句式（「撞上了空降的《欢迎来龙餐馆》」）被 `_extract_titles` 误当专文作品 → 新增 `_split_title_segments` 按反衬连接词（撞上/碰上/空降/同期/对比/让位等）切段，反衬段整体排除，仅主语段作品计入 works。③ final_review 新增控制器豁免注记通道 `_match_adjudication_waiver`：portfolio-gate-report.json 的 `controller_adjudication`（adjudicated=True + 含 confirmed_new_angle/确认豁免 + candidate 匹配）命中时 error 降级为已裁决记录放行（result.adjudicated_waivers）——**人机一致：机器尊重已落盘的控制器裁决，未裁决重复仍 BLOCKED**。④ 教训：批次命名契约变更（整批合并包→单篇 frozen）必须同步审计所有按文件名收集历史的消费者；跨批指纹的 works 必须是「专文主角」不是「标题提及」。测试 535 全绿（含新增用例），026 重跑 PUBLISHABLE，窗口 10 批覆盖 021–025 实证。 | 代码修复 | 026 BLOCKED → 修复后 PUBLISHABLE；窗口 [025..015] 10 批含 021–025 |
 | 2026-08-16 | **候选观察⑦落地为机械检查点**（L0 代码）：① `style_gate.closing_interaction_check`——文章末段（不含 .sources）读者互动问句检测（「你会…吗/你还会…吗/大家…？」= ok；结论性收尾 = info 建议不阻断；设问/内容性问号不误判为互动）；② writing-brief 新增 `ending_interaction_question` 字段（任务卡模板要求写明「读者互动问句 | 结论性收尾（写明理由）」）；③ style_gate 每次运行自动产出 `closing_interaction` 单篇字段，final_review 汇总可见 | L0 代码 | 026 复核⑦空转实证 → Allen 确认落地（测试 20 passed） |
+
+| 2026-08-20 | 窄领域门禁分层：普通档期/上映日期只核对当前权威来源；撤档/改档/延期史仅在正文主张触及时触发 info，未完成或不适用不得单独阻断验收、预览或交付 | L0 规则修订 | Allen 指出“是否完成撤档史核验”不应成为通用门禁；代码/测试与 canonical 同步 |
 
 （后续 L0 微调在此追加，保留历史行，不覆盖。）

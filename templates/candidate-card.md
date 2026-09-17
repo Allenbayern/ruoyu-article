@@ -59,7 +59,7 @@
 
 单卡通过不等于批次健康。选中进批后必须满足（机器校验，warning/error 分级）：
 
-- 每批 3 篇覆盖 ≥2 个 `content_map` 象限；同象限 ≤2 篇。
+- 每批按 `run_profile` 校验组合：默认两篇至少覆盖 2 个 `content_map` 象限；三槽 profile 同象限 ≤2 篇。
 - 同 `event_cluster_id` 每批 ≤1 篇；连续 3 批同一簇为主线 ≤2 批。
 - 时间窗口优先组合：`same-day`（即时）1 篇 + `fermenting-1-3d`（发酵）1 篇 + `revival`（常青/翻红）1 篇；无合格候选时允许空缺（记 `evergreen_gap: true`），不强行凑数。
 - 每篇必填 `remove_timestamp_test`；`fail`（去掉时间戳只剩事件）不得连续两批占据主稿位。

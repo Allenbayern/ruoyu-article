@@ -17,6 +17,8 @@
 
 - [ ] Every material claim has a permitted claim mapping.
 - [ ] Fact, attributed view, and inference remain distinct.
+- [ ] Excluded/context-only sources appear only in `exclusion_evidence_refs`, never in current `source_refs`, claim mappings, permitted claims, or current task-card extracts.
+- [ ] Dynamic fact cards with `update_required_before_publication=yes` have a fresh `review/<article_id>/revalidation.json` with per-claim source snapshot hash and locator.
 - [ ] Conflict or denial is represented at the required boundary.
 - [ ] No source sentence cluster, structure, or exclusive conclusion is copied.
 
@@ -29,6 +31,10 @@
 - template_version_or_hash:
 - render_result:
 - mobile_preview_ref:
+- preview_route_manifest_ref:
+- [ ] Each preview route has its own body/CSS fingerprint; no shared-CSS assumption is used.
+- [ ] HTTP status and body hash pass for every route.
+- mobile_browser_screenshot_advisory_ref:
 - html_delivery_state: `generated | withheld`
 - markdown_draft_ref:
 - [ ] When `presentation_state=template-blocked`, `html_delivery_state=withheld` and `markdown_draft_ref` identifies the retained draft.
@@ -38,7 +44,11 @@
 
 ## Review And Controller Status
 
+- worker_dispatch_ref:
+- [ ] Missing requested skill is recorded as fallback only for drafting/title/structure; review/prepublication is blocked.
+- [ ] Worker input is a structured extract/fact card, not raw HTML.
 - [ ] Independent review report is attached.
+- [ ] Separate human editor attestation is attached for M2.
 - [ ] No unresolved blocker or major finding remains.
 - [ ] Batch dedupe matrix passes.
 - controller_package_decision: `publish-ready accepted | draft-only | rejected`

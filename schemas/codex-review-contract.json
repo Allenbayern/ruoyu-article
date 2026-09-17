@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Codex adversarial review contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "decision",
+    "scope_reviewed",
+    "findings",
+    "non_findings",
+    "coverage_gaps"
+  ],
+  "properties": {
+    "decision": {
+      "type": "string",
+      "enum": ["approve", "needs_changes", "evidence_insufficient"]
+    },
+    "scope_reviewed": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "severity",
+          "target",
+          "evidence",
+          "counterexample_or_failure_mode",
+          "required_fix",
+          "recheck"
+        ],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["blocker", "major", "minor"]
+          },
+          "target": { "type": "string" },
+          "evidence": { "type": "string" },
+          "counterexample_or_failure_mode": { "type": "string" },
+          "required_fix": { "type": "string" },
+          "recheck": { "type": "string" }
+        }
+      }
+    },
+    "non_findings": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "coverage_gaps": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

@@ -158,6 +158,36 @@ def test_preflight_maps_controlled_016_articles_and_validates_transition(tmp_pat
     assert [card["article_id"] for card in cli_report["task_cards"]] == ["art-001", "art-002", "art-003"]
 
 
+def test_preflight_requires_explicit_profile_for_new_contract():
+    batch = _controlled_batch()
+    batch.update({
+        "run_profile_contract_version": "run-profile-v1",
+        "run_profile": "three_slot_controlled",
+    })
+
+    assert preflight_batch(batch, RUN_DIR)["status"] == "PASS"
+
+    del batch["run_profile"]
+    report = preflight_batch(batch, RUN_DIR)
+
+    assert report["status"] == "FAIL"
+    assert "run_profile_missing" in report["profile_errors"]
+
+
+def test_preflight_preserves_optional_source_provenance_fields_in_task_card():
+    batch = _controlled_batch()
+    article = batch["articles"][0]
+    article["source_reference_mode"] = "source_id"
+    article["provenance_contract_version"] = "source-provenance-v1"
+
+    task_card, errors = map_article_to_task_card(article, batch["run_id"])
+
+    assert errors == []
+    assert task_card is not None
+    assert task_card["source_reference_mode"] == "source_id"
+    assert task_card["provenance_contract_version"] == "source-provenance-v1"
+
+
 def test_preflight_rejects_article_state_that_disagrees_with_manifest_state(tmp_path: Path):
     batch = _controlled_batch()
     batch["manifest_state"] = "R6 drafting"

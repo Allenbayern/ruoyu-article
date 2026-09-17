@@ -78,6 +78,15 @@ def test_valid_synthetic_batch_creates_mechanically_verified_manifest(tmp_path: 
     assert '"network_actions": "none"' in payload
 
 
+def test_two_article_daily_profile_accepts_two_slots():
+    batch = valid_batch()
+    batch["run_profile"] = "two_article_daily"
+    batch["articles"] = batch["articles"][:2]
+    batch["articles"][1]["slot"] = "B"
+
+    assert validate_batch(batch) == []
+
+
 def test_duplicate_primary_atom_blocks_batch():
     batch = valid_batch()
     batch["articles"][2]["primary_atom"] = batch["articles"][1]["primary_atom"]

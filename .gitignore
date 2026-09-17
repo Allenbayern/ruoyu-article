@@ -23,6 +23,12 @@ venv/
 runs/
 reviews/
 docs/
+!docs/
+docs/*
+!docs/codex/
+docs/codex/*
+!docs/codex/skill-tool-migration.md
+!docs/codex/viral-library-migration.md
 ARTICLE_GROUP_OPERATING_CONTRACT_v1_DRAFT.md
 
 # Local scratch (never daily-commit material)
@@ -32,6 +38,13 @@ ARTICLE_GROUP_OPERATING_CONTRACT_v1_DRAFT.md
 # Discarded per user instruction: keep on disk but untracked (audit/workspace hygiene)
 briefs/
 scripts/
+!scripts/
+scripts/*
+!scripts/codex_newrank_watch.py
+!scripts/codex_daily_article_runner.py
+!scripts/codex_review_audit.py
+!scripts/codex_skill_inventory.py
+!scripts/codex_viral_library_index.py
 references/learning-samples/
 
 # media-intel-aios dormant backup (2026-08-07, SOL-ABSORB-003 fix): backup scripts/docs

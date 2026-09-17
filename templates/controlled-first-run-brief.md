@@ -1,19 +1,20 @@
 # First Controlled Production Run Brief
 
 STATE: `BRIEF_READY`
+RUN_PROFILE: `two_article_daily`（默认日更）| `three_slot_controlled`（显式 legacy 对照批次）
 GATE: `adversarial-review`
-OBJECTIVE: Create one real three-article batch that is evidence-backed and review-ready, with no publication, delivery, scheduling, or HTML rendering.
-DELIVERABLE: `runs/YYYY-MM-DD/<run-id>/controlled-run-manifest.json` plus A/B/C candidate, evidence, brief, and Markdown-draft artifacts.
+OBJECTIVE: Create one real profile-declared article batch that is evidence-backed and review-ready, with no publication, delivery, scheduling, or HTML rendering.
+DELIVERABLE: `runs/YYYY-MM-DD/<run-id>/controlled-run-manifest.json` plus profile slot candidates, evidence, briefs, and Markdown-draft artifacts.
 IN_SCOPE: One manually initiated batch; source discovery; editorial selection; source capture; claim ledger; writing briefs; Markdown drafts; offline batch validation; independent review handoff.
 OUT_OF_SCOPE: Cron, background radar, publisher login/API, WeChat publication, delivery messages, final HTML, image acquisition, live configuration changes, and reuse of legacy article content.
-CONSTRAINTS: Three independent slots; 1500-2200 Chinese characters per Markdown draft; one same-day topic when evidence supports it; remaining slots from fermenting or revival candidates; no social/discovery signal used as the sole support for a material claim; every article remains `not_authorized` for publication.
+CONSTRAINTS: The batch must declare `run_profile` and `run_profile_contract_version: run-profile-v1`; `two_article_daily` has A/B, `three_slot_controlled` has A/B/C. Each Markdown draft is 1500-2200 Chinese characters; no social/discovery signal is the sole support for a material claim; every article remains `not_authorized` for publication.
 ACCEPTANCE:
-- A/B/C have distinct work, core event/person, Primary Atom, Reader Intent, angle, title skeleton, and ending destination.
+- Every declared slot has a distinct work, core event/person, Primary Atom, Reader Intent, angle, title promise, and ending destination.
 - Each article has a full-text/primary/structured evidence pack with claim mapping for material assertions; the controller record includes at least one non-empty `claim_id → source_id → locator` mapping.
 - Each declared Markdown, evidence pack, and writing brief is non-empty and inside the run root; Markdown is actually read and contains 1500–2200 Chinese characters.
 - Each article declares at least two distinct non-empty concrete support types as a list/tuple, not a free-form string.
 - Batch and article authorization fields are `not_authorized` with all authorization audit fields blank.
-- Offline validator creates a manifest at `R8 review-ready` and no article receives publication authorization.
+- Offline validator creates a mechanically verified manifest; independent review and controller acceptance are separate later transitions, and no article receives publication authorization.
 - Independent review receives the original brief, artifacts, validator result, and coverage gaps.
 EVIDENCE: Candidate cards, editorial meeting, evidence packs, claim ledgers, writing briefs, Markdown drafts, delivery checklists, dedupe matrix, validator output, review-readiness packet.
 NON_SUCCESS: Fewer than three independently supportable topics; missing full-text/locator for a material assertion; duplicate slots; unresolved conflict/denial; article content below substance gate; request to publish/deliver/render HTML; missing independent review evidence.
