@@ -22,6 +22,28 @@ The Vault notes are the canonical content and governance references. Do not infe
 - Independent review output is evidence only. It cannot authorize publication, merge, deployment, or state promotion.
 - Execution model is the agent session model (dsh default `shenwendp/deepseek-v4.1-flash`). L2 adversarial review runs in a separate read-only subagent; record its structured result with `python -m article_group.codex_review --mode l2 --review-json <review.json>` (historical file name, no Codex CLI required).
 
+### Sealed runs and evidence writes (repo-operational, 2026-09-17)
+
+Triggered by a real incident: a demo re-run of the ledger precheck overwrote
+`runs/2026-09-16/daily-008/review/art-001/ledger-coverage-precheck.json` on an
+already closed and published run, with no backup.
+
+- **Sealing is automatic, reopening is not.** `python -m article_group.close_out
+  --run-root <run> --confirm` ends by writing `SEALED` (time, signer, delivery
+  hashes). From then on every evidence writer refuses to touch the run.
+- **All evidence writes go through `article_group.evidence_write`**: it snapshots
+  the previous bytes to `review/.before/<stamp>/<path>`, appends a line to
+  `evidence-changelog.jsonl`, and refuses sealed runs unless `--force` is passed
+  explicitly. `restore()` puts a file back from its newest snapshot.
+- **Rehearse in a sandbox, never on a real run**: `python scripts/run_sandbox.py
+  runs/<date>/<run-id> [--label "…"]` copies the run to `/tmp`, renames `SEALED` to
+  `SEALED.from-source`, and leaves the source untouched.
+- **Reopening a sealed run needs an explicit controller instruction** and uses
+  `unseal` (renames `SEALED` → `SEALED.revoked.<stamp>` and logs it); re-seal after
+  the change. `--force` on a sealed run is a controller decision, not an agent one.
+- These rules are repository-operational. Changing the Vault's canonical notes
+  still requires explicit write-back authorization.
+
 ## Agent handoff
 
 For any task involving host tooling or retired runtimes, read these project materials after the canonical Vault rules:

@@ -176,3 +176,29 @@ L2 对抗复核绑定交付哈希，复核通过后任何正文改动都会让�
 
 除非 controller 在 L2 之后提出新改动，否则 L2 每篇一轮即闭环；多轮是流程故障，
 应在 RUN-RECORD §8 记录轮次与原因。
+
+## 11. 封存与证据纪律（2026-09-17）
+
+起因是一次真实事故：为演示扩展后的账本预检，直接在**已收尾且已发布**的
+daily-008 上重跑，覆盖了 `review/art-001/ledger-coverage-precheck.json`
+（无备份、不可还原）。此后固定四条：
+
+1. **收尾即封存，自动生效**。`python -m article_group.close_out --run-root <run> --confirm`
+   的最后一步写 `SEALED`（时间、署名、各篇交付哈希）。此后所有写证据的工具默认拒绝，
+   退出码 2——不需要人再补一句"别再改了"。
+2. **写证据一律走留底通道**。`article_group.evidence_write` 在覆盖前把旧文件存到
+   `review/.before/<时间戳>/<路径>`，并往 `evidence-changelog.jsonl` 记一行
+   （谁/何时/为什么/前后 SHA-256/是否 forced）。`restore()` 可按最近快照还原。
+   已接入：账本预检、`evidence_rebind`、`title_freeze`、`wechat_render`、`close_out`。
+3. **演练只在副本上做**。`python scripts/run_sandbox.py runs/<date>/<run-id>` 一条命令
+   复制到 `/tmp`，副本内 `SEALED` 改名留痕、可自由写入，源 run 一字不动。
+   演示、复现、工具试跑一律先建沙盘。
+4. **"停"是自动的，"放开"要人点头**。改封存 run 只有两条路，都需 controller 明确指令：
+   `--force` 直写（留底+记账，可还原）；或先 `unseal`（`SEALED` 改名为
+   `SEALED.revoked.<时间戳>` 并记账，run 恢复可写），改完重新收尾再封存。
+
+配套的两条流水证据，每期都会自动生成，复盘时先看它们：
+
+- `step-log.jsonl` / `STEP-LOG.md`：每个阶段的名字、起止、耗时、产物哈希，自动标出 ≥120 秒空档
+  （daily-008 曾有 56 分钟无产物落盘，当时只能靠 mtime 反推）；
+- `evidence-changelog.jsonl`：文件级写入流水，回答"这条证据被谁、何时、为什么改过"。
