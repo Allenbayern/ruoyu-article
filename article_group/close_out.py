@@ -153,6 +153,15 @@ def close_out(
                       reason="人工签字项必须显式确认：加 --confirm（并在 --identity 填署名）")
         return report
 
+    if not force:
+        from article_group.run_state import sealed_reason
+
+        blocked = sealed_reason(root)
+        if blocked:
+            report.update(status="run_sealed",
+                          reason=f"run 已封存（{blocked}）：需 controller 明确指令后加 --force 或先 unseal")
+            return report
+
     rebound = _run_step(report, root, "evidence_rebind",
                         lambda: reconcile(root, apply=True, force=force))
     if rebound["stale_records"] and not allow_stale_evidence:

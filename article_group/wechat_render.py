@@ -304,10 +304,19 @@ def render_run(
         "publication_authorization": "not_authorized",
         "advisory": True,
     }
+    if not force:
+        from article_group.run_state import sealed_reason
+
+        blocked = sealed_reason(root)
+        if blocked:
+            report["status"] = "run_sealed"
+            report["reason"] = f"run 已封存（{blocked}）：加 force 才会重渲染"
+            return report
+
     deliveries = _delivery_files(root)
     if not deliveries:
         report.update(status="no_deliveries", reason="delivery/art-*/delivery.md not found")
-        _write_manifest(root, report)
+        _write_manifest(root, report, force=force)
         return report
 
     out_dir = root / "wechat"
@@ -320,11 +329,11 @@ def render_run(
             fragment, used = render_markdown(markdown, theme=theme, renderer_cmd=command)
         except RendererUnavailable as exc:
             report.update(status="unavailable", reason=str(exc))
-            _write_manifest(root, report)
+            _write_manifest(root, report, force=force)
             return report
         except RendererFailed as exc:
             report.update(status="failed", reason=f"{article_id}:{exc}")
-            _write_manifest(root, report)
+            _write_manifest(root, report, force=force)
             return report
 
         if style == "native":
@@ -362,7 +371,7 @@ def render_run(
                index_page(run_id=report["run_id"], items=index_items),
                root, "wechat_render:index", force)
     report["index_path"] = str((out_dir / "index.html").relative_to(root))
-    _write_manifest(root, report)
+    _write_manifest(root, report, force=force)
     return report
 
 
@@ -377,12 +386,12 @@ def _write_out(path: Path, content: str, root: Path, reason: str, force: bool) -
         raise
 
 
-def _write_manifest(root: Path, report: Mapping[str, Any]) -> None:
+def _write_manifest(root: Path, report: Mapping[str, Any], *, force: bool = False) -> None:
     from article_group.evidence_write import write_evidence
 
     target = root / "wechat" / "manifest.json"
     write_evidence(target, json.dumps(report, ensure_ascii=False, indent=2) + "\n",
-                   run_dir=root, reason="wechat_render:manifest")
+                   run_dir=root, reason="wechat_render:manifest", force=force)
 
 
 def _build_parser() -> argparse.ArgumentParser:
