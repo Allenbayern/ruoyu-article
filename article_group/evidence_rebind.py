@@ -99,7 +99,7 @@ def _stale_patch(path: Path, record: Mapping[str, Any], mismatches: list[dict[st
     return patched
 
 
-def reconcile(run_dir: str | Path, *, apply: bool = False) -> dict[str, Any]:
+def reconcile(run_dir: str | Path, *, apply: bool = False, force: bool = False) -> dict[str, Any]:
     """比对交付/草稿/标题包哈希与依赖记录；apply=True 时把 approve 判为失效。"""
     root = Path(run_dir)
     articles = sorted(
@@ -134,9 +134,10 @@ def reconcile(run_dir: str | Path, *, apply: bool = False) -> dict[str, Any]:
                 patched = _stale_patch(record_path, record, mismatches)
                 stale_records.append(entry)
                 if apply:
-                    record_path.write_text(
-                        json.dumps(patched, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-                    )
+                    from article_group.evidence_write import write_evidence_json
+
+                    write_evidence_json(record_path, patched, run_dir=root,
+                                        reason="evidence_rebind:stale_record", force=force)
     report: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "run_dir": str(root),
@@ -149,9 +150,10 @@ def reconcile(run_dir: str | Path, *, apply: bool = False) -> dict[str, Any]:
         "publication_authorization": "not_authorized",
     }
     if apply:
-        target = root / "review" / REPORT_NAME
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        from article_group.evidence_write import write_evidence_json
+
+        write_evidence_json(root / "review" / REPORT_NAME, report, run_dir=root,
+                            reason="evidence_rebind:report", force=force)
     return report
 
 
@@ -178,7 +180,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if closed:
             print(f"拒绝执行：run 已收尾（{closed}）。加 --force 才会改写封存证据。", file=sys.stderr)
             return 2
-    report = reconcile(args.run_root, apply=args.apply)
+    report = reconcile(args.run_root, apply=args.apply, force=getattr(args, "force", False))
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:

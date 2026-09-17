@@ -70,7 +70,7 @@ def selected_title(run_dir: str | Path, aid: str) -> str:
     return str(pack.get("selected") or pack.get("title") or "")
 
 
-def freeze(run_dir: str | Path, aid: str, *, note: str = "") -> dict[str, Any]:
+def freeze(run_dir: str | Path, aid: str, *, note: str = "", force: bool = False) -> dict[str, Any]:
     """冻结当前标题包；返回冻结记录（幂等：内容一致则不重写）。"""
     root = Path(run_dir)
     pack = title_pack_path(root, aid)
@@ -91,8 +91,13 @@ def freeze(run_dir: str | Path, aid: str, *, note: str = "") -> dict[str, Any]:
         "note": note or "标题包冻结：L2 复核必须绑定本哈希",
         "publication_authorization": "not_authorized",
     }
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    from article_group.evidence_write import RunSealedError, write_evidence_json
+
+    try:
+        write_evidence_json(target, record, run_dir=root, reason="title_freeze", force=force)
+    except RunSealedError as exc:
+        return {"status": "run_sealed", "aid": aid, "reason": str(exc),
+                "publication_authorization": "not_authorized"}
     return {**record, "status": "frozen"}
 
 
@@ -148,13 +153,14 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--freeze", action="store_true", help="冻结当前标题包（写入冻结记录）")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--strict", action="store_true", help="冻结状态违规时以非零码退出")
+    parser.add_argument("--force", action="store_true", help="在已封存 run 上强制写入冻结记录")
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     if args.freeze:
-        result = freeze(args.run_root, args.aid)
+        result = freeze(args.run_root, args.aid, force=getattr(args, "force", False))
         if args.json:
             print(json.dumps(result, ensure_ascii=False, indent=2))
         else:

@@ -276,6 +276,7 @@ def render_run(
     renderer_cmd: str | None = None,
     editor_url: str = "",
     style: str = "native",
+    force: bool = False,
     title_lookup: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Render every sealed delivery of a run into ``<run>/wechat/``.
@@ -329,7 +330,7 @@ def render_run(
         if style == "native":
             fragment = normalize_for_wechat(fragment, drop_title=True)
         wx_path = out_dir / f"{article_id}.wx.html"
-        wx_path.write_text(fragment + "\n", encoding="utf-8")
+        _write_out(wx_path, fragment + "\n", root, "wechat_render:fragment", force)
         page = copy_page(
             title=title,
             note=f"{theme} 主题 · {style} 结构 · {cjk_chars(markdown)} 字",
@@ -337,7 +338,7 @@ def render_run(
             editor_url=editor_url,
         )
         page_path = out_dir / f"{article_id}.html"
-        page_path.write_text(page, encoding="utf-8")
+        _write_out(page_path, page, root, "wechat_render:copy_page", force)
         report["articles"].append({
             "article_id": article_id,
             "title": title,
@@ -357,18 +358,31 @@ def render_run(
             "note": f"{theme} 主题 · {style} 结构 · {cjk_chars(markdown)} 字",
         })
 
-    (out_dir / "index.html").write_text(
-        index_page(run_id=report["run_id"], items=index_items), encoding="utf-8"
-    )
+    _write_out(out_dir / "index.html",
+               index_page(run_id=report["run_id"], items=index_items),
+               root, "wechat_render:index", force)
     report["index_path"] = str((out_dir / "index.html").relative_to(root))
     _write_manifest(root, report)
     return report
 
 
+def _write_out(path: Path, content: str, root: Path, reason: str, force: bool) -> None:
+    """所有 wechat 产物统一走留底+记账+封存守门通道。"""
+    from article_group.evidence_write import RunSealedError, write_evidence
+
+    try:
+        write_evidence(path, content, run_dir=root, reason=reason, force=force)
+    except RunSealedError:
+        # 封存 run 上渲染被拒绝：记录状态而不抛，交由调用方判定
+        raise
+
+
 def _write_manifest(root: Path, report: Mapping[str, Any]) -> None:
+    from article_group.evidence_write import write_evidence
+
     target = root / "wechat" / "manifest.json"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    write_evidence(target, json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+                   run_dir=root, reason="wechat_render:manifest")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -384,6 +398,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--renderer-cmd", default=None,
                         help="自定义渲染命令模板，占位符 {md_file} {md_name} {workdir} {theme}")
     parser.add_argument("--editor-url", default="", help="复制页上附带的排版编辑器地址（可选）")
+    parser.add_argument("--force", action="store_true", help="在已封存 run 上强制重渲染")
     parser.add_argument("--json", action="store_true", help="输出完整报告 JSON")
     return parser
 
@@ -396,6 +411,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         renderer_cmd=args.renderer_cmd,
         editor_url=args.editor_url,
         style=args.style,
+        force=args.force,
     )
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))

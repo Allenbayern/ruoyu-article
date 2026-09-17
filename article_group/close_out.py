@@ -103,7 +103,7 @@ def _section_body(run_dir: Path, identity: str, ref: str, wechat_index: str) -> 
     return "\n".join(lines)
 
 
-def write_close_out_section(run_dir: Path, body: str) -> str:
+def write_close_out_section(run_dir: Path, body: str, *, force: bool = False) -> str:
     """把收尾段写进 RUN-RECORD.md（标记块幂等替换）。"""
     path = run_dir / "RUN-RECORD.md"
     text = path.read_text(encoding="utf-8") if path.is_file() else "# RUN-RECORD\n"
@@ -115,7 +115,9 @@ def write_close_out_section(run_dir: Path, body: str) -> str:
         text = text.rstrip() + "\n\n" + body + "\n"
     else:
         text = text.rstrip() + f"\n\n{SECTION_TITLE}（{_dt.date.today().isoformat()}）\n\n{body}\n"
-    path.write_text(text, encoding="utf-8")
+    from article_group.evidence_write import write_evidence
+
+    write_evidence(path, text, run_dir=run_dir, reason="close_out:run_record_section", force=force)
     return str(path)
 
 
@@ -127,6 +129,7 @@ def close_out(
     theme: str = "default",
     editor_url: str = "",
     renderer_cmd: str | None = None,
+    force: bool = False,
     confirm: bool = False,
     allow_stale_evidence: bool = False,
     runner: Runner | None = None,
@@ -150,7 +153,8 @@ def close_out(
                       reason="人工签字项必须显式确认：加 --confirm（并在 --identity 填署名）")
         return report
 
-    rebound = _run_step(report, root, "evidence_rebind", lambda: reconcile(root, apply=True))
+    rebound = _run_step(report, root, "evidence_rebind",
+                        lambda: reconcile(root, apply=True, force=force))
     if rebound["stale_records"] and not allow_stale_evidence:
         report.update(
             status="blocked_stale_evidence",
@@ -169,13 +173,18 @@ def close_out(
     from article_group.wechat_render import render_run
 
     wechat = _run_step(report, root, "wechat_render", lambda: render_run(
-        root, theme=theme, editor_url=editor_url, renderer_cmd=renderer_cmd))
+        root, theme=theme, editor_url=editor_url, renderer_cmd=renderer_cmd, force=force))
     report["wechat_index"] = wechat.get("index_path", "")
 
     _run_step(report, root, "run_record_section", lambda: write_close_out_section(
-        root, _section_body(root, identity, ref, wechat.get("index_path", ""))))
+        root, _section_body(root, identity, ref, wechat.get("index_path", "")), force=force))
     _run_step(report, root, "step_log_markdown", lambda: (root / "STEP-LOG.md").write_text(
         render_markdown(timeline(root)), encoding="utf-8"))
+
+    from article_group.run_state import seal, seal_articles
+
+    report["seal"] = _run_step(report, root, "seal", lambda: seal(
+        root, identity=identity, ref=ref, articles=seal_articles(root)))
 
     report["finished_at"] = _now()
     report["final_review"] = dict(_load(root / "review" / "final-review.json"))
@@ -195,6 +204,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--editor-url", default="")
     parser.add_argument("--renderer-cmd", default=None,
                         help="渲染命令模板（占位符 {md_file} {theme}）；测试/离线环境可注入桩")
+    parser.add_argument("--force", action="store_true",
+                        help="在已封存 run 上强制执行（默认拒绝改写封存证据）")
     parser.add_argument("--confirm", action="store_true",
                         help="确认 controller 已明确验收通过（缺省则只提示、不写入）")
     parser.add_argument("--allow-stale-evidence", action="store_true",
@@ -212,6 +223,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         theme=args.theme,
         editor_url=args.editor_url,
         renderer_cmd=args.renderer_cmd,
+        force=args.force,
         confirm=args.confirm,
         allow_stale_evidence=args.allow_stale_evidence,
     )

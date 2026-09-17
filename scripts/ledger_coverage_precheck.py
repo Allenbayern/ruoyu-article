@@ -198,7 +198,10 @@ def main() -> int:
     }
     out = run_root / "review" / args.aid / "ledger-coverage-precheck.json"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    from article_group.evidence_write import write_evidence_json
+
+    write_evidence_json(out, record, run_dir=run_root, reason="ledger_coverage_precheck",
+                        author="agent", force=getattr(args, "force", False))
 
     print(f"{args.aid}: 账本 {len(ledger)} 条 | 段落 {len(paragraphs)} | 引号未命中 {len(quotes)} | LLM 缺口 {len(llm_gaps)}（{llm_status}）")
     print(f"  确定性断言缺口: error {len(assertion['assertion_errors'])} | warning {len(assertion['assertion_warnings'])} | 孤儿账本条目 {len(assertion['orphan_ledger'])}")

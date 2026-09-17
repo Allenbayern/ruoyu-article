@@ -93,6 +93,7 @@ def test_happy_path_runs_every_step_and_writes_section(tmp_path: Path):
     assert [step["name"] for step in report["steps"]] == [
         "evidence_rebind", "controller_acceptance", "final_review",
         "run_record_machine", "wechat_render", "run_record_section", "step_log_markdown",
+        "seal",
     ]
     # 人工签字走既有合法入口
     assert any(call[1].endswith("record_controller_acceptance.py") for call in calls)
@@ -108,7 +109,17 @@ def test_happy_path_runs_every_step_and_writes_section(tmp_path: Path):
 
     steps = [step["name"] for step in read_steps(root)]
     assert "close_out:controller_acceptance" in steps
+    assert "close_out:seal" in steps
     assert (root / "STEP-LOG.md").is_file()
+
+    # 收尾即封存：SEALED 标记含验收人与交付哈希，供后续工具守门
+    from article_group.run_state import sealed_reason
+    sealed = json.loads((root / "SEALED").read_text(encoding="utf-8"))
+    assert sealed["sealed_by"] == "owner"
+    assert sealed["schema_version"] == "run-sealed-v1"
+    assert sealed["articles"][0]["article_id"] == "art-001"
+    assert len(sealed["articles"][0]["delivery_sha256"]) == 64
+    assert sealed_reason(root).startswith("sealed_at=")
 
 
 def test_section_is_idempotent_and_not_duplicated(tmp_path: Path):
