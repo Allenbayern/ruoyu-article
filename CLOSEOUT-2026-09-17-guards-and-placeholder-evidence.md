@@ -122,10 +122,13 @@ git worktree add -f --detach /tmp/wt df50d54
 - **未**在 `runs/` 下写任何新文件：`runs/` 是 conftest 只读自检区，写入会让下一次
   `pytest` 变红（除非 `RUOYU_ALLOW_RUNS_WRITES=1`），且 `runs/` 被 gitignore，沉淀不到远端。
   这也是本记录放在仓库根的原因。
-- **未**推送任何东西：推送需单独授权。
-- **未**对 `df50d54..HEAD` 的 7 个提交做独立复核（见 §4.3）。
-- **未**改 Vault 的 schema 口径（见 §4.1）。
-- Vault 侧同步：`b8a063c`（3 文件，`Allen (Hermes)` 身份，**未推**，`mac-backup/main` 仍在 `f8039ae`）。
+- **已**推送（2026-09-17 17:2x，controller 授权"1 推送就行 / 一起推"）：
+  `origin/{master,main,codex/article-pipeline-contract-hardening}` 三者同为 `c70d250`，
+  本地对三个 ref 的领先数均为 0；§6 原先写的"未推送"随本次推送失效。
+- **未**对 `df50d54..HEAD` 的 7 个提交做独立复核 → **已于 §7 补做并通过**。
+- **未**改 Vault 的 schema 口径文件本身；裁决已落 Vault（`b32d32d`，见 §4.1）。
+- Vault 侧同步：`b8a063c`（身份修正后）+ `b32d32d`（口径裁决），**已推**至
+  `mac-backup/main`（推送前为 `f8039ae`）。
 
 ## 7. 后续独立复核：`df50d54..HEAD`（13 个提交）
 
