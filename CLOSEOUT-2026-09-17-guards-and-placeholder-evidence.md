@@ -88,11 +88,7 @@
 - **处置建议：记录并接受。** 重写本地历史无法将其从共享历史移除；唯一移除手段是
   force-push `main`，风险与收益不成比例。内容正确性不受影响。
 
-### 4.3 未推的 7 个提交尚未经过本套独立复核
-
-- 本记录只覆盖 `d320948 → df50d54` 这一段。
-- 建议：等写入方停笔（判据：连续 ≥30 分钟无新提交且工作树干净）后，对 `df50d54..HEAD`
-  补一次同口径复核（隔离 worktree + 失败集差分 + `runs/` 指纹前后一致），全绿再推。
+### 4.3 `df50d54..HEAD` 的独立复核：**已执行，通过**（见 §7）
 
 ## 5. 复跑方法（复现本记录的断言）
 
@@ -130,3 +126,55 @@ git worktree add -f --detach /tmp/wt df50d54
 - **未**对 `df50d54..HEAD` 的 7 个提交做独立复核（见 §4.3）。
 - **未**改 Vault 的 schema 口径（见 §4.1）。
 - Vault 侧同步：`b8a063c`（3 文件，`Allen (Hermes)` 身份，**未推**，`mac-backup/main` 仍在 `f8039ae`）。
+
+## 7. 后续独立复核：`df50d54..HEAD`（13 个提交）
+
+复核时间：2026-09-17 17:1x CST。范围 `df50d54..7b6d2cd`，159 文件 / +23201−142。
+方法与前一轮同口径：隔离 worktree 失败集差分 + 行为断言实测 + 变异口径。
+
+### 7.1 全量测试
+
+| 口径 | 结果 |
+|---|---|
+| 活树（真实语料、真实被 ignore 文件） | **1602 passed ×2**，0 failed / 0 skipped |
+| 隔离 worktree `df50d54`（基线） | 1366 passed / 62 条环境失败 |
+| 隔离 worktree `HEAD` | 1539 passed / 63 条环境失败 |
+
+**失败集差分**：63 − 62 = **新增恰好 1 条**，且为环境噪声（见 7.2）；
+**消失 0 条**（没有既有用例被改坏或删掉）。
+传递增量 1539 − 1366 = **+173**，与"活树 1602 全绿、worktree 只多 1 条环境失败"完全自洽。
+
+### 7.2 那唯一 1 条新增失败：环境，不是回归
+
+`tests/test_runs_write_coverage.py::test_classification_lists_have_no_stale_entries`
+报 9 条"名单过期"，其中 `scripts/mp_fetch.py`、`scripts/sogou_fetch.py`、
+`scripts/patches/2026-09-17-mac/patch_*.py` 等经 `git check-ignore` 确认是被
+`.gitignore` 忽略的**真实存在**文件，worktree 只带出被跟踪子集，故扫描不到。
+活树上同一用例通过。**判读结论：worktree 缺件，非代码问题。**
+
+### 7.3 新增测试模块（20 个）在活树上单跑
+
+**210 passed**——13 个提交引入的全部新用例在真实环境全绿。
+
+### 7.4 行为断言实测（不看自述，亲手跑）
+
+沙箱 run 建在 `runs/.review3-sandbox`（用后即删；语料 mtime 未受影响，仍 08:49:37）：
+
+| 断言 | 结果 |
+|---|---|
+| 无 token 写封存 run | `SealedWriteBlocked` ✅ |
+| 祖先路径写法（前一轮报的洞） | `SealedWriteBlocked` ✅ |
+| 写**同级另一个** run | 放行 ✅（不误伤） |
+| 持 `sealed_write_token` 写封存 run | 放行 ✅（拦截不是"永远拒绝"） |
+| token 退出后再写 | 再次拒绝 ✅ |
+| 我的探针直接写 `SEALED.manifest.json` | 被拒 ✅（连复核者也被拦） |
+| `run_seal.backfill` 建清单 → `verify` | `intact` ✅ |
+| 走留底通道篡改封存文件 → `verify` | `drifted`，exit 2，并报出改动者/时间/authorized ✅ |
+
+「封存 = 全量清单 + 可验证」这条承诺成立：被改过能发现，且能追到谁改的。
+
+### 7.5 复核结论
+
+**通过。** 13 个提交未改动 `runs/`（`git diff --name-only df50d54..HEAD` 中 runs/ 为空集），
+未放宽 `.gitignore` 对 `runs/` 的忽略（只新增了 3 个 CLI 脚本的白名单），
+全量在真实环境两次全绿，行为断言逐条实测成立。
