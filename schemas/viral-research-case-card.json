@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ruoyu.local/schemas/viral-research-case-card.json",
+  "title": "Viral Research Case Card",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "sample_id",
+    "platform",
+    "account_id",
+    "title",
+    "canonical_url",
+    "published_at",
+    "shape",
+    "qualification_status",
+    "snapshot_ref",
+    "performance_evidence_ref",
+    "evidence"
+  ],
+  "properties": {
+    "schema_version": {"const": "viral-research-case-card-v1"},
+    "sample_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+    "platform": {"type": "string", "minLength": 1},
+    "account_id": {"type": "string", "minLength": 1},
+    "title": {"type": "string", "minLength": 1},
+    "canonical_url": {"type": "string", "format": "uri"},
+    "published_at": {"type": "string", "format": "date-time"},
+    "shape": {"type": "object"},
+    "qualification_status": {
+      "type": "string",
+      "enum": ["qualified_viral", "observed_pending", "research_only", "blocked"]
+    },
+    "snapshot_ref": {"type": "string", "minLength": 1},
+    "performance_evidence_ref": {"type": "string", "minLength": 1},
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "raw_ref",
+        "clean_ref",
+        "metadata_ref",
+        "evidence_origin",
+        "qualification_basis",
+        "automatic_publication_authority"
+      ],
+      "properties": {
+        "raw_ref": {"type": "string", "minLength": 1},
+        "clean_ref": {"type": "string", "minLength": 1},
+        "metadata_ref": {"type": "string", "minLength": 1},
+        "evidence_origin": {"const": "local_capture"},
+        "qualification_basis": {"type": "string", "minLength": 1},
+        "automatic_publication_authority": {"const": false}
+      }
+    },
+    "case_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "qualification_status", "sample_id"],
+      "properties": {
+        "status": {"const": "validated"},
+        "qualification_status": {
+          "type": "string",
+          "enum": ["qualified_viral", "vendor_qualified", "observed_pending", "research_only"]
+        },
+        "sample_id": {"type": "string", "minLength": 1}
+      }
+    },
+    "revision": {"type": ["integer", "string"]},
+    "revision_id": {"type": "string"},
+    "capture_revision": {"type": ["integer", "string"]}
+  }
+}

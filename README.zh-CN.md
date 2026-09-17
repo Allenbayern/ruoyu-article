@@ -185,6 +185,68 @@ uv run python -m article_group.sync_compliance \
 - HTML 冻结与预览只在明确选择 `review_surface=html_delivery` 的历史/专门交付中启用；此时继续使用 `preview_mode=local_codex | canonical_http` 及原有逐路由哈希/HTTP 200 契约。
 - 批次验收要求控制器审查新证据；M2 还要求独立人工编辑 attestation、动态事实 publication-time revalidation 和 controller acceptance 分层落盘。终审由独立方（Sol 路由）在对抗性审查 Gate 下执行，控制器做出每项验收决定。仓库内任何内容都不授权对外发布。
 
+## 爆款研究库（viral research）
+
+爆款研究库按「抓爬证据 → package → inventory → prepare → 语义 pass → finalize」顺序运行，产物全部落在当前批次的 `RUN_ROOT` 内，**不自动写入 Vault、不自动发布、不自动推进任何工作流状态**。微信长文（`wechat` / `wechat_long_form`）是主通道；新榜/热榜、B 站、头条等其它来源统一按 `observation-only` 处理，不得据标题、排名或不完整证据认定为 `qualified_viral`，也不得计入正向技法频次。
+
+```bash
+RUN_ROOT=runs/<run-id>
+
+# 1) package：把本地抓爬证据封装成不可覆盖、带逐文件 SHA-256 的 package
+uv run python scripts/codex_viral_research_package.py \
+  --capture-manifest "$RUN_ROOT/capture.json" \
+  --run-root "$RUN_ROOT" \
+  --output-root "$RUN_ROOT/viral-research/package"
+
+# 2) inventory：盘点旧库、各证据通道与 package 状态
+uv run python scripts/codex_viral_library_index.py \
+  --project-root . \
+  --evidence-run "$RUN_ROOT/viral-research" \
+  --compact > "$RUN_ROOT/viral-research/inventory.json"
+
+# 3) prepare：按微信影视长文形态选出可蒸馏样本
+uv run python scripts/codex_viral_distill.py prepare \
+  --package-root "$RUN_ROOT/viral-research/package" \
+  --platform wechat \
+  --medium long_form \
+  --content-domain film \
+  --narrative-purpose review_or_analysis \
+  --output "$RUN_ROOT/viral-research/distillation/prepare.json"
+
+# 4) 语义 pass：由人工明确触发的**一次 agent 会话**，只读 prepare.json 及其
+#    SHA-256 证据引用，为每个 selected sample 按 schemas/viral-research-case-card.json
+#    生成 "$RUN_ROOT/viral-research/cards/<sample_id>.json"，并写 cards/manifest.json
+#    （记录 prepare/package 两个摘要、criteria、selected_sample_ids 及每张卡的 SHA-256）。
+#    只做结构观察与负向模式记录；不读取其它样本、不改 qualification_status、
+#    不写 Vault、不发布、不推进状态。
+#    注：本机执行模型是 agent 会话（dsh），历史材料里的 `codex exec` 调用不再适用
+#    —— 本仓库已退役 Codex CLI，脚本名保留仅为链接与测试稳定。
+
+# 5) finalize：校验语义 pass 产出的 case cards，落 provisional review packet
+uv run python scripts/codex_viral_distill.py finalize \
+  --prepared "$RUN_ROOT/viral-research/distillation/prepare.json" \
+  --package-root "$RUN_ROOT/viral-research/package" \
+  --platform wechat \
+  --medium long_form \
+  --content-domain film \
+  --narrative-purpose review_or_analysis \
+  --cards-root "$RUN_ROOT/viral-research/cards" \
+  --output "$RUN_ROOT/viral-research/review/viral-distill-review.json"
+```
+
+`RUN_ROOT` 是批次隔离工作区：抓爬证据与全部产物都必须落在它之内。package builder 会拒绝越界的
+`--capture-manifest` 或 `--output-root`（`path_escape`），也会拒绝覆盖已存在的产物（`artifact_exists`）；
+证据不完整时产出 `status: blocked` 并在 `errors[]` 列出缺口，同时仍写入 `integrity.json`
+（逐文件 SHA-256）——失败同样留痕可审计。
+
+需要为已入包的单个样本补挂表现证据时用 `scripts/codex_viral_research_attach_evidence.py`
+（`--package-root` / `--sample-id` / `--evidence-file` / `--output-revision`），产出新 revision 而非原地改包。
+
+蒸馏报告与候选原则保持 `promotion_status: provisional_only`、`automatic_publication_authority: false`。
+语义 pass 的输出只是证据；采纳、晋级与发布仍由 controller 决定。
+
+`runs/` 被 Git 忽略，因此**契约进版本库**（模块、schema、CLI、测试），**数据不进**（package、cards、review 产物）。
+
 ## Codex 旁路审查
 
 Codex 审查是证据旁路，不替换本仓库的确定性门禁、`final_review` 或人工发布授权。

@@ -82,6 +82,11 @@ docs/superpowers/specs/*
 !docs/superpowers/specs/2026-09-08-editorial-pipeline-v4-design.md
 !scripts/codex_viral_library_reader.py
 !scripts/codex_viral_library_context.py
+# 爆款研究库生产者 CLI（2026-09-17 随 viral_research_* 模块一同纳入；
+# README「爆款研究库」一节的命令直接调用它们，缺了干净克隆跑不通）
+!scripts/codex_viral_research_package.py
+!scripts/codex_viral_distill.py
+!scripts/codex_viral_research_attach_evidence.py
 !scripts/markdown_review_audit.py
 !scripts/markdown_style_audit.py
 !scripts/content_delivery_audit.py
