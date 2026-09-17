@@ -84,8 +84,10 @@ def test_case_contract_delegation_is_recorded(tmp_path: Path, monkeypatch):
     sample = _sample(tmp_path)
     called = {}
 
-    def fake_validate(payload):
+    def fake_validate(payload, *, warnings=None):
+        # 与真实签名一致：warning 收集器是可选的（cards 传入以让占位符凭证可见）
         called["sample_id"] = payload["sample_id"]
+        called["collector_passed"] = warnings is not None
         return "research_only"
 
     monkeypatch.setattr("article_group.viral_research_cards.validate_case_card", fake_validate)
@@ -93,6 +95,7 @@ def test_case_contract_delegation_is_recorded(tmp_path: Path, monkeypatch):
     assert called["sample_id"] == sample["sample_id"]
     assert card["case_contract"]["status"] == "validated"
     assert card["case_contract"]["qualification_status"] == "research_only"
+    assert "warnings" not in card["case_contract"]  # 没有缺陷就不写这个键（保持产物字节兼容）
 
 
 import copy

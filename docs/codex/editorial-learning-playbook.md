@@ -189,7 +189,12 @@ daily-008 上重跑，覆盖了 `review/art-001/ledger-coverage-precheck.json`
 2. **写证据一律走留底通道**。`article_group.evidence_write` 在覆盖前把旧文件存到
    `review/.before/<时间戳>/<路径>`，并往 `evidence-changelog.jsonl` 记一行
    （谁/何时/为什么/前后 SHA-256/是否 forced）。`restore()` 可按最近快照还原。
-   已接入：账本预检、`evidence_rebind`、`title_freeze`、`wechat_render`、`close_out`。
+   已接入：账本预检、`evidence_rebind`、`title_freeze`、`wechat_render`、`close_out`
+   （含它写的 `STEP-LOG.md`）、`final_review`、`run_record`、
+   `scripts/record_controller_acceptance.py`（人工签字入口，带 `--force`）。
+   仍绕过通道、只被运行时护栏兜住的写在
+   `tests/test_runs_write_coverage.py` 的 `PENDING` 里逐条列名——那份名单过期或
+   新写手未分类，测试就 fail。
 3. **演练只在副本上做**。`python scripts/run_sandbox.py runs/<date>/<run-id>` 一条命令
    复制到 `/tmp`，副本内 `SEALED` 改名留痕、可自由写入，源 run 一字不动。
    演示、复现、工具试跑一律先建沙盘。

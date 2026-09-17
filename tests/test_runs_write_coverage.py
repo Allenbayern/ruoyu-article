@@ -26,6 +26,9 @@ WRITE_CALLS = re.compile(
 )
 GUARD_IMPORT = re.compile(r"^\s*(?:from|import)\s+article_group", re.M)
 SCAN_DIRS = ("article_group", "scripts")
+# 留底通道：写 run 证据的正规路径。**没走它的写手一律要登记**（含 in-package 模块）——
+# 否则"新写手裸写"会静默通过，而这正是 2026-09-17 新管线落地时发生的事。
+CHANNEL = re.compile(r"evidence_write|write_evidence")
 
 # ── 范围外：验证过"写不到封存 run 的证据"的模块，附理由（不是豁免，是判定） ──
 OUT_OF_SCOPE: dict[str, str] = {
@@ -63,6 +66,12 @@ PENDING: dict[str, str] = {
     "article_group/v4/verification.py": "旁路校验产物（v4 冻结层）：接入前先确认是否仍在用",
     "article_group/v5/verification.py": "旁路校验产物（v5 冻结层）：同上",
     "scripts/daily_engine.py": "日更引擎的 briefs/drafts 产物：写手分散，需按阶段逐个接入",
+    # 2026-09-17 新管线（护栏上线后由这条 lint 规则首次暴露）
+    "article_group/viral_research_cards.py": "卡片信封写 output_root（新目录、artifact_exists 拒覆盖、失败回滚；但无 changelog 记账）："
+                                            "下一步定「产物账本落哪」——run 的 changelog 还是卡片 manifest 自身",
+    "article_group/viral_research_distill.py": "蒸馏报告 _write_new（存在即拒；同样只缺记账）：同上待定账本归属",
+    "article_group/viral_research_package.py": "package 必须写在 run_root 内（path_escape 校验）、artifact_exists 拒覆盖：同上待定账本归属",
+    "scripts/codex_daily_article_runner.py": "消费清单按路径写、可覆盖（有读回校验但无留底）：下一步接入留底通道或改成 new-only",
 }
 
 
@@ -112,6 +121,28 @@ def test_every_run_writer_is_classified() -> None:
         "PENDING 里的模块连运行时护栏都没兜住（未 import article_group）：\n  "
         + "\n  ".join(unguarded_pending)
         + "\n先让它 import article_group，再谈接入留底通道。"
+    )
+
+
+def test_writers_bypassing_the_snapshot_channel_are_listed() -> None:
+    """盲点修复（2026-09-17）：in-package ≠ 已接入留底通道。
+
+    护栏只管"封存 run 写不进去"；**没走留底通道**的写手在未封存的 run 上照样裸写、
+    无 before image、无 changelog。此前 in-package 模块靠 `_guard_covered` 静默通过，
+    新管线（viral_research_*）因此裸写了 2000+ 行而无人提示。现在：没走通道就必须登记。
+    """
+    found = _scan()
+    unlisted = sorted(
+        name for name in found
+        if not CHANNEL.search((REPO_ROOT / name).read_text(encoding="utf-8"))
+        and name not in OUT_OF_SCOPE
+        and name not in PENDING
+    )
+    assert not unlisted, (
+        "以下模块写 run 但没走留底通道，且未登记理由：\n  "
+        + "\n  ".join(unlisted)
+        + "\n二选一：① 接入 evidence_write（留底+记账）；"
+          "② 加进 OUT_OF_SCOPE（说明为什么它写不到 run 内证据）或 PENDING（写明下一步）。"
     )
 
 

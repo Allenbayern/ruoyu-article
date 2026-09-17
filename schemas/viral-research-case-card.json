@@ -63,7 +63,8 @@
           "type": "string",
           "enum": ["qualified_viral", "vendor_qualified", "observed_pending", "research_only"]
         },
-        "sample_id": {"type": "string", "minLength": 1}
+        "sample_id": {"type": "string", "minLength": 1},
+        "warnings": {"type": "array", "items": {"type": "object"}}
       }
     },
     "revision": {"type": ["integer", "string"]},

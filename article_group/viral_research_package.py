@@ -140,8 +140,13 @@ def _qualified_case_contract(
     refs: Mapping[str, str],
     *,
     root: Path,
+    warnings: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
-    """Validate and bind capture qualification evidence to one normalized sample."""
+    """Validate and bind capture qualification evidence to one normalized sample.
+
+    ``warnings`` 是可选收集器：卡片"格式合法但语义为空"（如占位符凭证）时，
+    资格会被降级——降级原因必须随 sample 落盘，不能无声无息。
+    """
     card = sample.get("case_contract_card")
     if not isinstance(card, Mapping):
         return None
@@ -162,7 +167,7 @@ def _qualified_case_contract(
     if not _platform_matches_case_contract(sample.get("platform"), card):
         return None
     try:
-        if validate_case_card(dict(card)) != "qualified_viral":
+        if validate_case_card(dict(card), warnings=warnings) != "qualified_viral":
             return None
     except CaseContractError:
         return None
@@ -331,9 +336,10 @@ def build_package(
         if qualification not in {"qualified_viral", "observed_pending", "research_only", "blocked"}:
             qualification = "research_only"
         qualification_evidence: dict[str, Any] | None = None
+        case_warnings: list[dict[str, Any]] = []
         if qualification == "qualified_viral":
             qualification_evidence = _qualified_case_contract(
-                raw, sample_id, refs, root=root
+                raw, sample_id, refs, root=root, warnings=case_warnings
             )
             if qualification_evidence is None:
                 qualification = "observed_pending" if capture_status == "complete" else "research_only"
@@ -360,6 +366,8 @@ def build_package(
         }
         if qualification == "qualified_viral" and qualification_evidence is not None:
             normalized["qualification_evidence"] = qualification_evidence
+        if case_warnings:
+            normalized["warnings"] = case_warnings
         for key in ("revision", "revision_id", "capture_revision"):
             if key in raw and raw[key] not in (None, ""):
                 normalized[key] = raw[key]

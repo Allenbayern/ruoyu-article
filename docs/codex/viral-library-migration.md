@@ -91,6 +91,14 @@ Codex 的调用顺序由 `.agents/skills/ruoyu-viral-library/SKILL.md` 固定：
 - `research_only`：只有全文/结构或其他不足以判定爆文的材料，只能作结构参考或反例。
 - 蒸馏输出仍是候选观察，不会因为频次出现就自动变成 canonical 写作规则。
 - 任何新文章的片名、人物、档期、票房和其他当前事实，都必须重新核验权威来源；旧文章正文只能提供结构研究材料。
+- **凭证占位符要看得见**（2026-09-17 实测）：本机 14 张 `qualified_viral` 卡的
+  `client_evidence.sha256` 是 64 个 0——契约只校验格式，所以"自称合格"一直没人复核。
+  现在 `case_contract.case_card_warnings` 把它标成 warning：legacy 索引
+  （`scripts/codex_viral_library_index.py`）逐卡输出 `warnings`/`warning_codes` 并在包级给出
+  `warning_counts`、`usable_with_warnings_count`；新管线的 package 组装会把降级原因
+  随 sample 落盘，卡片信封写进 `case_contract.warnings`。**warning 不改变资格判定**
+  （收紧成硬失败会把现有唯一一批合格语料清零）；要修的是凭证本身——重新取证回填，
+  该决定属于 controller。
 
 ## 这次没有自动做的事情
 

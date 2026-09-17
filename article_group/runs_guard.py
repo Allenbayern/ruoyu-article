@@ -102,6 +102,16 @@ def refresh() -> None:
     _PROBE.clear()
 
 
+def cli_refusal(exc: BaseException) -> int:
+    """CLI 的统一封存拒绝口径：一句人话 + 退出码 2（与五个写证据入口一致）。
+
+    用法：`except SealedWriteBlocked as exc: return cli_refusal(exc)`
+    ——不要让人从 traceback 里猜"为什么写不进去"。
+    """
+    print(str(exc), file=sys.stderr)
+    return 2
+
+
 def _remedies() -> str:
     return (
         "要改封存证据，请走留底通道："
@@ -293,6 +303,7 @@ def sealed_write_token(
 __all__ = [
     "SEALED_NAME",
     "SealedWriteBlocked",
+    "cli_refusal",
     "install",
     "is_installed",
     "refresh",

@@ -678,6 +678,8 @@ def _library_roots_match(supplied_root: Path, declared_root: object) -> bool:
         return supplied_root.resolve(strict=False) == Path(declared_root).expanduser().resolve(
             strict=False
         )
+    except _runs_guard.SealedWriteBlocked:
+        raise  # 封存 run：不要在"写失败"里糊掉，交给 main 说清楚
     except (OSError, RuntimeError, TypeError, ValueError):
         return False
 
@@ -874,7 +876,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "created_at": datetime.now().astimezone().isoformat(),
     }
     consumer_manifest_path = output_root / CONSUMER_MANIFEST_NAME
-    if not _write_consumer_manifest(consumer_manifest_path, payload):
+    try:
+        written = _write_consumer_manifest(consumer_manifest_path, payload)
+    except _runs_guard.SealedWriteBlocked as exc:
+        return _runs_guard.cli_refusal(exc)
+    if not written:
         print("consumer_manifest_write_failed")
         return 2
     print(

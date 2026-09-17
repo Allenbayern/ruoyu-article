@@ -37,7 +37,8 @@
         "qualification_evidence":{"type":"object"},
         "revision":{"type":"integer","minimum":1},
         "revision_id":{"type":["integer","string"],"minLength":1},
-        "capture_revision":{"type":["integer","string"],"minLength":1}
+        "capture_revision":{"type":["integer","string"],"minLength":1},
+        "warnings":{"type":"array","items":{"type":"object"}}
       }
     }
   }

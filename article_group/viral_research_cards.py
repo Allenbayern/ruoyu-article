@@ -68,15 +68,21 @@ def _normalized_ref(reference: Any, *, run_root: Path, field: str) -> str:
 
 
 def _validate_case_contract(payload: Mapping[str, Any]) -> dict[str, Any]:
+    warnings: list[dict[str, Any]] = []
     try:
-        status = validate_case_card(dict(payload))
+        # warning 收集器：占位符凭证一类"格式合法、语义为空"的缺陷只上报、不阻断
+        # （见 case_contract.case_card_warnings）；随卡片信封落盘才看得见。
+        status = validate_case_card(dict(payload), warnings=warnings)
     except CaseContractError as exc:
         raise _error("case_contract_failed", str(exc)) from exc
-    return {
+    result: dict[str, Any] = {
         "status": "validated",
         "qualification_status": status,
         "sample_id": str(payload.get("sample_id") or ""),
     }
+    if warnings:
+        result["warnings"] = warnings
+    return result
 
 
 def build_case_card(

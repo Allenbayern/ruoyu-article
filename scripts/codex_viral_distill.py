@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from article_group.runs_guard import SealedWriteBlocked, cli_refusal
 from article_group.viral_research_distill import (  # noqa: E402
     ViralResearchDistillError,
     finalize_distillation,
@@ -91,6 +92,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ViralResearchDistillError as exc:
         print(exc.code)
         return 2
+    except SealedWriteBlocked as exc:  # 封存 run：一句人话 + 退出码 2，不给 traceback
+        return cli_refusal(exc)
     except (OSError, TypeError, ValueError):
         print("distill_failed")
         return 2

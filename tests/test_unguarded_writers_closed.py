@@ -27,7 +27,7 @@ from article_group.run_state import seal, seal_articles
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def _sealed_run(tmp_path: Path) -> Path:
+def _sealed_run(tmp_path: Path, *, with_capture: bool = False) -> Path:
     root = tmp_path / "daily-950"
     (root / "delivery" / "art-001").mkdir(parents=True)
     (root / "review" / "art-001").mkdir(parents=True)
@@ -40,6 +40,13 @@ def _sealed_run(tmp_path: Path) -> Path:
         "articles": [{"article_id": "art-001", "gate_status": {}}],
         "publication_authorization": "not_authorized",
     }, ensure_ascii=False), encoding="utf-8")
+    if with_capture:  # 必须在封存**之前**写（封存后连它自己也写不进去）
+        (root / "capture-manifest.json").write_text(json.dumps({
+            "run_id": "run-sealed-950",
+            "created_at": "2026-09-17T09:00:00+08:00",
+            "source_lanes": ["wechat_long_form"],
+            "samples": [],
+        }, ensure_ascii=False), encoding="utf-8")
     seal(root, identity="owner", articles=seal_articles(root))
     return root
 
@@ -120,3 +127,33 @@ def test_step_log_markdown_goes_through_the_write_channel(tmp_path: Path):
     entry = read_changelog(root)[-1]
     assert entry["reason"] == "close_out:step_log_markdown"
     assert entry["forced"] is True
+
+
+# ---- 新管线 CLI：封存拒绝也要"退出码 2 + 一句人话"，不给 traceback ----
+
+
+def _sealed_run_with_capture(tmp_path: Path) -> tuple[Path, Path]:
+    root = _sealed_run(tmp_path, with_capture=True)
+    return root, root / "capture-manifest.json"
+
+
+def test_viral_research_package_cli_refuses_sealed_run_with_a_message(tmp_path: Path):
+    root, capture = _sealed_run_with_capture(tmp_path)
+    result = _run(["scripts/codex_viral_research_package.py",
+                   "--capture-manifest", str(capture), "--run-root", str(root),
+                   "--output-root", str(root / "viral-research" / "package")])
+    assert result.returncode == 2
+    assert "封存" in result.stderr and "--force" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert not (root / "viral-research").exists()
+
+
+def test_viral_library_index_cli_refuses_sealed_output(tmp_path: Path):
+    root, _capture = _sealed_run_with_capture(tmp_path)
+    result = _run(["scripts/codex_viral_library_index.py",
+                   "--project-root", str(tmp_path), "--evidence-run", "runs/2026-09-16/daily-008",
+                   "--output", str(root / "review" / "index.json")])
+    assert result.returncode == 2
+    assert "封存" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert not (root / "review" / "index.json").exists()

@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from article_group.runs_guard import SealedWriteBlocked, cli_refusal
 from article_group.viral_research_cards import (  # noqa: E402
     ViralResearchCardError,
     attach_client_evidence,
@@ -47,6 +48,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ViralResearchCardError as exc:
         print(str(exc).split(":", 1)[0])
         return 2
+    except SealedWriteBlocked as exc:  # 封存 run：一句人话 + 退出码 2，不给 traceback
+        return cli_refusal(exc)
     except (OSError, TypeError, ValueError):
         print("attachment_failed")
         return 2

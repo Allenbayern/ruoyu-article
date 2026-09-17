@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterable
@@ -22,6 +23,10 @@ try:  # Support both package imports and ``python scripts/...`` execution.
     from .codex_viral_library_reader import read_library
 except ImportError:  # pragma: no cover - exercised by direct script execution.
     from codex_viral_library_reader import read_library  # type: ignore[no-redef]
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from article_group.case_contract import case_card_warnings  # noqa: E402
+from article_group.runs_guard import SealedWriteBlocked, cli_refusal  # noqa: E402
 
 QUALIFICATION_STATUSES = (
     "qualified_viral",
@@ -141,6 +146,15 @@ def _status_counts(records: list[dict[str, Any]]) -> dict[str, int]:
     return {status: counts[status] for status in sorted(counts)}
 
 
+def _warning_counts(records: list[dict[str, Any]]) -> dict[str, int]:
+    """按 warning code 计数（卡片自称合格、凭证却是占位符之类的缺陷要能一眼数出来）。"""
+    counts: Counter[str] = Counter()
+    for record in records:
+        for code in record.get("warning_codes", []) or []:
+            counts[str(code)] += 1
+    return {code: counts[code] for code in sorted(counts)}
+
+
 def _wechat_cards(root: Path, run_root: Path) -> dict[str, Any]:
     pack_dir = run_root / "wechat-viral"
     cards_dir = pack_dir / "cards"
@@ -159,23 +173,31 @@ def _wechat_cards(root: Path, run_root: Path) -> dict[str, Any]:
             performance_ref = data.get("performance_evidence_ref")
             snapshot = _resolve_ref(root, snapshot_ref, (run_root, pack_dir))
             performance = _resolve_ref(root, performance_ref, (run_root, pack_dir))
-            card_records.append(
-                {
-                    "sample_id": data.get("sample_id", path.stem),
-                    "qualification_status": status,
-                    "card_ref": _relative(root, path),
-                    "snapshot_ref": _strip_ref(snapshot_ref),
-                    "snapshot_present": snapshot is not None,
-                    "performance_evidence_ref": _strip_ref(performance_ref),
-                    "performance_evidence_present": performance is not None,
-                    "technique_observation_count": len(data.get("technique_observations", []))
-                    if isinstance(data.get("technique_observations", []), list)
-                    else 0,
-                    "usable_for_positive_patterns": status == "qualified_viral"
-                    and snapshot is not None
-                    and performance is not None,
-                }
-            )
+            # 卡片自称的 qualification_status 不算证据（AGENTS.md §7）：这里额外查
+            # "格式合法但语义为空"的凭证（全零/全 f 的 SHA-256 等）。warning 不改判定，
+            # 只让缺陷在索引里看得见——否则自称合格就是最后一句没人复核的话。
+            warnings = case_card_warnings(data)
+            record = {
+                "sample_id": data.get("sample_id", path.stem),
+                "qualification_status": status,
+                "card_ref": _relative(root, path),
+                "snapshot_ref": _strip_ref(snapshot_ref),
+                "snapshot_present": snapshot is not None,
+                "performance_evidence_ref": _strip_ref(performance_ref),
+                "performance_evidence_present": performance is not None,
+                "technique_observation_count": len(data.get("technique_observations", []))
+                if isinstance(data.get("technique_observations", []), list)
+                else 0,
+                "usable_for_positive_patterns": status == "qualified_viral"
+                and snapshot is not None
+                and performance is not None,
+            }
+            if warnings:
+                record["warnings"] = warnings
+                record["warning_codes"] = sorted(
+                    {str(item.get("code", "unknown")) for item in warnings}
+                )
+            card_records.append(record)
 
     missing_evidence = [
         {
@@ -231,6 +253,12 @@ def _wechat_cards(root: Path, run_root: Path) -> dict[str, Any]:
         "qualified_usable_count": sum(
             record["usable_for_positive_patterns"] for record in card_records
         ),
+        "usable_with_warnings_count": sum(
+            1
+            for record in card_records
+            if record["usable_for_positive_patterns"] and record.get("warnings")
+        ),
+        "warning_counts": _warning_counts(card_records),
         "qualified_missing_evidence": missing_evidence,
         "fulltext_manifest": {
             "path": _relative(root, manifest_path),
@@ -704,6 +732,8 @@ def main(argv: list[str] | None = None) -> int:
             ):
                 raise RuntimeError("INDEX_OUTPUT_EXTERNAL_LIBRARY_CONFLICT")
             _write_and_readback(args.output, payload, result)
+        except SealedWriteBlocked as exc:  # 封存 run：先说清为什么，再退出码 2
+            return cli_refusal(exc)
         except RuntimeError:
             print("output_readback_failed")
             return 2
