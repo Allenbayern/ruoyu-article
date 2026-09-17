@@ -1,0 +1,17 @@
+{
+  "schema_version": "article-rule-compliance-v1",
+  "article_id": "art-001",
+  "article_mode": "reported_feature",
+  "mode_check": "PASS",
+  "material_layer_check": "PASS",
+  "official_boundary_check": "PASS",
+  "source_stripped_readability": "PENDING",
+  "reviewer_id": "",
+  "reviewer_role": "human_editor",
+  "reviewed_artifact_sha256": "6a526892ef83892b30bc42fb40f6bb7820f7c9541ada0cf0d5b4d8b626e9398f",
+  "reviewed_source_stripped_sha256": "6a526892ef83892b30bc42fb40f6bb7820f7c9541ada0cf0d5b4d8b626e9398f",
+  "publication_authorization": "not_authorized",
+  "source_stripped_path": "review/art-001/source-stripped.md",
+  "review_scope": "source_stripped_readability",
+  "decision": "PENDING"
+}

@@ -1,0 +1,36 @@
+{
+  "schema_version": "ledger-coverage-precheck-v1",
+  "aid": "art-001",
+  "run_root": "runs/2026-09-16/daily-008",
+  "ledger_entries": 34,
+  "paragraphs": 13,
+  "quote_unmatched": [
+    {
+      "quote": "讲故事",
+      "issue": "引号内容未在账本逐字命中"
+    }
+  ],
+  "llm_gaps": [
+    {
+      "location": "12",
+      "quote": "有一篇复盘文章的标题就是结论",
+      "issue": "缺复盘文章标题出处",
+      "suggestion": "补账本条目 或 删改"
+    },
+    {
+      "location": "18",
+      "quote": "十几年过去",
+      "issue": "缺《让子弹飞》上映时间",
+      "suggestion": "补账本条目 或 删改"
+    },
+    {
+      "location": "18",
+      "quote": "《让子弹飞》的台词还在被引用",
+      "issue": "缺台词被引用证据",
+      "suggestion": "补账本条目 或 删改"
+    }
+  ],
+  "llm_status": "ok",
+  "note": "预检只报缺口不阻断；判断句/作者观点不计硬事实；L2 复核仍为最终口径。",
+  "publication_authorization": "not_authorized"
+}

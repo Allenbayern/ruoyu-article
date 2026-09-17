@@ -1,0 +1,64 @@
+{
+  "artifact_type": "markdown",
+  "article_count": 1,
+  "articles": [
+    {
+      "index": 1,
+      "title": "《让子弹飞》之后，姜文为什么一部比一部拧巴",
+      "char_count": 2629,
+      "hits": [
+        {
+          "severity": "error",
+          "rule": "source:据…报道",
+          "reason": "来源自证：'据…报道'句式",
+          "match": "据潮新闻的报道"
+        },
+        {
+          "severity": "error",
+          "rule": "source:媒体+稿件词",
+          "reason": "来源自证：点名媒体并标注通稿/奖单等稿件形态",
+          "match": "据潮新闻的报道"
+        },
+        {
+          "severity": "info",
+          "rule": "date:release-claim",
+          "reason": "普通上映/定档日期断言：只需核对当前日期来源，不要求撤档史核验",
+          "match": "7月18日上映"
+        }
+      ],
+      "hit_count": 3,
+      "error_count": 2,
+      "opening_hook": {
+        "status": "ok",
+        "reason": "开头含3秒钩子（事实锚点/悬念/反差）",
+        "first_40": "为什么《一步之遥》《邪不压正》都达不到《让子弹飞》的高度？"
+      },
+      "title_gap": {
+        "status": "ok",
+        "reason": "标题含缺口信号: ['为什么|怎么|到底|究竟|还能|终于|还在|变了|这次|居然|竟然|意外|反转|难得|稀罕']",
+        "title": "《让子弹飞》之后，姜文为什么一部比一部拧巴"
+      },
+      "fact_density": {
+        "status": "ok",
+        "reason": "事实锚点段落 20/26 (≥1/3)",
+        "anchored_paragraphs": 20,
+        "total_paragraphs": 26
+      },
+      "closing_interaction": {
+        "status": "info",
+        "reason": "末段无读者互动问句（候选观察⑦，research_only 建议）：可考虑以'你会…吗''你还会…吗'类读者问句收尾提评论率——不违反事实边界时执行；结论性收尾可不改",
+        "last_40": "己——宁可让你看不懂，也不肯给你一份标准答案。这样的导演，观众会生气，但忘不掉。"
+      },
+      "hook_declaration": {
+        "status": "ok",
+        "reason": "最强钩子已声明且正文可锚定（未匹配: 无）",
+        "hook": "让子弹飞之后，姜文的电影一部比一部拧巴"
+      }
+    }
+  ],
+  "global_hits": [],
+  "pass": false,
+  "error_total": 2,
+  "artifact_path": "/tmp/v2400.md",
+  "artifact_sha256": "dac29903dff43c878e79d74c94bf891942fa9bdd3f66ed21486e1912b21f878a"
+}

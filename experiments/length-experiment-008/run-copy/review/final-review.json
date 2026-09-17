@@ -1,0 +1,41 @@
+{
+  "run_id": "2026-09-16/daily-008",
+  "batch_dir": "daily-008",
+  "verdict": "PENDING",
+  "reason": "存在存疑项，需人工判定",
+  "evidence_gaps": [],
+  "human_judgment_items": [
+    "art-001: human_readability_attestation=pending (pending)",
+    "art-002: human_readability_attestation=pending (pending)",
+    "art-001: controller_acceptance=pending",
+    "art-001: delivery_state=pending_independent_review",
+    "art-001: human_editor_attestation=pending_or_missing",
+    "art-001: human_attestation_missing",
+    "art-002: controller_acceptance=pending",
+    "art-002: delivery_state=pending_independent_review",
+    "art-002: human_editor_attestation=pending_or_missing",
+    "art-002: human_attestation_missing"
+  ],
+  "adjudicated_waivers": [],
+  "publication_authorization": "not_authorized",
+  "review_surface": "markdown_codex",
+  "content_result": "PASS",
+  "evidence_result": "PASS",
+  "governance_result": "PENDING",
+  "article_rule_compliance": "PENDING",
+  "final_review_schema": "final-review-v1",
+  "final_review_path": "review/final-review.json",
+  "batch_sha256": "73cc62b3514e61e48a630b1794da6dd33c6047547b7a5078e83d0355f82686fe",
+  "reviewed_artifacts": [
+    {
+      "article_id": "art-001",
+      "path": "delivery/art-001/delivery.md",
+      "sha256": "6a526892ef83892b30bc42fb40f6bb7820f7c9541ada0cf0d5b4d8b626e9398f"
+    },
+    {
+      "article_id": "art-002",
+      "path": "delivery/art-002/delivery.md",
+      "sha256": "4f27395c8ab162bfa134f6afaf4dc2c1bfbcd0520831315dcbad975769269433"
+    }
+  ]
+}

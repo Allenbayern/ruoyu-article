@@ -1,0 +1,42 @@
+{
+  "schema_version": "wechat-render-v1",
+  "run_id": "2026-09-16/daily-008",
+  "theme": "default",
+  "style": "native",
+  "generated_at": "2026-09-17T00:06:27+08:00",
+  "articles": [
+    {
+      "article_id": "art-001",
+      "title": "《让子弹飞》之后，姜文为什么一部比一部拧巴",
+      "source_path": "delivery/art-001/delivery.md",
+      "source_sha256": "6a526892ef83892b30bc42fb40f6bb7820f7c9541ada0cf0d5b4d8b626e9398f",
+      "fragment_path": "wechat/art-001.wx.html",
+      "fragment_sha256": "947b40f52268fd99398894862ebb3c58a47bd8945337eb356a73d56b6dc1c71c",
+      "copy_page_path": "wechat/art-001.html",
+      "inline_style_count": 19,
+      "cjk_chars": 1032,
+      "style": "native",
+      "dropped_title": true,
+      "renderer_cmd": "docker run --rm -v /tmp/wxrender-1oihi4xw:/w -w /w node:22-alpine npx --yes @wenyan-md/cli render -f article.md -t default"
+    },
+    {
+      "article_id": "art-002",
+      "title": "《还珠格格》第三部为什么像另一部剧",
+      "source_path": "delivery/art-002/delivery.md",
+      "source_sha256": "4f27395c8ab162bfa134f6afaf4dc2c1bfbcd0520831315dcbad975769269433",
+      "fragment_path": "wechat/art-002.wx.html",
+      "fragment_sha256": "659af5dc03617ffd4d0c32427b4e1aa40a9339039e168cca32cdfdf97aca84bd",
+      "copy_page_path": "wechat/art-002.html",
+      "inline_style_count": 17,
+      "cjk_chars": 935,
+      "style": "native",
+      "dropped_title": true,
+      "renderer_cmd": "docker run --rm -v /tmp/wxrender-otvc8kg2:/w -w /w node:22-alpine npx --yes @wenyan-md/cli render -f article.md -t default"
+    }
+  ],
+  "status": "ok",
+  "reason": "",
+  "publication_authorization": "not_authorized",
+  "advisory": true,
+  "index_path": "wechat/index.html"
+}

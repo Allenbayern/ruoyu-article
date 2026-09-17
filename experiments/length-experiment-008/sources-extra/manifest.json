@@ -1,0 +1,106 @@
+{
+  "schema_version": "supplementary-sources-v1",
+  "run_id": "2026-09-16/daily-008",
+  "experiment": "material-gap-008",
+  "note": "为验证《你行！你上！》题的材料缺口能否补上而实抓的补充来源。全部为公开页面，无登录态；仅作实验用，非交付稿。",
+  "sources": [
+    {
+      "source_id": "extra-e01-chaoxin",
+      "url": "https://tidenews.com.cn/news.html?id=3182108",
+      "title": "姜文新片《你行！你上！》，你真的看懂了吗？",
+      "publisher": "潮新闻（记者 陆芳）",
+      "published_at": "2025-07-19",
+      "source_role": "media_report",
+      "cjk_chars": 2028,
+      "independence": "primary_interview",
+      "why": "署名记者现场稿，含姜文三处独有原话（谈郎爸争议、谈塔吊段落、谈选故事）与摄制数据（镜头数、专家团、真弹、海选）",
+      "usable_items_est": 15
+    },
+    {
+      "source_id": "extra-e02-china-qianjiang",
+      "url": "https://news.china.com/socialgd/10000169/20250719/48629326.html",
+      "publisher": "中华网（关键词来源：钱江晚报）",
+      "published_at": "2025-07-19",
+      "source_role": "media_report",
+      "cjk_chars": 3115,
+      "independence": "syndicated_rewrite",
+      "why": "与 e01 事实点全重合（阵容名单/塔吊黄河/老柴屋顶/跟斗救场/七年第七部），仅改写措辞；逐句重合 0% 但事实点重合 ~100%——**不是独立来源**",
+      "usable_items_est": 0
+    },
+    {
+      "source_id": "extra-e05-china3g",
+      "url": "https://3g.china.com/act/ent/11005281/20250720/48630710.html",
+      "publisher": "中国网（3g.china.com）",
+      "published_at": "2025-07-20",
+      "source_role": "media_report",
+      "cjk_chars": 860,
+      "independence": "syndicated_fragment",
+      "why": "同为 e01 系转载的片段（阵容名单/塔吊黄河/饺子皮），无新增事实点",
+      "usable_items_est": 0
+    },
+    {
+      "source_id": "extra-e06-ifeng",
+      "url": "https://i.ifeng.com/c/8lDN1H2gBob",
+      "publisher": "凤凰网",
+      "published_at": "2025-07-23",
+      "source_role": "commentary",
+      "cjk_chars": 2810,
+      "independence": "independent_angle",
+      "why": "自撰角度（饺子/醋解读 + 郎朗首映原话 + 票房与亏损数字），未复制 e01 的阵容/摄制数据；与 e01 只共有\"塔吊黄河\"一个公共场面",
+      "usable_items_est": 6
+    },
+    {
+      "source_id": "extra-e04-163-loss",
+      "url": "https://www.163.com/dy/article/K5ETCRTU0517AHPJ.html",
+      "publisher": "网易号（自媒体）",
+      "published_at": "2025-07-27",
+      "source_role": "commentary",
+      "cjk_chars": 4070,
+      "independence": "single_source_data",
+      "why": "含逐日票房与排片/上座率数据（首日1700万、次日2071万、上座率2.2%、排片15%→1.1%），单一自媒体来源，须标注并尽量用官方口径复核",
+      "usable_items_est": 5
+    },
+    {
+      "source_id": "extra-w01-wikipedia-zidan",
+      "url": "https://zh.wikipedia.org/wiki/让子弹飞",
+      "publisher": "中文维基百科",
+      "source_role": "data_reference",
+      "independence": "reference_table",
+      "why": "同口径字段：片长132分钟、预算超1.5亿、票房6.59亿人民币（中国大陆）",
+      "usable_items_est": 3
+    },
+    {
+      "source_id": "extra-w02-wikipedia-yibuzhiyao",
+      "url": "https://zh.wikipedia.org/wiki/一步之遥",
+      "publisher": "中文维基百科",
+      "source_role": "data_reference",
+      "independence": "reference_table",
+      "why": "片长140分钟、预算3亿、票房5.147亿（中国）、上映2014-12-18、全球首映礼2828人观看且反响不佳、首周不满后加映2D版",
+      "usable_items_est": 5
+    },
+    {
+      "source_id": "extra-w03-wikipedia-xiebuyazheng",
+      "url": "https://zh.wikipedia.org/wiki/邪不压正",
+      "publisher": "中文维基百科",
+      "source_role": "data_reference",
+      "independence": "reference_table",
+      "why": "片长137分钟、预算3–4亿、票房5.82亿、豆瓣7.0（截至2024-08-08）",
+      "usable_items_est": 4
+    },
+    {
+      "source_id": "extra-w04-wikipedia-nixing",
+      "url": "https://zh.wikipedia.org/wiki/你行！你上！",
+      "publisher": "中文维基百科",
+      "source_role": "data_reference",
+      "independence": "reference_table",
+      "why": "片长144分钟、预算2.8亿、票房9196万、2025-07-18 中国上映",
+      "usable_items_est": 4
+    }
+  ],
+  "rejected": [
+    {
+      "url": "https://zhuanlan.zhihu.com/p/1930641824332125542",
+      "reason": "知乎专栏 403，未捕获；如需其\"六部电影口碑奖项票房全纪录\"须换可捕获端点"
+    }
+  ]
+}
