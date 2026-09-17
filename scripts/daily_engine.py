@@ -23,11 +23,10 @@ from article_group.title_pack_fidelity import evaluate_title_pack
 from article_group.topic_preflight import evaluate as evaluate_five_questions
 
 def _is_run_root(root: Path) -> bool:
-    """只把 `runs/<date>/<run-id>` 形态的根当 run（历史脚本也用同一批 helper）。"""
-    parts = Path(root).resolve().parts
-    if "runs" not in parts:
-        return False
-    return len(parts[parts.index("runs") + 1:]) == 2
+    """只把 `runs/<date>/<run-id>` 形态的根当 run（判据与 run_seal 同一处实现）。"""
+    from article_group.run_seal import is_run_root
+
+    return is_run_root(root)
 
 
 def _write_json_evidence(target: Path, value: object, *, reason: str, run_root: Path | None = None) -> None:

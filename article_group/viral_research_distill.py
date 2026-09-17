@@ -478,4 +478,10 @@ def finalize_distillation(
     }
     _validate_report_schema(report)
     _write_new(output, report)
+    from article_group.evidence_write import anchor_artifact
+
+    anchor_artifact(  # new-only（存在即拒）：账本只记一条产物级锚点（报告本身在 run 内才记）
+        output, reason="viral_research:distill",
+        digest=_sha256_file(output),
+    )
     return report

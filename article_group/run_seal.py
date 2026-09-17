@@ -57,6 +57,30 @@ def manifest_path(run_dir: str | Path) -> Path:
     return Path(run_dir) / MANIFEST_NAME
 
 
+def is_run_root(path: str | Path) -> bool:
+    """`runs/<date>/<run-id>` 形态才算 run 根（历史脚本也常写 runs/ 下的日目录）。"""
+    parts = Path(path).resolve().parts
+    if "runs" not in parts:
+        return False
+    return len(parts[parts.index("runs") + 1:]) == 2
+
+
+def find_run_root(path: str | Path) -> Path | None:
+    """从一个产物路径向上找它所属的 run 根；不属于任何 run 时返回 None。
+
+    用于"产物自带账 + run 级只记一条锚点"的写法：新管线的 package/cards/distill
+    是 new-only、自带逐文件 SHA-256，不需要 before-image，但 run 的账本里要有一条
+    锚点，否则封存校验会把它们全算成"无账改动"。
+    """
+    candidate = Path(path).expanduser()
+    if not candidate.is_absolute():
+        candidate = candidate.resolve()
+    for parent in (candidate, *candidate.parents):
+        if is_run_root(parent):
+            return parent
+    return None
+
+
 def _sha256_bytes(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
@@ -382,6 +406,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 __all__ = [
     "APPEND_ONLY_NAMES",
+    "find_run_root",
+    "is_run_root",
     "EXCLUDED_REASONS",
     "EXIT_DRIFTED",
     "EXIT_INTACT",

@@ -41,6 +41,12 @@ already closed and published run, with no backup.
   log), `delivery` (plain copy), `content_delivery` (handoff record), and
   `daily_engine` (its spec helpers are wrapped); `--force` is passed down to the
   subprocess writers so a forced close-out is not half-effective.
+- **Create-only artifacts get an anchor, not a before-image**: the viral-research
+  package / card batch / distillation report are new-only and carry their own
+  per-file SHA-256 (`integrity.json` / `manifest.json`), so there is nothing to
+  snapshot; they append one artifact-level line to the run's changelog via
+  `evidence_write.anchor_artifact`, which keeps `run_seal` verification able to
+  tell "ledgered" from "silent".
 - **Measure real operations instead of eyeballing them**: `python
   scripts/with_runs_guard.py -- <command…>` fingerprints `runs/` before and after
   and exits 3 on any unapproved change (`scripts/runs_fingerprint.py print|save|compare`

@@ -194,6 +194,10 @@ daily-008 上重跑，覆盖了 `review/art-001/ledger-coverage-precheck.json`
    `scripts/record_controller_acceptance.py`（人工签字入口）、`codex_review`（L2 记录与
    评审日志）、`delivery`（纯文本交付副本）、`content_delivery`（交付记录）、
    `daily_engine`（引擎产物，spec 的裸写被统一包进通道）。以上都带 `--force`。
+   **只创建、不覆盖的产物**（新管线的 package / cards / distill 报告）另有口径：
+   它们自带逐文件 SHA-256（`integrity.json` / `manifest.json`），没有旧字节可留底，
+   所以只往 run 账本记**一条产物级锚点**（`evidence_write.anchor_artifact`）——
+   账本回答"这批东西谁/何时/以什么理由落进来"，文件级可验证性由产物自己保证。
    仍绕过通道、只被运行时护栏兜住的写在
    `tests/test_runs_write_coverage.py` 的 `PENDING` 里逐条列名——那份名单过期或
    新写手未分类，测试就 fail。

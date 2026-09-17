@@ -114,6 +114,12 @@ Codex 的调用顺序由 `.agents/skills/ruoyu-viral-library/SKILL.md` 固定：
 - 将经过筛选的 `clean.md`、文章卡、performance evidence 和 manifest 作为受控项目资产提交；或
 - 保留正文/指标在独立只读归档，项目只提交不含正文的索引和哈希。
 
+产物账本归属（2026-09-17 定）：package / cards / distill 报告是 **new-only** 产物，
+自带逐文件 SHA-256（`manifest.json` / `integrity.json`，`validate_package_root` 可独立重算），
+因此**不留 before-image**；但产物落在 run 内时，run 的 `evidence-changelog.jsonl` 会记一条
+产物级锚点（`evidence_write.anchor_artifact`），封存校验据此区分"有账"与"无账"。
+产物被复制/迁移时，可验证性跟着它自己走。
+
 不得把整个 `runs/` 目录无差别加入仓库，也不得用旧库摘要代替真实全文或文章级表现证据。完成跨机器迁移的验收条件是：每个被声明为 `qualified_viral` 的样本都能解析 card、正文快照、表现证据和哈希；缺失项必须明确显示为 `unavailable`。
 
 ## 证据声明

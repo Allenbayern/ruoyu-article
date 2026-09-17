@@ -190,6 +190,13 @@ def write_case_cards(
             json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+        from article_group.evidence_write import anchor_artifact
+
+        anchor_artifact(  # new-only、自带 manifest 哈希：账本只记一条产物级锚点
+            output, reason="viral_research:cards",
+            digest=hashlib.sha256((output / "manifest.json").read_bytes()).hexdigest(),
+            run_root=run_root,
+        )
         return manifest
     except Exception:
         for path in output.glob("*.json"):

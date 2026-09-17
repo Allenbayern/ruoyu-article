@@ -180,6 +180,38 @@ def write_evidence_json(
     )
 
 
+def anchor_artifact(
+    artifact: str | Path,
+    *,
+    reason: str,
+    digest: str = "",
+    run_root: str | Path | None = None,
+    author: str = "agent",
+) -> dict[str, Any] | None:
+    """给"只创建、不覆盖"的产物在 run 账本里记**一条产物级锚点**。
+
+    这类产物（如 viral-research 的 package/cards/distill）自带逐文件 SHA-256、
+    存在即拒覆盖，所以**没有旧字节可留底**——留底那一半没有意义；但 run 的账本里
+    需要一条记录，否则封存校验（`run_seal.verify`）会把整批新增文件算成"无账改动"。
+    账本的粒度是**产物根**，不是每个文件（一个 package 可能上百个文件）。
+
+    产物不属于任何 run 时静默返回 None（产物账本随产物走：见它的 integrity/manifest）。
+    """
+    from article_group.run_seal import find_run_root
+
+    root = Path(run_root).resolve() if run_root is not None else find_run_root(artifact)
+    if root is None:
+        return None
+    target = Path(artifact)
+    try:
+        relative = target.resolve().relative_to(root).as_posix()
+    except ValueError:  # pragma: no cover - 调用方给了不属于该 run 的路径
+        relative = str(target)
+    return append_changelog(
+        root, path=relative, reason=reason, author=author, existed=False, after_sha256=digest,
+    )
+
+
 def read_changelog(run_dir: str | Path) -> list[dict[str, Any]]:
     path = changelog_path(run_dir)
     if not path.is_file():
@@ -235,6 +267,7 @@ def restore(
 
 __all__ = [
     "SCHEMA_VERSION",
+    "anchor_artifact",
     "CHANGELOG_NAME",
     "BEFORE_DIR",
     "RunSealedError",

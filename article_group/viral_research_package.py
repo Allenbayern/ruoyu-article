@@ -415,6 +415,11 @@ def build_package(
         json.dumps(integrity, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    from article_group.evidence_write import anchor_artifact
+
+    # 产物自带 integrity.json 逐文件哈希，且 new-only 无旧字节可留：run 账本只记一条锚点。
+    anchor_artifact(output, reason="viral_research:package",
+                    digest=_sha256_file(output / INTEGRITY_NAME), run_root=root)
     return manifest
 
 
