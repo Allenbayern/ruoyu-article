@@ -208,6 +208,13 @@ daily-008 上重跑，覆盖了 `review/art-001/ledger-coverage-precheck.json`
    覆盖范围是**进程内**：编辑器、`rsync`、`git checkout`、没 import 本包的脚本不在其内
    （那属于文件系统只读与全量哈希清单）。能写 run 的模块清单与"仍绕过留底通道"的欠账
    在 `tests/test_runs_write_coverage.py` 里维护——清单过期或新写手未分类，测试就 fail。
+6. **封存 = 全量清单 + 可验证**（2026-09-17 补）。收尾写 `SEALED` 时同时写
+   `SEALED.manifest.json`：逐文件 size+sha256，标记自身的字节哈希也一并记入。校验一条命令：
+   `python -m article_group.run_seal --run-root <run>` —— 0 完好 / 2 有漂移 /
+   3 无法验证（缺清单，例如封存时还没有本机制的 daily-008）。漂移会与
+   `evidence-changelog.jsonl` 对照，分出**有账的 force 改动**与**无账的可疑改动**；
+   append-only 文件按前缀校验（追加放行、重写算改动）。老 run 可用 `--backfill` 补录清单，
+   但补录只能证明"补录之后未被改动"，不能证明封存时刻的内容——它会在清单里写明这一点。
 
 配套的两条流水证据，每期都会自动生成，复盘时先看它们：
 

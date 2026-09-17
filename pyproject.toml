@@ -5,6 +5,9 @@ description = "Offline controlled-production gates for the Ruoyu film article gr
 requires-python = ">=3.14"
 dependencies = [
     "trafilatura==2.1.0",
+    # 运行时依赖，不是 dev：article_group/__init__ 经 editorial_pipeline_v3 在导入期就要它，
+    # 没有它连 `import article_group` 都会失败（tests/test_runtime_dependencies.py 守住这条）。
+    "jsonschema>=4.26.0",
 ]
 
 [tool.pytest.ini_options]
@@ -13,6 +16,5 @@ testpaths = ["tests"]
 
 [dependency-groups]
 dev = [
-    "jsonschema>=4.26.0",
     "pyyaml>=6.0.3",
 ]

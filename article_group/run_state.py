@@ -48,7 +48,12 @@ def seal(
     ref: str = "",
     articles: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
-    """写入 SEALED 标记（收尾的最后一步）；幂等：已封存则返回原记录。"""
+    """写入 SEALED 标记（收尾的最后一步）；幂等：已封存则返回原记录。
+
+    同时写下**封存全量清单**（`SEALED.manifest.json`，见 `article_group.run_seal`）：
+    逐文件 size+sha256，并把即将写下的 SEALED 字节哈希一并记入。顺序是先清单后标记，
+    这样清单覆盖其余全部文件、标记自身由 `sealed_marker_sha256` 覆盖。
+    """
     root = Path(run_dir)
     existing = sealed_record(root)
     if existing:
@@ -64,11 +69,24 @@ def seal(
         "publication_authorization": "not_authorized",
     }
     path = sealed_path(root)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    marker_text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+
+    from article_group import run_seal
+
+    manifest = run_seal.build_manifest(
+        root,
+        sealed_at=str(payload["sealed_at"]),
+        sealed_by=identity,
+        seal_ref=str(payload["seal_ref"]),
+        sealed_marker_sha256=hashlib.sha256(marker_text.encode("utf-8")).hexdigest(),
+    )
+    run_seal.write_manifest(root, manifest)  # 此刻还没有 SEALED，护栏不会拦
+    path.write_text(marker_text, encoding="utf-8")
+
     from article_group import runs_guard
 
     runs_guard.refresh()  # 护栏的探测缓存立刻改判：本进程后续写入必须被拦
-    return {**payload, "status": "sealed"}
+    return {**payload, "status": "sealed", "manifest": run_seal.MANIFEST_NAME}
 
 
 def unseal(run_dir: str | Path, *, reason: str, identity: str) -> dict[str, Any]:

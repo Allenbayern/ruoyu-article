@@ -45,6 +45,14 @@ already closed and published run, with no backup.
 - **Reopening a sealed run needs an explicit controller instruction** and uses
   `unseal` (renames `SEALED` → `SEALED.revoked.<stamp>` and logs it); re-seal after
   the change. `--force` on a sealed run is a controller decision, not an agent one.
+- **Sealing writes a full manifest**: `seal()` also writes `SEALED.manifest.json` —
+  every covered file's size + sha256, plus the `SEALED` marker's own byte hash — so
+  "was anything changed after sealing?" is answerable after the fact:
+  `python -m article_group.run_seal --run-root <run>` (0 intact / 2 drifted /
+  3 unverifiable) recomputes it and separates ledgered `--force` writes from silent
+  ones. The append-only logs are checked by prefix (append is fine, rewrite is not).
+  Runs sealed before this existed (daily-008) report `unverifiable`; `--backfill`
+  records a manifest **and** states it cannot prove the past.
 - **The guard does not rely on each entry point remembering**: importing
   `article_group` installs a process-wide PEP 578 audit hook (`article_group.runs_guard`)
   that rejects any write/create/delete/rename under a directory containing `SEALED`,
