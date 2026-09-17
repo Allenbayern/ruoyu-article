@@ -55,9 +55,48 @@ def _run_id(run_root: Path) -> str:
     return run_root.name or "codex-review"
 
 
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
+def _write_json(
+    path: Path,
+    payload: dict[str, Any],
+    *,
+    run_dir: Path | None = None,
+    reason: str = "codex_review",
+    force: bool = False,
+) -> None:
+    """写 JSON：目标在 run 内时走留底通道（留底+记账+封存守门），否则普通写入。"""
+    if run_dir is not None:
+        from article_group.evidence_write import write_evidence_json
+
+        write_evidence_json(path, payload, run_dir=run_dir, reason=reason, force=force)
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _write_text(
+    path: Path,
+    text: str,
+    *,
+    run_dir: Path | None = None,
+    reason: str = "codex_review:log",
+    force: bool = False,
+) -> None:
+    """写评审原文日志：同一口径（它在 run 内时同样是证据）。"""
+    if run_dir is not None:
+        from article_group.evidence_write import write_evidence
+
+        write_evidence(path, text, run_dir=run_dir, reason=reason, force=force)
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def _evidence_run(run_root: Path, target: Path) -> Path | None:
+    """目标落在 run 内才交给留底通道；写到 run 外的产物不该被封存守门挡。"""
+    root = Path(run_root).expanduser().resolve()
+    if Path(target).expanduser().resolve().is_relative_to(root):
+        return Path(run_root)
+    return None
 
 
 def _build_prompt(args: argparse.Namespace) -> str:
@@ -306,8 +345,11 @@ def run_review(args: argparse.Namespace) -> int:
 
     output = external_text if external_text is not None else ("" if completed is None else (completed.stdout + completed.stderr))
     output_path = args.output.with_suffix(".log")
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(output, encoding="utf-8")
+    _write_text(
+        output_path, output,
+        run_dir=_evidence_run(args.run_root, output_path),
+        reason="codex_review:log", force=bool(getattr(args, "force", False)),
+    )
     record["output_path"] = str(output_path)
     record["output_sha256"] = _sha256(output_path)
     record["finished_at"] = _utc_now()
@@ -388,7 +430,11 @@ def run_review(args: argparse.Namespace) -> int:
                     record["coverage_gaps"] = list(record.get("coverage_gaps") or []) + [
                         f"title_freeze:{freeze_report['status']}"
                     ]
-    _write_json(args.output, record)
+    _write_json(
+        args.output, record,
+        run_dir=_evidence_run(args.run_root, args.output),
+        reason=f"codex_review:{args.mode}", force=bool(getattr(args, "force", False)),
+    )
     print(json.dumps({"output": str(args.output), "exit_code": record.get("exit_code"), "decision": record["decision"]}, ensure_ascii=False))
     return 0 if record.get("exit_code") == 0 and record["decision"] not in {"evidence_insufficient", "review_failed"} else 1
 
@@ -434,11 +480,23 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Record a structured review JSON produced by another agent harness instead of invoking the Codex CLI.",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="run 已封存时仍写入复核记录与日志（controller 决定；走留底+记账）",
+    )
     return parser
 
 
 def main() -> int:
-    return run_review(build_parser().parse_args())
+    args = build_parser().parse_args()
+    from article_group.evidence_write import RunSealedError
+
+    try:
+        return run_review(args)
+    except RunSealedError as exc:  # 封存拒绝要给一句人话，不要 traceback
+        print(f"codex_review 拒绝写入：{exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

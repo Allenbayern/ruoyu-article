@@ -36,9 +36,19 @@ already closed and published run, with no backup.
   `evidence-changelog.jsonl`, and refuses sealed runs unless `--force` is passed
   explicitly. `restore()` puts a file back from its newest snapshot. Wired today:
   the ledger precheck, `evidence_rebind`, `title_freeze`, `wechat_render`,
-  `close_out` (including its `STEP-LOG.md`), `final_review`, `run_record`, and
-  `scripts/record_controller_acceptance.py`; `--force` is passed down to the
+  `close_out` (including its `STEP-LOG.md`), `final_review`, `run_record`,
+  `scripts/record_controller_acceptance.py`, `codex_review` (L2 record + review
+  log), `delivery` (plain copy), `content_delivery` (handoff record), and
+  `daily_engine` (its spec helpers are wrapped); `--force` is passed down to the
   subprocess writers so a forced close-out is not half-effective.
+- **Measure real operations instead of eyeballing them**: `python
+  scripts/with_runs_guard.py -- <command…>` fingerprints `runs/` before and after
+  and exits 3 on any unapproved change (`scripts/runs_fingerprint.py print|save|compare`
+  for the two-step version; `--hash` also catches a rewrite with size and mtime
+  restored). Destructive tools carry their own seal defence: `scripts/purge_quarantine.py`
+  refuses any directory containing `SEALED` unless `--allow-sealed --ref "<who approved>"`
+  is given, and records the authorization plus the marker hashes in the surviving
+  `PURGED.txt`.
 - **Rehearse in a sandbox, never on a real run**: `python scripts/run_sandbox.py
   runs/<date>/<run-id> [--label "…"]` copies the run to `/tmp`, renames `SEALED` to
   `SEALED.from-source`, and leaves the source untouched.

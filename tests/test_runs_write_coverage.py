@@ -58,14 +58,12 @@ OUT_OF_SCOPE: dict[str, str] = {
 }
 
 # ── 待收口：确实写 run 内证据、但还没走留底通道（运行时由护栏兜住） ──
+# 2026-09-17 第二批收口（已改走通道、从此不在名单里）：codex_review（L2 复核记录 + 日志）、
+# delivery（纯文本交付副本）、content_delivery（交付记录）、daily_engine（引擎产物）。
 PENDING: dict[str, str] = {
     "article_group/assertion_ledger_coverage.py": "写账本覆盖报告进 run：下一步改 write_evidence_json(force=…)",
-    "article_group/codex_review.py": "L2 复核记录 --output：下一步改 write_evidence_json(force=…) 并加 --force",
-    "article_group/content_delivery.py": "交付记录落盘：下一步接入留底通道",
-    "article_group/delivery.py": "交付纯文本副本：下一步接入留底通道",
     "article_group/v4/verification.py": "旁路校验产物（v4 冻结层）：接入前先确认是否仍在用",
     "article_group/v5/verification.py": "旁路校验产物（v5 冻结层）：同上",
-    "scripts/daily_engine.py": "日更引擎的 briefs/drafts 产物：写手分散，需按阶段逐个接入",
     # 2026-09-17 新管线（护栏上线后由这条 lint 规则首次暴露）
     "article_group/viral_research_cards.py": "卡片信封写 output_root（新目录、artifact_exists 拒覆盖、失败回滚；但无 changelog 记账）："
                                             "下一步定「产物账本落哪」——run 的 changelog 还是卡片 manifest 自身",

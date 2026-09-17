@@ -201,12 +201,29 @@ def render_plain_text(markdown: str) -> str:
         collapsed.append(line)
     return ("\n".join(collapsed) + "\n") if collapsed else ""
 
-def write_plain_from_markdown(markdown_path: Path, plain_path: Path) -> str:
-    """Render markdown file to plain path; return derived plain text."""
+def write_plain_from_markdown(
+    markdown_path: Path,
+    plain_path: Path,
+    *,
+    run_dir: Path | None = None,
+    force: bool = False,
+) -> str:
+    """Render markdown file to plain path; return derived plain text.
+
+    ``run_dir`` 给出时走留底通道（留底 + 记账 + 封存守门）——交付纯文本副本也是证据。
+    """
     if not isinstance(markdown_path, Path) or not isinstance(plain_path, Path):
         raise TypeError("paths_must_be_path_objects")
     markdown = markdown_path.read_text(encoding="utf-8")
     plain = render_plain_text(markdown)
+    if run_dir is not None:
+        from article_group.evidence_write import write_evidence
+
+        write_evidence(
+            plain_path, plain, run_dir=run_dir,
+            reason="delivery:plain_from_markdown", force=force,
+        )
+        return plain
     plain_path.parent.mkdir(parents=True, exist_ok=True)
     plain_path.write_text(plain, encoding="utf-8")
     return plain

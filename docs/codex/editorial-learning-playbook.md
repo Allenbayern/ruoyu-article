@@ -191,7 +191,9 @@ daily-008 上重跑，覆盖了 `review/art-001/ledger-coverage-precheck.json`
    （谁/何时/为什么/前后 SHA-256/是否 forced）。`restore()` 可按最近快照还原。
    已接入：账本预检、`evidence_rebind`、`title_freeze`、`wechat_render`、`close_out`
    （含它写的 `STEP-LOG.md`）、`final_review`、`run_record`、
-   `scripts/record_controller_acceptance.py`（人工签字入口，带 `--force`）。
+   `scripts/record_controller_acceptance.py`（人工签字入口）、`codex_review`（L2 记录与
+   评审日志）、`delivery`（纯文本交付副本）、`content_delivery`（交付记录）、
+   `daily_engine`（引擎产物，spec 的裸写被统一包进通道）。以上都带 `--force`。
    仍绕过通道、只被运行时护栏兜住的写在
    `tests/test_runs_write_coverage.py` 的 `PENDING` 里逐条列名——那份名单过期或
    新写手未分类，测试就 fail。
@@ -211,10 +213,17 @@ daily-008 上重跑，覆盖了 `review/art-001/ledger-coverage-precheck.json`
 6. **封存 = 全量清单 + 可验证**（2026-09-17 补）。收尾写 `SEALED` 时同时写
    `SEALED.manifest.json`：逐文件 size+sha256，标记自身的字节哈希也一并记入。校验一条命令：
    `python -m article_group.run_seal --run-root <run>` —— 0 完好 / 2 有漂移 /
-   3 无法验证（缺清单，例如封存时还没有本机制的 daily-008）。漂移会与
-   `evidence-changelog.jsonl` 对照，分出**有账的 force 改动**与**无账的可疑改动**；
+   3 无法验证（缺清单，例如封存时还没有本机制的 daily-008）/ 4 演练副本不适用。
+   漂移会与 `evidence-changelog.jsonl` 对照，分出**有账的 force 改动**与**无账的可疑改动**；
    append-only 文件按前缀校验（追加放行、重写算改动）。老 run 可用 `--backfill` 补录清单，
    但补录只能证明"补录之后未被改动"，不能证明封存时刻的内容——它会在清单里写明这一点。
+7. **真实操作前后要留指纹**（2026-09-17 补）。两条命令取代"手工算两次"：
+   `python scripts/runs_fingerprint.py print|save|compare`（默认 size+mtime_ns，
+   `--hash` 连内容一起，可比出"同尺寸 + mtime 被还原"的改写）；
+   `python scripts/with_runs_guard.py -- <命令…>` 包住操作，跑完报出 added/changed/removed，
+   未放行的改动退出码 3。**破坏性工具必须自带封存防线**：`scripts/purge_quarantine.py`
+   遇到含 `SEALED` 的目录一律拒删（退出码 3），除非 `--allow-sealed --ref "<谁批准的>"`，
+   授权与标记哈希会写进幸存的 `PURGED.txt`。
 
 配套的两条流水证据，每期都会自动生成，复盘时先看它们：
 

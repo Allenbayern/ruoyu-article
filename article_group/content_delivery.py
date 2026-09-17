@@ -480,12 +480,21 @@ def build_content_delivery_record(
     )
 
 
-def write_content_delivery_record(run_dir: Path, output: Path | None = None) -> Path:
-    """Evaluate a run and write its content-only handoff record."""
+def write_content_delivery_record(
+    run_dir: Path,
+    output: Path | None = None,
+    *,
+    force: bool = False,
+) -> Path:
+    """Evaluate a run and write its content-only handoff record（走留底通道 + 封存守门）。"""
+    from article_group.evidence_write import write_evidence_json
+
     target = output or (run_dir / "review" / "content-delivery.json")
     record = build_content_delivery_record(run_dir)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    write_evidence_json(
+        target, record, run_dir=run_dir,
+        reason="content_delivery:record", force=force,
+    )
     return target
 
 

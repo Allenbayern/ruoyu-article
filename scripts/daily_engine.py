@@ -22,6 +22,49 @@ from article_group.style_gate import validate_markdown_file
 from article_group.title_pack_fidelity import evaluate_title_pack
 from article_group.topic_preflight import evaluate as evaluate_five_questions
 
+def _is_run_root(root: Path) -> bool:
+    """只把 `runs/<date>/<run-id>` 形态的根当 run（历史脚本也用同一批 helper）。"""
+    parts = Path(root).resolve().parts
+    if "runs" not in parts:
+        return False
+    return len(parts[parts.index("runs") + 1:]) == 2
+
+
+def _write_json_evidence(target: Path, value: object, *, reason: str, run_root: Path | None = None) -> None:
+    """run 根下写入走留底通道；其他位置保持普通写入（历史脚本共用本模块）。"""
+    root = Path(run_root) if run_root is not None else ROOT
+    if _is_run_root(root):
+        from article_group.evidence_write import write_evidence_json
+
+        write_evidence_json(target, value, run_dir=root, reason=reason)
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _write_text_evidence(target: Path, text: str, *, reason: str, run_root: Path | None = None) -> None:
+    root = Path(run_root) if run_root is not None else ROOT
+    if _is_run_root(root):
+        from article_group.evidence_write import write_evidence
+
+        write_evidence(target, text, run_dir=root, reason=reason)
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text, encoding="utf-8")
+
+
+def _route_write(path: str, value: object, *, kind: str, raw) -> None:
+    """run 根下写入走 evidence_write（留底+记账+封存守门）；其他位置保持原样。"""
+    if not _is_run_root(ROOT):
+        raw(path, value)
+        return
+    target = Path(ROOT) / path
+    if kind == "json":
+        _write_json_evidence(target, value, reason=f"daily_engine:{path}")
+        return
+    _write_text_evidence(target, str(value).rstrip() + "\n", reason=f"daily_engine:{path}")
+
+
 def discovery() -> None:
     write_json(
         "discovery/discovery-radar-r0.json",
@@ -392,7 +435,7 @@ def content_record(
     paras = [p for p in body.split("\n\n") if p and not p.startswith("## ")]
     data["reader_takeaway_locator"] = f"p{len(paras)}"
     data["standalone_check"]["judgment_locator"] = f"p{len(paras)}"
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    _write_json_evidence(path, data, reason=f"daily_engine:content-fidelity:{aid}")
 
 
 def reviews_and_delivery(bodies_map: dict[str, str]) -> None:
@@ -440,7 +483,7 @@ def reviews_and_delivery(bodies_map: dict[str, str]) -> None:
         topic_path = ROOT / f"review/{aid}/topic-card.json"
         topic = json.loads(topic_path.read_text(encoding="utf-8"))
         topic.update({"run_id": RUN_ID, "article_mode": MODES[aid], "article_type": MODES[aid], "required_source_roles": [MATERIAL_SPECS[aid]["role"]]})
-        topic_path.write_text(json.dumps(topic, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        _write_json_evidence(topic_path, topic, reason=f"daily_engine:topic-card:{aid}")
         fact_path = ROOT / f"review/{aid}/fact-card.json"
         fact = json.loads(fact_path.read_text(encoding="utf-8"))
         fact.update(
@@ -460,7 +503,7 @@ def reviews_and_delivery(bodies_map: dict[str, str]) -> None:
                 ],
             }
         )
-        fact_path.write_text(json.dumps(fact, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        _write_json_evidence(fact_path, fact, reason=f"daily_engine:fact-check:{aid}")
         # 标题包冻结（2026-09-17）：L2 复核必须绑定已冻结的标题包哈希；
         # 标题在 L2 之后被改，会让旧 approve 失效而不是被 rebind 保住。
         from article_group.title_freeze import freeze as _freeze_title_pack
@@ -834,8 +877,11 @@ def _write_step_log_markdown(run_root) -> None:
 
     from article_group.step_log import render_markdown, timeline
 
-    _Path(run_root).joinpath("STEP-LOG.md").write_text(
-        render_markdown(timeline(run_root)), encoding="utf-8"
+    _write_text_evidence(
+        _Path(run_root).joinpath("STEP-LOG.md"),
+        render_markdown(timeline(run_root)),
+        reason="daily_engine:step_log_markdown",
+        run_root=_Path(run_root),
     )
 
 
@@ -869,6 +915,13 @@ def build_run(spec) -> None:
         "RULE_CLAIMS", "BATCH_SPECS",
     )
     globals().update({name: getattr(spec, name) for name in bind_names})
+
+    # 把 spec 的裸写包进留底通道（2026-09-17）：引擎产物从此有 before-image 与记账，
+    # 封存 run 上默认拒绝。spec 模块（run_real_daily_00x.py）保持原样不必逐个改。
+    # 注意必须写回 globals()：各阶段函数是在模块作用域里找 write_json/write_text 的。
+    _raw_write_json, _raw_write_text = write_json, write_text
+    globals()["write_json"] = lambda path, value: _route_write(path, value, kind="json", raw=_raw_write_json)
+    globals()["write_text"] = lambda path, value: _route_write(path, value, kind="text", raw=_raw_write_text)
 
     from article_group.step_log import StepLog
 
