@@ -60,6 +60,87 @@ def _sha256(value: object, code: str) -> str:
     return digest.lower()
 
 
+# --- 占位符检测（2026-09-17）：让"语义为空的凭证"可见 -------------------------
+#
+# 背景：爆款库 11 张 qualified_viral 卡的 client_evidence.sha256 全部是 64 个 0。
+# 契约要求 client_confirmed 回链到截图/录屏并给出 SHA-256；全零不是哈希，是占位符。
+# 而 _sha256() 只校验 [0-9a-fA-F]{64} 格式，全零照样通过——该格式校验形同虚设。
+#
+# 判据刻意只覆盖**明确定义、可枚举**的占位符家族，不做"熵很低"这类模糊启发式，
+# 以免误伤真实哈希。严重度为 warning：可见、可上报、不阻断——收紧成硬失败会把
+# 现有唯一一批合格语料清零。
+
+_HEX64 = re.compile(r"[0-9a-fA-F]{64}")
+_REPEATED_HEX64 = re.compile(r"([0-9a-fA-F])\1{63}")
+_SEQUENTIAL_HEX64 = frozenset(
+    {"0123456789abcdef" * 4, ("0123456789abcdef" * 4).upper()}
+)
+
+PLACEHOLDER_WARNING_CODE = "client_evidence_sha256_placeholder"
+WARNING_SEVERITY = "warning"
+
+
+def placeholder_sha256_kind(value: object) -> str | None:
+    """是"格式合法但语义为空"的 SHA-256 占位符则返回种类，否则 None。
+
+    只认明确定义的占位符家族，不做熵估计、不做模糊匹配。
+    """
+    if not isinstance(value, str):
+        return None
+    digest = value.strip()
+    if not _HEX64.fullmatch(digest):
+        return None
+    repeated = _REPEATED_HEX64.fullmatch(digest)
+    if repeated is not None:
+        return f"repeated_hex_char:{repeated.group(1).lower()}"
+    if digest in _SEQUENTIAL_HEX64:
+        return "sequential_hex_cycle"
+    return None
+
+
+def client_evidence_sha256_is_placeholder(card: dict[str, Any]) -> bool:
+    """``client_evidence.sha256`` 是否为明确定义的占位符（全零/全 f 等）。
+
+    缺失或格式非法不在本判定范围内（那是 :func:`_sha256` 的 error 级职责），返回 False。
+    """
+    if not isinstance(card, dict):
+        return False
+    evidence = card.get("client_evidence")
+    if not isinstance(evidence, dict):
+        return False
+    return placeholder_sha256_kind(evidence.get("sha256")) is not None
+
+
+def case_card_warnings(card: dict[str, Any]) -> list[dict[str, Any]]:
+    """一张卡的非阻断缺陷清单（warning 级）。
+
+    与 :func:`assess_qualification` 的硬校验严格分离：这里的问题只上报，
+    不改变资格判定，因此现有合格卡不会因为"凭证是占位符"而失效。
+    """
+    if not isinstance(card, dict):
+        return []
+    warnings: list[dict[str, Any]] = []
+    evidence = card.get("client_evidence")
+    if isinstance(evidence, dict):
+        kind = placeholder_sha256_kind(evidence.get("sha256"))
+        if kind is not None:
+            warnings.append(
+                {
+                    "code": PLACEHOLDER_WARNING_CODE,
+                    "severity": WARNING_SEVERITY,
+                    "field": "client_evidence.sha256",
+                    "kind": kind,
+                    "detail": (
+                        "client_evidence.sha256 是无信息熵的占位符，无法回链到截图/录屏；"
+                        "契约要求 client_confirmed 附真实证据哈希，需重新取证后回填。"
+                        "本轮只标注，不作废该卡。"
+                    ),
+                    "remediation": "re_attest_client_evidence",
+                }
+            )
+    return warnings
+
+
 def _metric_map(card: dict[str, Any]) -> dict[str, dict[str, Any]]:
     result: dict[str, dict[str, Any]] = {}
     for raw_metric in _items(card.get("metrics"), "metrics_must_be_a_list"):
@@ -389,7 +470,15 @@ def validate_case_card(
     *,
     feedback: dict[str, Any] | None = None,
     techniques: dict[str, dict[str, Any]] | None = None,
+    warnings: list[dict[str, Any]] | None = None,
 ) -> str:
+    """校验一张卡，返回资格状态。
+
+    warning 级缺陷经 ``warnings`` 收集器上报（可选，默认不上报），
+    **不影响返回值、不阻断**：既有调用方的返回类型与语义保持不变。
+    """
+    if warnings is not None:
+        warnings.extend(case_card_warnings(card))
     _text(card.get("sample_id"), "sample_id_missing")
     _text(card.get("snapshot_ref"), "snapshot_ref_missing")
     _text(card.get("performance_evidence_ref"), "performance_evidence_ref_missing")

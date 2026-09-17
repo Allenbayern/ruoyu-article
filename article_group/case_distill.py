@@ -71,8 +71,16 @@ def _observation_key(obs: dict[str, Any]) -> tuple[str, str, str]:
     return (obs["technique"], obs["technique_type"], "name")
 
 
-def distill_candidates(cards: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
-    """一批结构卡 -> 候选原则 JSON 列表（每技巧一条，按 frequency 降序）。"""
+def distill_candidates(
+    cards: dict[str, dict[str, Any]],
+    *,
+    warnings: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """一批结构卡 -> 候选原则 JSON 列表（每技巧一条，按 frequency 降序）。
+
+    ``warnings`` 为可选的 warning 收集器：占位符凭证一类"可见但不阻断"的缺陷
+    会带 sample_id 追加进去，供生产管线上报。默认不收集，行为与既有调用一致。
+    """
     _require(isinstance(cards, dict), "cards_must_be_a_mapping")
     _require(
         len(cards) >= MIN_CARDS,
@@ -86,7 +94,10 @@ def distill_candidates(cards: dict[str, dict[str, Any]]) -> list[dict[str, Any]]
             isinstance(card, dict),
             f"card_must_be_an_object:{sample_id}",
         )
-        status = validate_case_card(card)
+        card_warnings: list[dict[str, Any]] = []
+        status = validate_case_card(card, warnings=card_warnings)
+        if warnings is not None:
+            warnings.extend({"sample_id": sample_id, **item} for item in card_warnings)
         observations = _validate_observations(card)
         validated[sample_id] = {
             **card,
