@@ -729,16 +729,43 @@ def validate_markdown_text(markdown_text: str, *, hook: str = "") -> dict[str, A
     }
 
 
-def validate_markdown_file(path: Path, *, hook: str = "") -> dict[str, Any]:
+def artifact_reference(path: Path, *, run_root: str | Path | None = None) -> str:
+    """证据里记的产物路径：属于某个 run 时记 run 相对路径，否则记绝对路径。
+
+    为什么（2026-09-18）：原先一律记 ``str(path.resolve())``。run 一旦被复制/移动
+    （沙盘演练就是这么做的、灾备恢复也会），final_review 会以
+    ``artifact_binding_invalid:path`` 整体 BLOCKED——记录里的绑定路径指向旧位置，
+    而证据本身是好的。现在：run 内产物记相对路径（可移植），run 外保持绝对路径
+    （与既有行为一致，例如 CLI 直接对任意文件跑门禁）。
+    """
+
+    resolved = Path(path).expanduser().resolve()
+    if run_root is not None:
+        root: Path | None = Path(run_root).expanduser().resolve()
+    else:
+        from article_group.run_seal import find_run_root
+
+        root = find_run_root(resolved)
+    if root is not None:
+        try:
+            return resolved.relative_to(root).as_posix()
+        except ValueError:
+            pass
+    return str(resolved)
+
+
+def validate_markdown_file(
+    path: Path, *, hook: str = "", run_root: str | Path | None = None
+) -> dict[str, Any]:
     """Run Markdown style checks and seal the exact bytes that were scanned."""
     payload = path.read_bytes()
     result = validate_markdown_text(payload.decode("utf-8"), hook=hook)
-    result["artifact_path"] = str(path.resolve())
+    result["artifact_path"] = artifact_reference(path, run_root=run_root)
     result["artifact_sha256"] = hashlib.sha256(payload).hexdigest()
     return result
 
 
-def validate_delivery_file(path: Path) -> dict[str, Any]:
+def validate_delivery_file(path: Path, *, run_root: str | Path | None = None) -> dict[str, Any]:
     """Run the style gate and seal the exact HTML bytes that were scanned.
 
     The in-memory validator remains path-independent for unit tests and other
@@ -749,7 +776,7 @@ def validate_delivery_file(path: Path) -> dict[str, Any]:
     payload = path.read_bytes()
     result = validate_batch_style(payload.decode("utf-8"))
     result["artifact_type"] = "html"
-    result["artifact_path"] = str(path.resolve())
+    result["artifact_path"] = artifact_reference(path, run_root=run_root)
     result["artifact_sha256"] = hashlib.sha256(payload).hexdigest()
     return result
 
@@ -777,7 +804,9 @@ def _detect_artifact_type(text: str, path: Path) -> str:
     return "unknown"
 
 
-def validate_artifact_file(path: Path, *, hook: str = "") -> dict[str, Any]:
+def validate_artifact_file(
+    path: Path, *, hook: str = "", run_root: str | Path | None = None
+) -> dict[str, Any]:
     """Validate a delivery artifact on the surface that matches its content.
 
     Markdown deliveries go through :func:`validate_markdown_file` (H2 headings
@@ -790,9 +819,9 @@ def validate_artifact_file(path: Path, *, hook: str = "") -> dict[str, Any]:
     text = payload.decode("utf-8")
     kind = _detect_artifact_type(text, path)
     if kind == "markdown":
-        return validate_markdown_file(path, hook=hook)
+        return validate_markdown_file(path, hook=hook, run_root=run_root)
     if kind == "html":
-        return validate_delivery_file(path)
+        return validate_delivery_file(path, run_root=run_root)
     return {
         "artifact_type": "unknown",
         "article_count": 0,
@@ -801,7 +830,7 @@ def validate_artifact_file(path: Path, *, hook: str = "") -> dict[str, Any]:
         "pass": False,
         "error_total": 1,
         "errors": ["artifact_type_unrecognized"],
-        "artifact_path": str(path.resolve()),
+        "artifact_path": artifact_reference(path, run_root=run_root),
         "artifact_sha256": hashlib.sha256(payload).hexdigest(),
     }
 

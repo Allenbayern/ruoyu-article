@@ -568,7 +568,10 @@ def reviews_and_delivery(bodies_map: dict[str, str]) -> None:
         # L2 canonical 记录保护（2026-09-16；判据 2026-09-18 修正，见函数注释）。
         ensure_independent_review_placeholder(aid, delivery_path)
         hook = STRONGEST_HOOKS[aid]
-        write_json(f"review/style-gate-markdown-{aid}.json", validate_markdown_file(ROOT / delivery_path, hook=hook))
+        write_json(
+            f"review/style-gate-markdown-{aid}.json",
+            validate_markdown_file(ROOT / delivery_path, hook=hook, run_root=ROOT),
+        )
         write_json(
             f"review/scoring/{aid}.json",
             {

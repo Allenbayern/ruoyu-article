@@ -114,6 +114,13 @@ already closed and published run, with no backup.
   labelled content `FAIL`. Reason: with the old口径 "L2 pending 不阻断", a batch that never ran L2
   scored *better* on the content dimension than one that ran and failed. Human sign-off items are
   unaffected — "人没签字" is still not a content blocker — and historical runs are not re-judged.
+- **Evidence paths are run-relative.** `style_gate.validate_markdown_file` /
+  `validate_delivery_file` / `validate_artifact_file` record `artifact_path` relative to the run
+  root (absolute only outside a run), because an absolute binding breaks the moment the run is
+  copied or moved (sandbox rehearsal, backup restore) — `final_review` then blocks the whole batch
+  with `artifact_binding_invalid:path` while the evidence itself is fine. Legacy records that still
+  carry an absolute path are rebased by the `runs/<date>/<id>/` tail; the rebase only *finds* the
+  candidate — the `artifact_sha256` comparison right after it is still what authorizes it.
 - **Incremental L2 review has a real diff.** `--base-review <previous record>` records
   `base_review_diff`: which binding hashes moved, a unified diff of the delivery against the
   hash-matched `review/.before/<stamp>/…` snapshot, and the base↔current finding pairing

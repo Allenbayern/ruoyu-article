@@ -1057,6 +1057,32 @@ def _validate_scoring_artifact_binding(
     return errors
 
 
+def _rebase_moved_run_path(root: Path, declared: Path) -> Path | None:
+    """历史证据里存的是绝对路径：run 被复制/移动后按 ``runs/<date>/<id>/`` 之后的部分重定位。
+
+    2026-09-18：style-gate 记录此前一律记 ``str(path.resolve())``，run 一旦被复制
+    （沙盘演练）或搬移（灾备恢复），final_review 会以 ``artifact_binding_invalid:path``
+    整体 BLOCKED，而证据本身是好的。写手侧已改为记 run 相对路径；这里让**旧记录也能读**：
+    按声明路径所属 run 根之后的尾巴在当前 run 里重定位。
+
+    重定位只是把候选文件找出来——**绑定仍然由紧随其后的 sha256 比对决定**：哈希对不上
+    会报 ``artifact_binding_hash_mismatch``，不是"路径看着像就放行"。
+    """
+
+    if not declared.is_absolute():
+        return None
+    from article_group.run_seal import find_run_root
+
+    declared_run = find_run_root(declared)
+    if declared_run is None:
+        return None
+    try:
+        tail = declared.relative_to(declared_run)
+    except ValueError:
+        return None
+    return _resolve_inside(root, root / tail)
+
+
 def _validate_style_artifact(
     report: dict,
     root: Path,
@@ -1081,7 +1107,11 @@ def _validate_style_artifact(
             declared if declared.is_absolute() else root / declared,
         )
         if target is None or not target.is_file():
-            errors.append("artifact_binding_invalid:path")
+            rebased = _rebase_moved_run_path(root, declared)
+            if rebased is not None and rebased.is_file():
+                target = rebased
+            else:
+                errors.append("artifact_binding_invalid:path")
 
     if not isinstance(artifact_hash, str) or not _SHA256_RE.fullmatch(artifact_hash):
         errors.append("artifact_binding_missing_or_invalid:sha256")

@@ -1553,3 +1553,78 @@ def test_a_completed_non_approve_l2_is_not_labelled_content_pass() -> None:
 
     assert dimensions["content_result"] == "FAIL"
     assert dimensions["governance_result"] == "PENDING"
+
+
+# --- 复制/搬移后的 run 仍能读旧证据（2026-09-18）-----------------------------
+
+
+def _legacy_style_record(original: Path) -> dict:
+    """旧记录的形状：artifact_path 是绝对路径，绑定靠 artifact_sha256。"""
+
+    delivery = original / "delivery" / "art-001" / "delivery.md"
+    return {
+        "artifact_type": "markdown",
+        "artifact_path": str(delivery.resolve()),
+        "artifact_sha256": hashlib.sha256(delivery.read_bytes()).hexdigest(),
+    }
+
+
+def _run_with_delivery(root: Path) -> Path:
+    (root / "delivery" / "art-001").mkdir(parents=True, exist_ok=True)
+    (root / "delivery" / "art-001" / "delivery.md").write_text("# 标题\n\n正文\n", encoding="utf-8")
+    return root
+
+
+def test_a_copied_run_rebases_a_legacy_absolute_style_binding(tmp_path: Path) -> None:
+    import shutil
+
+    from article_group.final_review import _validate_style_artifact
+
+    original = _run_with_delivery(tmp_path / "runs" / "2026-09-18" / "daily-900")
+    record = _legacy_style_record(original)
+    copy = tmp_path / "backup" / "runs" / "2026-09-18" / "daily-900"
+    shutil.copytree(original, copy)
+
+    target, errors = _validate_style_artifact(
+        record, copy, [copy / "delivery" / "art-001" / "delivery.md"], review_surface="markdown_codex"
+    )
+
+    assert errors == []
+    assert target == (copy / "delivery" / "art-001" / "delivery.md").resolve()
+
+
+def test_a_copied_run_still_rejects_changed_bytes(tmp_path: Path) -> None:
+    """重定位只负责找到候选文件；放行与否仍由 sha256 决定。"""
+
+    import shutil
+
+    from article_group.final_review import _validate_style_artifact
+
+    original = _run_with_delivery(tmp_path / "runs" / "2026-09-18" / "daily-900")
+    record = _legacy_style_record(original)
+    copy = tmp_path / "backup" / "runs" / "2026-09-18" / "daily-900"
+    shutil.copytree(original, copy)
+    (copy / "delivery" / "art-001" / "delivery.md").write_text("# 标题\n\n正文改过了\n", encoding="utf-8")
+
+    target, errors = _validate_style_artifact(
+        record, copy, [copy / "delivery" / "art-001" / "delivery.md"], review_surface="markdown_codex"
+    )
+
+    assert target is not None
+    assert "artifact_binding_hash_mismatch" in errors
+
+
+def test_a_missing_rebased_artifact_is_reported_as_a_path_error(tmp_path: Path) -> None:
+    from article_group.final_review import _validate_style_artifact
+
+    original = _run_with_delivery(tmp_path / "runs" / "2026-09-18" / "daily-900")
+    record = _legacy_style_record(original)
+    copy = _run_with_delivery(tmp_path / "backup" / "runs" / "2026-09-18" / "daily-901")
+    (copy / "delivery" / "art-001" / "delivery.md").unlink()
+
+    target, errors = _validate_style_artifact(
+        record, copy, [copy / "delivery" / "art-001" / "delivery.md"], review_surface="markdown_codex"
+    )
+
+    assert target is None
+    assert "artifact_binding_invalid:path" in errors

@@ -646,3 +646,44 @@ def test_clean_reader_copy_not_flagged():
     for sample in clean:
         hits = [h for h in scan_style(sample) if h["severity"] == "error"]
         assert not hits, f"误伤合法文本: {sample} -> {hits}"
+
+
+# --- 证据里的产物路径：run 内记相对路径（2026-09-18）-------------------------
+
+
+def test_run_artifact_path_is_recorded_relative_to_the_run(tmp_path: Path):
+    """run 一旦被复制/搬移，绝对路径就会让 final_review 误判 artifact_binding_invalid。"""
+
+    run = tmp_path / "runs" / "2026-09-18" / "daily-900"
+    (run / "delivery" / "art-001").mkdir(parents=True)
+    path = run / "delivery" / "art-001" / "delivery.md"
+    path.write_text("# 标题\n\n## 小节\n\n正文一段。\n", encoding="utf-8")
+
+    report = validate_markdown_file(path)
+
+    assert report["artifact_path"] == "delivery/art-001/delivery.md"
+    assert report["artifact_sha256"]
+
+
+def test_explicit_run_root_wins_for_non_run_shaped_dirs(tmp_path: Path):
+    run = tmp_path / "somewhere" / "daily-901"
+    (run / "delivery").mkdir(parents=True)
+    path = run / "delivery" / "delivery.md"
+    path.write_text("# 标题\n\n## 小节\n\n正文一段。\n", encoding="utf-8")
+
+    relative = validate_markdown_file(path, run_root=run)
+    absolute = validate_markdown_file(path)
+
+    assert relative["artifact_path"] == "delivery/delivery.md"
+    assert absolute["artifact_path"] == str(path.resolve())  # run 外保持老行为
+
+
+def test_html_delivery_artifact_path_is_relative_too(tmp_path: Path):
+    run = tmp_path / "runs" / "2026-09-18" / "daily-902"
+    (run / "review" / "frozen").mkdir(parents=True)
+    path = run / "review" / "frozen" / "delivery.html"
+    path.write_text("<!doctype html><html><body><article><p>正文</p></article></body></html>", encoding="utf-8")
+
+    report = validate_delivery_file(path)
+
+    assert report["artifact_path"] == "review/frozen/delivery.html"
