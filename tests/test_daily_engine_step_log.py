@@ -122,6 +122,7 @@ def test_build_run_logs_every_stage_in_order(wired):
         "gates",
         "batch_manifest",
         "wechat_render",
+        "preview_site",
         "run_manifest",
         "step_log_markdown",
     ]

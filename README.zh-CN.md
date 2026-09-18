@@ -185,6 +185,27 @@ uv run python -m article_group.sync_compliance \
 - HTML 冻结与预览只在明确选择 `review_surface=html_delivery` 的历史/专门交付中启用；此时继续使用 `preview_mode=local_codex | canonical_http` 及原有逐路由哈希/HTTP 200 契约。
 - 批次验收要求控制器审查新证据；M2 还要求独立人工编辑 attestation、动态事实 publication-time revalidation 和 controller acceptance 分层落盘。终审由独立方（Sol 路由）在对抗性审查 Gate 下执行，控制器做出每项验收决定。仓库内任何内容都不授权对外发布。
 
+## 交付预览页（preview site）
+
+`runs/<date>/<run>/` 里的 Markdown 与公众号 HTML **本身点不开**（没有被任何服务托管）。每批交付后由
+`daily_engine` 的 `preview_site` 阶段在 run 内生成一套自包含静态站点，供 controller 点开预览：
+
+| 产物 | 作用 |
+|---|---|
+| `preview/index.html` | 目录页：**标题即链接**，附最强钩子、CJK 字数、交付稿 SHA-256、`content_status` 与终审三栏 |
+| `preview/art-00N.html` | 阅读页：中文长文排版、手机/暗色/打印适配、**零外链**（内网/离线可读），正文与 Markdown 逐段一致 |
+| `preview/wechat/**` | 既有公众号复制版原样搬入（复制到公众号后台用） |
+
+- **不是门禁**：与 `wechat_render` 同性质的后置便利步骤；生成失败只记 `status/reason`，不影响已通过的交付，也不构成发布授权。
+- **生成与发布分离**：引擎只写 run 内 `preview/`（走 `evidence_write` 留底通道）；发布到主机静态根用
+  `python scripts/publish_preview.py --run-dir <run> --root <静态根> --base-url <URL前缀>`，
+  并在 run 内留 `preview/publish-record.json`（时间、目标、逐文件清单、落地页哈希）。宿主设了
+  `RUOYU_PREVIEW_PUBLISH_ROOT`（可选 `RUOYU_PREVIEW_BASE_URL`）时，引擎会顺带发布并把 URL 记进 `run-manifest.json`。
+- 站点目录名用 `<日期>-<run 名>`（如 `2026-09-17-daily-009`）；发布目标越界（试图写到静态根之外）一律 fail-closed 拒绝。
+- 预览页显式标注 `publication_authorization: not_authorized`（内部预览、未发布）。
+- 与 `review_surface=html_delivery` 的 HTML 冻结/预览是两回事：那条是交付面契约（含逐路由哈希与 HTTP 200 检查），本条只是"给人看"的便利页面。
+- 测试：`tests/test_preview_site.py`（渲染保真、零外链、缺交付记录时的降级口径、幂等 + 留底、发布越界拒绝）。
+
 ## 爆款研究库（viral research）
 
 爆款研究库按「抓爬证据 → package → inventory → prepare → 语义 pass → finalize」顺序运行，产物全部落在当前批次的 `RUN_ROOT` 内，**不自动写入 Vault、不自动发布、不自动推进任何工作流状态**。微信长文（`wechat` / `wechat_long_form`）是主通道；新榜/热榜、B 站、头条等其它来源统一按 `observation-only` 处理，不得据标题、排名或不完整证据认定为 `qualified_viral`，也不得计入正向技法频次。

@@ -51,6 +51,8 @@ scripts/*
 !scripts/run_real_daily_006.py
 !scripts/run_real_daily_007.py
 !scripts/run_real_daily_008.py
+!scripts/publish_preview.py
+!scripts/run_real_daily_009.py
 !scripts/dailyhot_radar.py
 !scripts/dailyhot_talk_filter.py
 !scripts/anysearch_search.py

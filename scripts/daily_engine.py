@@ -866,6 +866,57 @@ def wechat_render_step() -> dict:
     return status
 
 
+def preview_site_step() -> dict:
+    """2026-09-18：把 run 产物渲染成"标题可点、点开能读"的静态预览页。
+
+    与 wechat_render 同性质：交付后的便利步骤，不是门禁。controller 要的是能点开的
+    预览（run 里的 Markdown / 公众号 HTML 本身没有被任何服务托管），所以每批都在
+    run 内生成 `preview/` 站点：目录页（标题即链接）+ 每篇阅读页 + 公众号复制版入口。
+
+    发布到主机静态根是**另一个动作**（`scripts/publish_preview.py`）；宿主若设了
+    `RUOYU_PREVIEW_PUBLISH_ROOT`，这里顺带发布并记录 URL——失败只记 reason，
+    不影响已通过的交付，也不构成任何发布授权。
+    """
+    import os
+
+    from article_group.preview_site import build, publish
+
+    try:
+        report = build(ROOT)
+    except Exception as exc:  # noqa: BLE001 - 后置步骤不允许影响主流程
+        return {
+            "status": "error",
+            "reason": f"{type(exc).__name__}:{exc}",
+            "publication_authorization": "not_authorized",
+        }
+    status: dict = {
+        "status": report["status"],
+        "index_path": report["index_path"],
+        "index_sha256": report["index_sha256"],
+        "content_status": report["content_status"],
+        "articles": [item["article_id"] for item in report["articles"]],
+        "publication_authorization": "not_authorized",
+    }
+    publish_root = os.environ.get("RUOYU_PREVIEW_PUBLISH_ROOT", "").strip()
+    if publish_root:
+        base_url = os.environ.get("RUOYU_PREVIEW_BASE_URL", "").strip() or None
+        try:
+            published = publish(ROOT, publish_root, base_url=base_url)
+            status["published"] = {
+                "target": published["target"],
+                "index_url": published["index_url"],
+                "published_at": published["published_at"],
+            }
+        except Exception as exc:  # noqa: BLE001 - 发布失败不阻断交付
+            status["published"] = {"status": "error", "reason": f"{type(exc).__name__}:{exc}"}
+    else:
+        status["published"] = {
+            "status": "not_published",
+            "reason": "未设置 RUOYU_PREVIEW_PUBLISH_ROOT；用 scripts/publish_preview.py 手动发布",
+        }
+    return status
+
+
 def _write_step_log_markdown(run_root) -> None:
     """把步骤日志渲染成 Markdown 版（STEP-LOG.md），随 RUN-RECORD 一起看。
 
@@ -962,6 +1013,7 @@ def build_run(spec) -> None:
     step("gates", gates)
     step("batch_manifest", batch_manifest, body_map)
     wechat_status = step("wechat_render", wechat_render_step)
+    preview_status = step("preview_site", preview_site_step)
     step(
         "run_manifest",
         write_json,
@@ -973,6 +1025,7 @@ def build_run(spec) -> None:
             "source_manifest_path": "source-manifest.json",
             "selection_path": "discovery/discovery-radar-r0.json",
             "wechat_render": wechat_status,
+            "preview_site": preview_status,
             "step_log": "step-log.jsonl",
             "publication_authorization": "not_authorized",
         },
