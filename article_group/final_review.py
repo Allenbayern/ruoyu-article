@@ -1066,21 +1066,14 @@ def _rebase_moved_run_path(root: Path, declared: Path) -> Path | None:
     按声明路径所属 run 根之后的尾巴在当前 run 里重定位。
 
     重定位只是把候选文件找出来——**绑定仍然由紧随其后的 sha256 比对决定**：哈希对不上
-    会报 ``artifact_binding_hash_mismatch``，不是"路径看着像就放行"。
+    会报 ``artifact_binding_hash_mismatch``，不是"路径看着像就放行"。实现见
+    :func:`article_group.evidence_paths.rebase_moved_run_path`（按声明路径里每个规范形状的
+    run 根、最内层优先地取尾巴）。
     """
 
-    if not declared.is_absolute():
-        return None
-    from article_group.run_seal import find_run_root
+    from article_group.evidence_paths import rebase_moved_run_path
 
-    declared_run = find_run_root(declared)
-    if declared_run is None:
-        return None
-    try:
-        tail = declared.relative_to(declared_run)
-    except ValueError:
-        return None
-    return _resolve_inside(root, root / tail)
+    return rebase_moved_run_path(root, declared)
 
 
 def _validate_style_artifact(

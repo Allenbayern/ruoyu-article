@@ -114,13 +114,22 @@ already closed and published run, with no backup.
   labelled content `FAIL`. Reason: with the old口径 "L2 pending 不阻断", a batch that never ran L2
   scored *better* on the content dimension than one that ran and failed. Human sign-off items are
   unaffected — "人没签字" is still not a content blocker — and historical runs are not re-judged.
-- **Evidence paths are run-relative.** `style_gate.validate_markdown_file` /
-  `validate_delivery_file` / `validate_artifact_file` record `artifact_path` relative to the run
-  root (absolute only outside a run), because an absolute binding breaks the moment the run is
-  copied or moved (sandbox rehearsal, backup restore) — `final_review` then blocks the whole batch
-  with `artifact_binding_invalid:path` while the evidence itself is fine. Legacy records that still
-  carry an absolute path are rebased by the `runs/<date>/<id>/` tail; the rebase only *finds* the
-  candidate — the `artifact_sha256` comparison right after it is still what authorizes it.
+- **Evidence paths are run-relative.** `style_gate` (markdown / HTML / unknown) and the preview
+  route manifest record their artifact path relative to the run root (absolute only outside a run),
+  because an absolute binding breaks the moment the run is copied or moved (sandbox rehearsal,
+  backup restore) — `final_review` then blocks the whole batch with `artifact_binding_invalid:path`
+  while the evidence itself is fine. The rule lives in `article_group.evidence_paths`:
+  - a relative path is written **only when it round-trips** (`(root/rel).resolve() == artifact`);
+  - auto-detection accepts only the canonical run shape `…/runs/<YYYY-MM-DD>/<id>` (and the root
+    must be a real ancestor). `run_seal.is_run_root` counts the *first* `runs` component and checks
+    neither date nor directory-ness, so `runs/<X>/<file>` (58 such files in this repo) and
+    "runs before runs" layouts would otherwise produce `"."` / a wrong relative path — both are
+    L2-verified failure modes from 2026-09-18. Anything else falls back to the absolute path;
+    callers that know their layout (the engine) pass `run_root=` explicitly and are unaffected;
+  - legacy absolute records are rebased by the `runs/<date>/<id>/` tail (innermost candidate first,
+    purely lexical so a deleted source run still works). The rebase only *finds* the candidate —
+    the `sha256` comparison right after it is still what authorizes it, for both style-gate and
+    preview evidence.
 - **Incremental L2 review has a real diff.** `--base-review <previous record>` records
   `base_review_diff`: which binding hashes moved, a unified diff of the delivery against the
   hash-matched `review/.before/<stamp>/…` snapshot, and the base↔current finding pairing

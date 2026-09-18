@@ -687,3 +687,39 @@ def test_html_delivery_artifact_path_is_relative_too(tmp_path: Path):
     report = validate_delivery_file(path)
 
     assert report["artifact_path"] == "review/frozen/delivery.html"
+
+
+# --- L2 复核（2026-09-18）抓到的两个形状缺陷：宁可绝对，不可写错相对 ----------
+
+
+def test_a_file_directly_under_runs_keeps_an_absolute_path(tmp_path: Path):
+    """`runs/<X>/<文件>` 形状：旧实现会把文件当 run 根、记成 "."（仓库里 58 个这种文件）。"""
+
+    (tmp_path / "runs" / "2026-09-06").mkdir(parents=True)
+    loose = tmp_path / "runs" / "2026-09-06" / "article-003.md"
+    loose.write_text("# 标题\n\n## 小节\n\n正文一段。\n", encoding="utf-8")
+
+    report = validate_markdown_file(loose)
+
+    assert report["artifact_path"] == str(loose.resolve())
+
+
+def test_runs_before_runs_layout_keeps_an_absolute_path(tmp_path: Path):
+    """'runs 之前还有 runs'：自动识别会误判外层目录，写出的相对路径原地就 BLOCKED。"""
+
+    from article_group.final_review import _validate_style_artifact
+
+    run = tmp_path / "home" / "runs" / "proj" / "runs" / "2026-09-18" / "daily-952"
+    (run / "delivery").mkdir(parents=True)
+    delivery = run / "delivery" / "delivery.md"
+    delivery.write_text("# 标题\n\n## 小节\n\n正文一段。\n", encoding="utf-8")
+
+    report = validate_markdown_file(delivery)
+    assert report["artifact_path"] == str(delivery.resolve())
+    _, errors = _validate_style_artifact(report, run, [delivery], review_surface="markdown_codex")
+    assert errors == []  # 原地读回必须仍然通过（绝对路径是安全的退路）
+
+    # 引擎口径（显式 run_root）不受这条限制，仍记相对路径。
+    explicit = validate_markdown_file(delivery, run_root=run)
+    assert explicit["artifact_path"] == "delivery/delivery.md"
+    assert _validate_style_artifact(explicit, run, [delivery], review_surface="markdown_codex")[1] == []

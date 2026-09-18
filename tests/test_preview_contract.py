@@ -246,3 +246,57 @@ def test_preview_route_audit_direct_script_entrypoint_resolves_project_package()
 
     assert result.returncode == 0
     assert "per-route preview" in result.stdout
+
+
+# --- preview 证据路径：run 内记相对 + 旧绝对路径跨副本可重定位（2026-09-18）----
+
+
+def _preview_run(tmp_path: Path, *parts: str) -> tuple[Path, Path]:
+    run = tmp_path.joinpath(*parts)
+    html = run / "review" / "frozen" / "ruoyu-art-001.html"
+    html.parent.mkdir(parents=True, exist_ok=True)
+    html.write_text("<article>stable</article>", encoding="utf-8")
+    return run, html
+
+
+def test_route_manifest_records_run_relative_paths(tmp_path: Path):
+    from article_group.preview_contract import build_route_manifest
+
+    _, html = _preview_run(tmp_path, "runs", "2026-09-18", "daily-901")
+    entry = build_route_manifest({"/ruoyu-art-001.html": html})["/ruoyu-art-001.html"]
+    assert entry["path"] == "review/frozen/ruoyu-art-001.html"
+
+
+def test_legacy_absolute_preview_evidence_survives_a_copied_run(tmp_path: Path):
+    """绝对路径的旧证据 + 副本：重定位后按 body/css sha256 授权，不再整体 BLOCKED。"""
+
+    import json
+    import shutil
+
+    from article_group.preview_contract import build_route_manifest, validate_preview_evidence
+
+    original, html = _preview_run(tmp_path, "runs", "2026-09-18", "daily-902")
+    route = "/ruoyu-art-001.html"
+    legacy = json.loads(json.dumps(build_route_manifest({route: html})))
+    legacy[route]["path"] = str(html.resolve())  # 改动前的写法：绝对路径
+    payload = {
+        "schema_version": "preview-route-audit-v2",
+        "preview_mode": "local_codex",
+        "canonical_http_required": False,
+        "local_preview_status": "READY",
+        "manifest": legacy,
+        "http_audit_status": "NOT_REQUIRED",
+    }
+    copy = tmp_path / "backup" / "runs" / "2026-09-18" / "daily-902"
+    shutil.copytree(original, copy)
+    copy_html = copy / "review" / "frozen" / "ruoyu-art-001.html"
+
+    assert validate_preview_evidence(
+        payload, mode="local_codex", root=copy, delivery_htmls=[copy_html]
+    ) == []
+
+    copy_html.write_text("<article>changed</article>", encoding="utf-8")
+    errors = validate_preview_evidence(
+        payload, mode="local_codex", root=copy, delivery_htmls=[copy_html]
+    )
+    assert any("body_sha256_mismatch" in error for error in errors)

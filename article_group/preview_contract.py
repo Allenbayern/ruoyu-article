@@ -50,12 +50,16 @@ def validate_batch_preview_mode(
 
 
 def build_route_manifest(routes: dict[str, Path]) -> dict[str, dict[str, object]]:
+    # 路径按 run 相对记（run 内产物）——绝对路径在 run 被复制/搬移后会让
+    # validate_preview_evidence 整体报 preview_route_file_missing（2026-09-18 L2 复核）。
+    from article_group.evidence_paths import run_relative_reference
+
     manifest: dict[str, dict[str, object]] = {}
     for route, path in routes.items():
         data = path.read_bytes()
         manifest[route] = {
             "route": route,
-            "path": str(path),
+            "path": run_relative_reference(path),
             "bundle_mode": "per_route",
             "size": len(data),
             "body_sha256": _sha256(data),
@@ -122,7 +126,11 @@ def _resolve_evidence_path(root: Path, raw_path: object) -> Path | None:
         resolved = candidate.resolve() if candidate.is_absolute() else (root / candidate).resolve()
         resolved.relative_to(root.resolve())
     except (OSError, RuntimeError, ValueError):
-        return None
+        # 旧证据里可能记的是绝对路径：run 被复制/搬移后按 runs/<date>/<id>/ 尾巴重定位。
+        # 与 style-gate 同一口径——重定位只找候选，放行仍由 body/css sha256 比对决定。
+        from article_group.evidence_paths import rebase_moved_run_path
+
+        return rebase_moved_run_path(root, candidate)
     return resolved
 
 

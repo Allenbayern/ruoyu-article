@@ -737,21 +737,15 @@ def artifact_reference(path: Path, *, run_root: str | Path | None = None) -> str
     ``artifact_binding_invalid:path`` 整体 BLOCKED——记录里的绑定路径指向旧位置，
     而证据本身是好的。现在：run 内产物记相对路径（可移植），run 外保持绝对路径
     （与既有行为一致，例如 CLI 直接对任意文件跑门禁）。
+
+    判据在 :mod:`article_group.evidence_paths`：相对路径必须能往返解析回同一个文件，
+    自动识别只认规范形状的 run 根——``runs/<X>/<文件>`` 与"runs 之前还有 runs"的布局
+    都落回绝对路径（这两种形状曾被写坏成 ``"."`` / 错误相对路径，见 2026-09-18 L2 复核）。
     """
 
-    resolved = Path(path).expanduser().resolve()
-    if run_root is not None:
-        root: Path | None = Path(run_root).expanduser().resolve()
-    else:
-        from article_group.run_seal import find_run_root
+    from article_group.evidence_paths import run_relative_reference
 
-        root = find_run_root(resolved)
-    if root is not None:
-        try:
-            return resolved.relative_to(root).as_posix()
-        except ValueError:
-            pass
-    return str(resolved)
+    return run_relative_reference(path, run_root=run_root)
 
 
 def validate_markdown_file(
