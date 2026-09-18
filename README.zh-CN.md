@@ -206,6 +206,29 @@ uv run python -m article_group.sync_compliance \
 - 与 `review_surface=html_delivery` 的 HTML 冻结/预览是两回事：那条是交付面契约（含逐路由哈希与 HTTP 200 检查），本条只是"给人看"的便利页面。
 - 测试：`tests/test_preview_site.py`（渲染保真、零外链、缺交付记录时的降级口径、幂等 + 留底、发布越界拒绝）。
 
+## 分阶段重跑与渲染缓存（不用每次跑满整条流水线）
+
+`daily_engine` 的阶段现在是一张显式清单，可以只跑其中一段；公众号渲染带内容缓存。
+动尾段（改稿后重出交付/门禁/预览）不必再等前面的发现、选稿、正文与 docker 渲染。
+
+```bash
+python -m scripts.daily_engine --spec scripts/run_real_daily_009.py --list-stages
+python -m scripts.daily_engine --spec scripts/run_real_daily_009.py --from wechat_render
+python -m scripts.daily_engine --spec scripts/run_real_daily_009.py --stages gates,batch_manifest,wechat_render,preview_site
+```
+
+- **阶段清单**：`stage_plan()` 给出 19 个阶段单元（逐篇阶段形如 `material_pack:art-001`），`select_stages()`
+  按组名或完整名挑选；`--stages`/`--from` 走的就是这两个函数。**未知阶段名、缺前置产物一律拒绝执行**（退出码 2），
+  不会"以为跑了、其实什么都没跑"；被跳过的阶段按"磁盘上已有该产物"对待，`step-log.jsonl` 里每个阶段都带
+  `分阶段重跑：本次 N/M 个阶段单元` 的注记。
+- **渲染缓存**：`wechat_render` 先比对上一份 `wechat/manifest.json`——交付稿 SHA-256、主题、结构、渲染命令模板、
+  渲染管线源码指纹、以及产物自身的哈希与复制页哈希全部一致才复用（`cache: {hits, misses}` 与每篇
+  `cached: true` 都记进 manifest 与 `run-manifest.json`）。任一不同就重渲染；旧版 manifest 没有指纹，
+  首次会重渲染一遍再进入缓存。强制重渲染用 `--no-cache`（CLI）或 `render_run(..., use_cache=False)`。
+  渲染一次要跑 docker + npx（实测每篇约 200 s），缓存命中即完全跳过。
+- 测试：`tests/test_daily_engine_staging.py`（阶段挑选、未知名字拒绝、缺前置拒绝、run_manifest 回读上一份状态）、
+  `tests/test_wechat_render.py`（缓存命中/失效矩阵：改稿、换主题、换结构、产物被改、无指纹记录、`--no-cache`）。
+
 ## 爆款研究库（viral research）
 
 爆款研究库按「抓爬证据 → package → inventory → prepare → 语义 pass → finalize」顺序运行，产物全部落在当前批次的 `RUN_ROOT` 内，**不自动写入 Vault、不自动发布、不自动推进任何工作流状态**。微信长文（`wechat` / `wechat_long_form`）是主通道；新榜/热榜、B 站、头条等其它来源统一按 `observation-only` 处理，不得据标题、排名或不完整证据认定为 `qualified_viral`，也不得计入正向技法频次。

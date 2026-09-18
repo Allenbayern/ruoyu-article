@@ -216,3 +216,139 @@ def test_cli_json_mode(tmp_path, capsys: pytest.CaptureFixture[str]):
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "ok"
     assert payload["articles"][0]["article_id"] == "art-001"
+
+
+def test_cli_no_cache_forces_a_rerender(tmp_path, capsys: pytest.CaptureFixture[str]):
+    root = _run_with_deliveries(tmp_path, ARTICLE)
+    renderer, counter = _counting_renderer(tmp_path)
+
+    assert main(["--run-root", str(root), "--renderer-cmd", renderer, "--json"]) == 0
+    capsys.readouterr()
+    assert main(["--run-root", str(root), "--renderer-cmd", renderer, "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["cache"]["hits"] == 1
+
+    assert main(
+        ["--run-root", str(root), "--renderer-cmd", renderer, "--json", "--no-cache"]
+    ) == 0
+    forced = json.loads(capsys.readouterr().out)
+    assert forced["cache"]["enabled"] is False and forced["cache"]["misses"] == 1
+    assert _render_calls(counter) == 2
+
+
+# --- 渲染缓存（2026-09-18，A1）：输入没变就不再跑 docker+npx -------------------
+
+
+def _counting_renderer(tmp_path: Path) -> tuple[str, Path]:
+    """桩渲染器：每次被调用就往 calls.txt 记一笔，用来证明缓存命中时没渲染。"""
+
+    counter = tmp_path / "calls.txt"
+    script = tmp_path / "counting_render.py"
+    script.write_text(
+        textwrap.dedent(
+            f"""
+            import pathlib, sys
+            counter = pathlib.Path({str(counter)!r})
+            counter.write_text((counter.read_text() if counter.exists() else "") + "1")
+            theme = sys.argv[2] if len(sys.argv) > 2 else "default"
+            text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+            lines = [l for l in text.splitlines() if l.strip() and not l.startswith("#")]
+            body = "".join(f'<p style="margin:1em 0">{{l}}</p>' for l in lines)
+            print(f'<section id="wenyan" style="font-size:16px" data-theme="{{theme}}">{{body}}</section>')
+            """
+        ),
+        encoding="utf-8",
+    )
+    return f"{sys.executable} {script} {{md_file}} {{theme}}", counter
+
+
+def _render_calls(counter: Path) -> int:
+    return len(counter.read_text(encoding="utf-8")) if counter.exists() else 0
+
+
+def test_render_run_reuses_cached_output_when_nothing_changed(tmp_path):
+    root = _run_with_deliveries(tmp_path, ARTICLE)
+    renderer, counter = _counting_renderer(tmp_path)
+
+    first = render_run(root, renderer_cmd=renderer)
+    second = render_run(root, renderer_cmd=renderer)
+
+    assert first["cache"]["hits"] == 0 and first["cache"]["misses"] == 1
+    assert second["cache"]["hits"] == 1 and second["cache"]["misses"] == 0
+    assert _render_calls(counter) == 1  # 第二次没有跑渲染器
+    item = second["articles"][0]
+    assert item["cached"] is True
+    assert item["fragment_sha256"] == first["articles"][0]["fragment_sha256"]
+    assert (root / "wechat" / "index.html").exists()
+    assert second["publication_authorization"] == "not_authorized"
+
+
+def test_cache_invalidates_when_the_delivery_changes(tmp_path):
+    root = _run_with_deliveries(tmp_path, ARTICLE)
+    renderer, counter = _counting_renderer(tmp_path)
+    render_run(root, renderer_cmd=renderer)
+
+    (root / "delivery" / "art-001" / "delivery.md").write_text(
+        ARTICLE.replace("6.7分", "7.1分"), encoding="utf-8"
+    )
+    second = render_run(root, renderer_cmd=renderer)
+
+    assert second["cache"] == {**second["cache"], "hits": 0, "misses": 1}
+    assert _render_calls(counter) == 2
+    fragment = (root / second["articles"][0]["fragment_path"]).read_text(encoding="utf-8")
+    assert "7.1分" in fragment
+
+
+def test_cache_invalidates_when_theme_or_style_changes(tmp_path):
+    root = _run_with_deliveries(tmp_path, ARTICLE)
+    renderer, counter = _counting_renderer(tmp_path)
+    render_run(root, theme="default", renderer_cmd=renderer)
+
+    other_theme = render_run(root, theme="pie", renderer_cmd=renderer)
+    other_style = render_run(root, theme="pie", style="theme", renderer_cmd=renderer)
+
+    assert other_theme["cache"]["misses"] == 1
+    assert other_style["cache"]["misses"] == 1
+    assert _render_calls(counter) == 3
+
+
+def test_cache_invalidates_when_the_rendered_files_were_tampered_with(tmp_path):
+    root = _run_with_deliveries(tmp_path, ARTICLE)
+    renderer, counter = _counting_renderer(tmp_path)
+    first = render_run(root, renderer_cmd=renderer)
+    (root / first["articles"][0]["fragment_path"]).write_text("<p>被手改过</p>\n", encoding="utf-8")
+
+    second = render_run(root, renderer_cmd=renderer)
+
+    assert second["cache"]["misses"] == 1
+    assert _render_calls(counter) == 2
+    assert "被手改过" not in (root / first["articles"][0]["fragment_path"]).read_text(encoding="utf-8")
+
+
+def test_cache_is_ignored_for_records_without_a_pipeline_fingerprint(tmp_path):
+    root = _run_with_deliveries(tmp_path, ARTICLE)
+    renderer, counter = _counting_renderer(tmp_path)
+    render_run(root, renderer_cmd=renderer)
+
+    manifest_path = root / "wechat" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    for entry in manifest["articles"]:
+        entry.pop("pipeline_fingerprint", None)
+        entry.pop("copy_page_sha256", None)
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+
+    second = render_run(root, renderer_cmd=renderer)
+
+    assert second["cache"]["misses"] == 1
+    assert _render_calls(counter) == 2
+
+
+def test_no_cache_forces_a_rerender(tmp_path):
+    root = _run_with_deliveries(tmp_path, ARTICLE)
+    renderer, counter = _counting_renderer(tmp_path)
+    render_run(root, renderer_cmd=renderer)
+
+    forced = render_run(root, renderer_cmd=renderer, use_cache=False)
+
+    assert forced["cache"]["enabled"] is False
+    assert forced["cache"]["misses"] == 1
+    assert _render_calls(counter) == 2

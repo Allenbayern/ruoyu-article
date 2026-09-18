@@ -37,6 +37,18 @@ DEFAULT_THEME = "default"
 TIMEOUT_SECONDS = 300
 STDERR_TAIL = 400
 
+
+def _pipeline_fingerprint() -> str:
+    """本模块源码的哈希：渲染/归一/复制页代码一变，缓存整体失效。
+
+    只按输入（markdown 哈希、主题、结构、命令）做缓存键是不够的——
+    归一规则、内联样式表、复制页模板都在本模块里，改了它们必须重渲染。
+    用整文件哈希是刻意保守的做法：宁可多渲染一次，也不给出旧版式的产物。
+    """
+
+    return sha256_bytes(Path(__file__).read_bytes())[:16]
+
+
 # Placeholders: {md_file} {md_name} {workdir} {theme}
 DEFAULT_RENDERER_CMD = (
     "docker run --rm -v {workdir}:/w -w /w node:22-alpine "
@@ -269,6 +281,71 @@ def _delivery_files(run_dir: Path) -> list[tuple[str, Path]]:
     return found
 
 
+def _previous_manifest(root: Path) -> dict[str, Any]:
+    """上一份 wechat/manifest.json（读不到就当成没有缓存）。"""
+
+    try:
+        payload = json.loads((root / "wechat" / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, Mapping) else {}
+
+
+def _previous_entries(root: Path) -> dict[str, Mapping[str, Any]]:
+    manifest = _previous_manifest(root)
+    entries = manifest.get("articles")
+    out: dict[str, Mapping[str, Any]] = {}
+    if isinstance(entries, list):
+        for entry in entries:
+            if isinstance(entry, Mapping) and isinstance(entry.get("article_id"), str):
+                out[str(entry["article_id"])] = entry
+    return out
+
+
+def _cache_reusable(
+    root: Path,
+    entry: Mapping[str, Any],
+    *,
+    source_sha256: str,
+    theme: str,
+    style: str,
+    renderer_cmd: str,
+    fingerprint: str,
+    previous_theme: str,
+    previous_style: str,
+) -> bool:
+    """这条缓存还能不能用：输入、渲染参数、代码指纹、产物哈希都要对得上。
+
+    渲染一次要跑 docker + npx（实测每篇约 200 s），但它慢不是放松校验的理由：
+    只要有一项对不上就重渲染，宁可慢也不能给出与当前稿件/当前版式不符的产物。
+    """
+
+    # 主题/结构记在上一份 manifest 的顶层（每篇一篇记录里没有 theme 字段）。
+    if previous_theme != theme or previous_style != style:
+        return False
+    if entry.get("source_sha256") != source_sha256:
+        return False
+    if entry.get("style") != style:
+        return False
+    # 比模板而不是展开后的命令：展开结果里带着每次新建的临时工作目录。
+    if entry.get("renderer_cmd_template") != renderer_cmd:
+        return False
+    # 旧版本记录没有指纹/复制页哈希 → 无法证明产物与当前代码一致，按缓存未命中处理。
+    if entry.get("pipeline_fingerprint") != fingerprint:
+        return False
+    if style == "native" and entry.get("dropped_title") is not True:
+        return False
+    fragment_path = root / str(entry.get("fragment_path") or "")
+    page_path = root / str(entry.get("copy_page_path") or "")
+    if not fragment_path.is_file() or not page_path.is_file():
+        return False
+    if sha256_bytes(fragment_path.read_bytes()) != entry.get("fragment_sha256"):
+        return False
+    if sha256_bytes(page_path.read_bytes()) != entry.get("copy_page_sha256"):
+        return False
+    return True
+
+
 def render_run(
     run_dir: str | Path,
     *,
@@ -278,6 +355,7 @@ def render_run(
     style: str = "native",
     force: bool = False,
     title_lookup: Mapping[str, str] | None = None,
+    use_cache: bool = True,
 ) -> dict[str, Any]:
     """Render every sealed delivery of a run into ``<run>/wechat/``.
 
@@ -285,13 +363,24 @@ def render_run(
     公众号-native structure (drops the duplicated H1, left-aligns headings,
     removes text shadows); ``theme`` keeps the renderer theme untouched.
 
+    ``use_cache`` (default true): reuse the previous manifest's output when the
+    delivery hash, theme, style, renderer command, pipeline fingerprint and the
+    recorded output hashes all still match — a re-run of a batch whose articles
+    did not change then costs nothing instead of one docker+npx render per
+    article (实测每篇约 200 s，daily-009 一天重渲染 13 次 / 2581 s).
+    ``use_cache=False`` (CLI ``--no-cache``) forces a full re-render.
+
     Always returns a report; never raises for renderer problems (they land in
     ``status``/``reason`` so the caller can record ``not_run`` honestly).
     """
+
     root = Path(run_dir)
     command = renderer_cmd or os.environ.get("WECHAT_RENDER_CMD") or DEFAULT_RENDERER_CMD
     if style not in {"native", "theme"}:
         style = "native"
+    fingerprint = _pipeline_fingerprint()
+    previous_manifest = _previous_manifest(root)
+    previous = _previous_entries(root)
     report: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "run_id": f"{root.parent.name}/{root.name}" if root.parent.name[:4].isdigit() else root.name,
@@ -303,6 +392,13 @@ def render_run(
         "reason": "",
         "publication_authorization": "not_authorized",
         "advisory": True,
+        "cache": {
+            "enabled": use_cache,
+            "hits": 0,
+            "misses": 0,
+            "pipeline_fingerprint": fingerprint,
+            "reused_from": str(previous_manifest.get("generated_at") or ""),
+        },
     }
     if not force:
         from article_group.run_state import sealed_reason
@@ -325,7 +421,33 @@ def render_run(
     index_items: list[dict[str, str]] = []
     for article_id, md_path in deliveries:
         markdown = md_path.read_text(encoding="utf-8")
+        source_sha256 = sha256_bytes(md_path.read_bytes())
         title = (title_lookup or {}).get(article_id) or markdown.splitlines()[0].lstrip("# ").strip()
+        note = f"{theme} 主题 · {style} 结构 · {cjk_chars(markdown)} 字"
+        cached = previous.get(article_id) if use_cache else None
+        if isinstance(cached, Mapping) and _cache_reusable(
+            root,
+            cached,
+            source_sha256=source_sha256,
+            theme=theme,
+            style=style,
+            renderer_cmd=command,
+            fingerprint=fingerprint,
+            previous_theme=str(previous_manifest.get("theme") or ""),
+            previous_style=str(previous_manifest.get("style") or ""),
+        ):
+            entry = dict(cached)
+            entry["cached"] = True
+            entry["title"] = title
+            entry["cjk_chars"] = cjk_chars(markdown)
+            entry["inline_style_count"] = (root / str(entry["fragment_path"])).read_text(
+                encoding="utf-8"
+            ).count('style="')
+            report["articles"].append(entry)
+            report["cache"]["hits"] += 1
+            index_items.append({"href": f"{article_id}.html", "title": title, "note": note})
+            continue
+        report["cache"]["misses"] += 1
         try:
             fragment, used = render_markdown(markdown, theme=theme, renderer_cmd=command)
         except RendererUnavailable as exc:
@@ -343,7 +465,7 @@ def render_run(
         _write_out(wx_path, fragment + "\n", root, "wechat_render:fragment", force)
         page = copy_page(
             title=title,
-            note=f"{theme} 主题 · {style} 结构 · {cjk_chars(markdown)} 字",
+            note=note,
             body_html=fragment,
             editor_url=editor_url,
         )
@@ -353,19 +475,23 @@ def render_run(
             "article_id": article_id,
             "title": title,
             "source_path": str(md_path.relative_to(root)),
-            "source_sha256": sha256_bytes(md_path.read_bytes()),
+            "source_sha256": source_sha256,
             "fragment_path": str(wx_path.relative_to(root)),
             "fragment_sha256": sha256_bytes(wx_path.read_bytes()),
             "copy_page_path": str(page_path.relative_to(root)),
+            "copy_page_sha256": sha256_bytes(page_path.read_bytes()),
             "inline_style_count": fragment.count('style="'),
             "cjk_chars": cjk_chars(markdown),
             "style": style,
             "dropped_title": style == "native",
             "renderer_cmd": used,
+            "renderer_cmd_template": command,
+            "pipeline_fingerprint": fingerprint,
+            "cached": False,
         })
         index_items.append({
             "href": f"{article_id}.html", "title": title,
-            "note": f"{theme} 主题 · {style} 结构 · {cjk_chars(markdown)} 字",
+            "note": note,
         })
 
     _write_out(out_dir / "index.html",
@@ -409,6 +535,8 @@ def _build_parser() -> argparse.ArgumentParser:
                         help="自定义渲染命令模板，占位符 {md_file} {md_name} {workdir} {theme}")
     parser.add_argument("--editor-url", default="", help="复制页上附带的排版编辑器地址（可选）")
     parser.add_argument("--force", action="store_true", help="在已封存 run 上强制重渲染")
+    parser.add_argument("--no-cache", action="store_true",
+                        help="忽略上次渲染缓存（输入/参数/代码指纹任一变化本来就会自动重渲染）")
     parser.add_argument("--json", action="store_true", help="输出完整报告 JSON")
     return parser
 
@@ -422,14 +550,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         editor_url=args.editor_url,
         style=args.style,
         force=args.force,
+        use_cache=not args.no_cache,
     )
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
-        print(f"status={report['status']} theme={report['theme']}")
+        cache = report.get("cache") or {}
+        print(f"status={report['status']} theme={report['theme']} "
+              f"cache={cache.get('hits', 0)} hit / {cache.get('misses', 0)} miss")
         for item in report["articles"]:
+            flag = "（缓存复用）" if item.get("cached") else ""
             print(f"  {item['article_id']}: {item['copy_page_path']} "
-                  f"({item['cjk_chars']} 字, {item['inline_style_count']} 处内联样式)")
+                  f"({item['cjk_chars']} 字, {item['inline_style_count']} 处内联样式){flag}")
         if report.get("index_path"):
             print(f"  index: {report['index_path']}")
         if report["reason"]:
@@ -452,7 +584,6 @@ __all__ = [
     "render_run",
     "main",
 ]
-
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry
     sys.exit(main())

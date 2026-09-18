@@ -6,12 +6,16 @@ spec's data names and executes every stage in order.
 """
 from __future__ import annotations
 
+import argparse
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 import hashlib
 import json
 import re
 from pathlib import Path
 import subprocess
 import sys
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import scripts.generate_daily_001 as base
@@ -873,11 +877,18 @@ def wechat_render_step() -> dict:
         "theme": report["theme"],
         "publication_authorization": "not_authorized",
     }
+    if report.get("cache"):
+        # 重跑时"渲染了几篇 / 复用了几篇"要留着：daily-009 一天重渲染 13 次，
+        # 慢的是 docker+npx，而缓存复用与否则是后面复盘唯一能看出差别的字段。
+        status["cache"] = report["cache"]
     if report.get("index_path"):
         status["index_path"] = report["index_path"]
     if report.get("reason"):
         status["reason"] = report["reason"]
     status["articles"] = [item["article_id"] for item in report["articles"]]
+    status["cached_articles"] = [
+        item["article_id"] for item in report["articles"] if item.get("cached")
+    ]
     return status
 
 
@@ -967,8 +978,250 @@ def evidence_rebind_step() -> dict:
     }
 
 
-def build_run(spec) -> None:
-    """Execute every pipeline stage using a per-run spec module's data."""
+class StagePrerequisiteMissing(RuntimeError):
+    """分阶段重跑时前置产物不在 run 里：缺哪个说哪个，别跑到一半才炸。"""
+
+
+@dataclass(frozen=True)
+class PipelineStage:
+    """一个可单独选中的阶段单元。
+
+    ``name`` 是完整名（逐篇阶段带 ``:aid``），``group`` 是组名（可一次选中该组全部
+    单元），``requires`` 列出运行前必须已在 run 里的相对路径/glob。
+    """
+
+    name: str
+    group: str
+    run: Callable[[], object]
+    requires: tuple[str, ...] = ()
+
+
+def _content_record_unit(spec_args: Mapping[str, Any], body_map: Mapping[str, str]) -> Callable[[], None]:
+    def run() -> None:
+        content_record(
+            spec_args["aid"],
+            body_map[spec_args["aid"]],
+            spec_args["mode"],
+            spec_args["role"],
+            spec_args["core_object"],
+            spec_args["question"],
+            spec_args["mechanism"],
+            spec_args["takeaway"],
+            spec_args["hard"],
+            spec_args["bases"],
+            spec_args["boundary"],
+            spec_args["source_ids"],
+        )
+
+    return run
+
+
+def _status_unit(run_fn: Callable[[], dict], results: dict[str, Any], key: str) -> Callable[[], dict]:
+    """跑一个后置步骤并把状态留在 ``results`` 里（run_manifest 复用）。"""
+
+    def run() -> dict:
+        value = run_fn()
+        results[key] = value
+        return value
+
+    return run
+
+
+def _run_manifest_unit(results: Mapping[str, Any]) -> Callable[[], None]:
+    def run() -> None:
+        previous = _previous_run_manifest()
+        write_json(
+            "run-manifest.json",
+            {
+                "schema_version": "run-manifest-v1",
+                "run_id": RUN_ID,
+                "batch_path": "batch.json",
+                "source_manifest_path": "source-manifest.json",
+                "selection_path": "discovery/discovery-radar-r0.json",
+                # 分阶段重跑时 wechat/preview 可能没跑：沿用上一份 manifest 的结论，
+                # 都没有就如实记 not_run，不要让"没跑"看起来像"跑了且没问题"。
+                "wechat_render": results.get("wechat_render")
+                or previous.get("wechat_render")
+                or {"status": "not_run"},
+                "preview_site": results.get("preview_site")
+                or previous.get("preview_site")
+                or {"status": "not_run"},
+                "step_log": "step-log.jsonl",
+                "publication_authorization": "not_authorized",
+            },
+        )
+
+    return run
+
+
+def _previous_run_manifest() -> dict[str, Any]:
+    try:
+        payload = json.loads((Path(ROOT) / "run-manifest.json").read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def stage_plan(body_map: Mapping[str, str] | None = None) -> list[PipelineStage]:
+    """按执行顺序给出阶段清单（阶段之间只通过 run 目录里的文件交接）。
+
+    分阶段重跑之所以可行，靠的就是这条设计：每个阶段要么用 spec 数据、要么读 run 里
+    已经落盘的产物，不依赖上一个阶段留在内存里的值（``body_map`` 是 spec 的纯数据，
+    随时可用）。``run_manifest`` 需要 wechat/preview 的状态，缺失时回读上一份 manifest。
+    """
+
+    bodies_map = dict(body_map or {})
+    results: dict[str, Any] = {}
+    plan: list[PipelineStage] = [
+        PipelineStage("discovery", "discovery", discovery),
+        PipelineStage(
+            "source_manifest",
+            "source_manifest",
+            source_manifest,
+            requires=tuple(
+                spec["artifact_path"]
+                for spec in (SOURCES.values() if isinstance(SOURCES, Mapping) else SOURCES)
+                if isinstance(spec, Mapping) and spec.get("artifact_path")
+            ),
+        ),
+        PipelineStage("candidates", "candidates", candidates),
+        PipelineStage("briefs_and_tasks", "briefs_and_tasks", briefs_and_tasks),
+    ]
+    for aid in MATERIAL_SPECS:
+        plan.append(
+            PipelineStage(
+                f"material_pack:{aid}",
+                "material_pack",
+                (lambda aid=aid: material_pack(aid)),
+                requires=(f"task-hierarchy/article-task-{aid}.json",),
+            )
+        )
+    plan.append(PipelineStage("bodies", "bodies", lambda: bodies_map))
+    plan.append(
+        PipelineStage(
+            "drafts_write",
+            "drafts_write",
+            lambda: [
+                write_text(f"drafts/{aid}/body_draft.md", body)
+                for aid, body in bodies_map.items()
+            ],
+        )
+    )
+    for spec_args in CONTENT_RECORD_ARGS:
+        plan.append(
+            PipelineStage(
+                f"content_record:{spec_args['aid']}",
+                "content_record",
+                _content_record_unit(spec_args, bodies_map),
+                requires=(f"drafts/{spec_args['aid']}/body_draft.md",),
+            )
+        )
+    plan.append(
+        PipelineStage(
+            "reviews_and_delivery",
+            "reviews_and_delivery",
+            (lambda: reviews_and_delivery(bodies_map)),
+            requires=tuple(f"task-cards/task-card-{aid}.md" for aid in bodies_map),
+        )
+    )
+    plan.append(PipelineStage("evidence_rebind", "evidence_rebind", evidence_rebind_step))
+    plan.append(
+        PipelineStage(
+            "portfolio",
+            "portfolio",
+            portfolio,
+            requires=("candidate-pool.json",),
+        )
+    )
+    plan.append(
+        PipelineStage(
+            "gates",
+            "gates",
+            gates,
+            requires=("task-hierarchy/*.json", "material-packs/*.json", "candidate-pool.json"),
+        )
+    )
+    plan.append(
+        PipelineStage(
+            "batch_manifest",
+            "batch_manifest",
+            (lambda: batch_manifest(bodies_map)),
+            requires=tuple(f"review/{aid}/title-pack.json" for aid in bodies_map)
+            + ("review/gates/topic-five-questions.json",),
+        )
+    )
+    plan.append(
+        PipelineStage(
+            "wechat_render",
+            "wechat_render",
+            _status_unit(wechat_render_step, results, "wechat_render"),
+            requires=("delivery/*/delivery.md",),
+        )
+    )
+    plan.append(
+        PipelineStage(
+            "preview_site",
+            "preview_site",
+            _status_unit(preview_site_step, results, "preview_site"),
+            requires=("delivery/*/delivery.md",),
+        )
+    )
+    plan.append(PipelineStage("run_manifest", "run_manifest", _run_manifest_unit(results)))
+    plan.append(
+        PipelineStage("step_log_markdown", "step_log_markdown", lambda: _write_step_log_markdown(ROOT))
+    )
+    return plan
+
+
+def select_stages(
+    plan: Sequence[PipelineStage],
+    *,
+    stages: Sequence[str] | None = None,
+    from_stage: str | None = None,
+) -> list[PipelineStage]:
+    """按组名/完整名挑选阶段单元；未知名字直接报错，不静默跳过。
+
+    名字写错时最危险的结果是"以为跑了、其实什么都没跑"，所以这里 fail-closed。
+    """
+
+    def matches(stage: PipelineStage, wanted: str) -> bool:
+        return stage.name == wanted or stage.group == wanted
+
+    selected = list(plan)
+    if from_stage:
+        index = next((i for i, stage in enumerate(selected) if matches(stage, from_stage)), None)
+        if index is None:
+            raise ValueError(f"未知阶段：{from_stage}（可用：{_known_stage_names(plan)}）")
+        selected = selected[index:]
+    if stages:
+        wanted = [str(item).strip() for item in stages if str(item).strip()]
+        unknown = [item for item in wanted if not any(matches(stage, item) for stage in plan)]
+        if unknown:
+            raise ValueError(f"未知阶段：{'、'.join(unknown)}（可用：{_known_stage_names(plan)}）")
+        selected = [stage for stage in selected if any(matches(stage, item) for item in wanted)]
+    return selected
+
+
+def _known_stage_names(plan: Sequence[PipelineStage]) -> str:
+    groups: list[str] = []
+    for stage in plan:
+        if stage.group not in groups:
+            groups.append(stage.group)
+    return "、".join(groups)
+
+
+def _require_prerequisites(stage: PipelineStage) -> None:
+    missing = [pattern for pattern in stage.requires if not any(Path(ROOT).glob(pattern))]
+    if missing:
+        raise StagePrerequisiteMissing(
+            f"{stage.name} 需要 run 里已有 {'、'.join(missing)}；"
+            "分阶段重跑只能跑在已有这些产物的 run 上"
+        )
+
+
+def bind_spec(spec) -> None:
+    """绑定 spec 数据，并把 spec 的裸写包进留底通道。"""
+
     bind_names = (
         "ROOT", "RUN_ID", "GROUP_ID", "CAPTURED_AT", "CONTRACT",
         "digest", "write_json", "write_text", "ref",
@@ -988,62 +1241,109 @@ def build_run(spec) -> None:
     globals()["write_json"] = lambda path, value: _route_write(path, value, kind="json", raw=_raw_write_json)
     globals()["write_text"] = lambda path, value: _route_write(path, value, kind="text", raw=_raw_write_text)
 
+
+def build_run(
+    spec,
+    *,
+    stages: Sequence[str] | None = None,
+    from_stage: str | None = None,
+) -> list[str]:
+    """Execute the pipeline stages using a per-run spec module's data.
+
+    ``stages`` / ``from_stage`` 支持分阶段重跑（2026-09-18）：只跑选中的阶段，被跳过的
+    阶段的产物按"磁盘上已有"对待——尾段改一处不必再等整条流水线（含 docker 渲染）。
+    返回本次实际执行的阶段名，供调用方/日志使用。
+    """
+
+    bind_spec(spec)
+    body_map = bodies()
+    plan = stage_plan(body_map)
+    selected = select_stages(plan, stages=stages, from_stage=from_stage)
+
     from article_group.step_log import StepLog
 
-    def step(name, fn, *args, **kwargs):
-        """跑一个阶段并写一条步骤日志（失败也记，异常照常抛出）。"""
-        with StepLog(ROOT, name):
-            return fn(*args, **kwargs)
+    partial = len(selected) != len(plan)
+    executed: list[str] = []
+    for stage in selected:
+        if partial:
+            # 全量跑时前置产物由前面的阶段产出，不必预检；只有"跳过前面阶段"的
+            # 重跑才需要先确认 run 里确实有那些产物。
+            _require_prerequisites(stage)
+        note = f"分阶段重跑：本次 {len(selected)}/{len(plan)} 个阶段单元" if partial else ""
+        with StepLog(ROOT, stage.name, note=note):
+            stage.run()
+        executed.append(stage.name)
+    return executed
 
 
-    step("discovery", discovery)
-    step("source_manifest", source_manifest)
-    step("candidates", candidates)
-    step("briefs_and_tasks", briefs_and_tasks)
-    for aid in MATERIAL_SPECS:
-        step(f"material_pack:{aid}", material_pack, aid)
-    body_map = step("bodies", bodies)
-    with StepLog(ROOT, "drafts_write"):
-        for aid, body in body_map.items():
-            write_text(f"drafts/{aid}/body_draft.md", body)
-    for args in CONTENT_RECORD_ARGS:
-        with StepLog(ROOT, f"content_record:{args['aid']}"):
-            content_record(
-            args["aid"],
-            body_map[args["aid"]],
-            args["mode"],
-            args["role"],
-            args["core_object"],
-            args["question"],
-            args["mechanism"],
-            args["takeaway"],
-            args["hard"],
-            args["bases"],
-            args["boundary"],
-            args["source_ids"],
-        )
-    step("reviews_and_delivery", reviews_and_delivery, body_map)
-    step("evidence_rebind", evidence_rebind_step)
-    step("portfolio", portfolio)
-    step("gates", gates)
-    step("batch_manifest", batch_manifest, body_map)
-    wechat_status = step("wechat_render", wechat_render_step)
-    preview_status = step("preview_site", preview_site_step)
-    step(
-        "run_manifest",
-        write_json,
-        "run-manifest.json",
-        {
-            "schema_version": "run-manifest-v1",
-            "run_id": RUN_ID,
-            "batch_path": "batch.json",
-            "source_manifest_path": "source-manifest.json",
-            "selection_path": "discovery/discovery-radar-r0.json",
-            "wechat_render": wechat_status,
-            "preview_site": preview_status,
-            "step_log": "step-log.jsonl",
-            "publication_authorization": "not_authorized",
-        },
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="python -m scripts.daily_engine",
+        description="按 spec 跑 two_article_daily 流水线；可只跑部分阶段（分阶段重跑）",
     )
-    step("step_log_markdown", _write_step_log_markdown, ROOT)
+    parser.add_argument("--spec", type=Path, required=True, help="spec 模块路径，如 scripts/run_real_daily_009.py")
+    parser.add_argument("--stages", default="",
+                        help="只跑这些阶段（组名或 name:aid，逗号分隔；见 --list-stages）")
+    parser.add_argument("--from", dest="from_stage", default="", help="从该阶段起跑到末尾")
+    parser.add_argument("--list-stages", action="store_true", help="只列出阶段清单，不执行")
+    return parser
+
+
+def load_spec(path: str | Path):
+    """按路径加载 spec 模块（spec 在模块级只定义数据，导入无副作用）。"""
+
+    import importlib.util
+
+    target = Path(path).resolve()
+    if not target.is_file():
+        raise FileNotFoundError(f"spec 模块不存在：{target}")
+    module_spec = importlib.util.spec_from_file_location(f"ruoyu_daily_spec_{target.stem}", target)
+    if module_spec is None or module_spec.loader is None:
+        raise ImportError(f"无法加载 spec 模块：{target}")
+    module = importlib.util.module_from_spec(module_spec)
+    module_spec.loader.exec_module(module)
+    return module
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = _build_parser().parse_args(argv)
+    repo_root = Path(__file__).resolve().parents[1]
+    try:
+        spec = load_spec(args.spec)
+    except (FileNotFoundError, ImportError) as exc:
+        print(f"拒绝执行：{exc}", file=sys.stderr)
+        return 2
+    spec_root = Path(str(getattr(spec, "ROOT", "")))
+    if not spec_root.is_absolute() and Path.cwd() != repo_root:
+        print(
+            f"拒绝执行：spec 的 ROOT 是相对路径（{spec_root}），请在仓库根 {repo_root} 下运行",
+            file=sys.stderr,
+        )
+        return 2
+    if args.list_stages:
+        bind_spec(spec)
+        for stage in stage_plan(bodies()):
+            requires = f"  需要 {', '.join(stage.requires)}" if stage.requires else ""
+            print(f"{stage.group:20s} {stage.name}{requires}")
+        return 0
+    partial = bool(args.stages.strip() or args.from_stage.strip())
+    root_path = spec_root if spec_root.is_absolute() else Path.cwd() / spec_root
+    if partial and not root_path.is_dir():
+        print(f"拒绝执行：分阶段重跑需要已存在的 run（{root_path}）", file=sys.stderr)
+        return 2
+    try:
+        executed = build_run(
+            spec,
+            stages=[item for item in args.stages.split(",") if item.strip()],
+            from_stage=args.from_stage.strip() or None,
+        )
+    except (StagePrerequisiteMissing, ValueError) as exc:
+        print(f"拒绝执行：{exc}", file=sys.stderr)
+        return 2
+    print(f"完成 {len(executed)} 个阶段单元：{'、'.join(executed)}")
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover - CLI entry
+    sys.exit(main())
 
