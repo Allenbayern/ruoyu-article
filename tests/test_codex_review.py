@@ -410,3 +410,290 @@ def test_l2_record_marks_missing_base_review():
     record = codex_review._base_record(args, "l2", ["review-json", "/tmp/x.json"])
     assert record["scope_mode"] == "diff_only"
     assert record["base_review_missing"] is True
+
+
+# --- canonical independent-review 输出（2026-09-18，daily-009 复盘）----------
+
+
+def _canonical_run_root(tmp_path: Path) -> Path:
+    """一个带完整文章链与已冻结标题包的最小 run。"""
+
+    from article_group.title_freeze import freeze
+
+    run_root = tmp_path / "runs" / "2026-09-18" / "daily-900"
+    (run_root / "delivery" / "art-001").mkdir(parents=True)
+    (run_root / "drafts" / "art-001").mkdir(parents=True)
+    (run_root / "review" / "art-001").mkdir(parents=True)
+    (run_root / "delivery" / "art-001" / "delivery.md").write_text("# 标题\n\n正文\n", encoding="utf-8")
+    (run_root / "drafts" / "art-001" / "body_draft.md").write_text("正文\n", encoding="utf-8")
+    (run_root / "review" / "art-001" / "title-pack.json").write_text(
+        '{"directions":[{"title":"标题"}]}', encoding="utf-8"
+    )
+    (run_root / "batch.json").write_text(
+        json.dumps(
+            {
+                "run_id": "2026-09-18/daily-900",
+                "production_contract": "article-first-v1",
+                "brief_contract": "writing-brief-v2",
+                "title_contract": "title-pack-v1",
+                "legacy_compatibility": False,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    freeze(run_root, "art-001")
+    return run_root
+
+
+def _canonical_argv(run_root: Path, output: Path, external: Path, *extra: str) -> list[str]:
+    return [
+        "--mode", "l2",
+        "--run-root", str(run_root),
+        "--output", str(output),
+        "--request", "2026-09-18 daily-900 art-001 的 L2 对抗复核",
+        "--risk", "L2",
+        "--article-id", "art-001",
+        "--artifact-path", "delivery/art-001/delivery.md",
+        "--body-path", "drafts/art-001/body_draft.md",
+        "--title-pack-path", "review/art-001/title-pack.json",
+        "--review-json", str(external),
+        *extra,
+    ]
+
+
+def test_canonical_output_name_writes_the_record_the_gate_reads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """输出名 = independent-review.json 时直接写 canonical 记录。
+
+    daily-009 的 approve 之所以静默消失，是因为契约记录（status=PASS）和门禁读的
+    canonical 记录（status=complete）之间要靠人手抄；这里一次写对。
+    """
+
+    from article_group.independent_review import evaluate_independent_review
+
+    run_root = _canonical_run_root(tmp_path)
+    output = run_root / "review" / "art-001" / "independent-review.json"
+    external = run_root / "review" / "art-001" / "l2-input.json"
+    external.write_text(
+        json.dumps(
+            {
+                "decision": "approve",
+                "scope_reviewed": ["artifact"],
+                "findings": [],
+                "non_findings": ["来源逐字核对通过"],
+                "coverage_gaps": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(codex_review.shutil, "which", lambda _: None)
+
+    exit_code = codex_review.run_review(
+        codex_review.build_parser().parse_args(_canonical_argv(run_root, output, external))
+    )
+
+    record = json.loads(output.read_text(encoding="utf-8"))
+    assert exit_code == 0
+    assert record["schema_version"] == "article-independent-review-v1"
+    assert record["status"] == "complete"
+    assert record["contract_status"] == "PASS"
+    assert record["decision"] == "approve"
+    assert record["next_step"] == "stop"
+    assert record["max_attempts"] == 3
+    assert record["run_id"] == "2026-09-18/daily-900"
+    assert record["draft_path"] == "drafts/art-001/body_draft.md"
+    assert record["title_freeze_status"] == "frozen_ok"
+    assert record["review_evidence_path"] == "review/art-001/l2-input.json"
+    assert record["canonical_validation_errors"] == []
+    assert record["publication_authorization"] == "not_authorized"
+
+    result = evaluate_independent_review(
+        record,
+        run_root=run_root,
+        expected_artifact_path="delivery/art-001/delivery.md",
+        expected_body_path="drafts/art-001/body_draft.md",
+        expected_title_pack_path="review/art-001/title-pack.json",
+        expected_run_id="2026-09-18/daily-900",
+        strict=True,
+    )
+    assert result["errors"] == []
+    assert result["pass"] is True
+
+
+def test_canonical_flag_keeps_a_rejected_review_complete_but_not_passing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from article_group.independent_review import evaluate_independent_review
+
+    run_root = _canonical_run_root(tmp_path)
+    output = run_root / "review" / "art-001" / "l2-contract.json"
+    external = run_root / "review" / "art-001" / "l2-input.json"
+    external.write_text(
+        json.dumps(
+            {
+                "decision": "needs_changes",
+                "scope_reviewed": ["artifact"],
+                "findings": [{"severity": "major", "target": "正文第 3 段", "evidence": "无源断言"}],
+                "non_findings": [],
+                "coverage_gaps": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(codex_review.shutil, "which", lambda _: None)
+
+    exit_code = codex_review.run_review(
+        codex_review.build_parser().parse_args(
+            _canonical_argv(run_root, output, external, "--canonical-independent-review")
+        )
+    )
+
+    record = json.loads(output.read_text(encoding="utf-8"))
+    assert exit_code == 0
+    assert record["status"] == "complete"  # 复核跑完了
+    assert record["contract_status"] == "FAIL"
+    assert record["next_step"] == "needs_changes"
+    assert evaluate_independent_review(record)["pass"] is False
+
+
+def test_contract_named_output_keeps_the_contract_shape(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    run_root = _canonical_run_root(tmp_path)
+    output = run_root / "review" / "art-001" / "codex-l2-review.json"
+    external = run_root / "review" / "art-001" / "l2-input.json"
+    external.write_text(
+        json.dumps(
+            {
+                "decision": "approve",
+                "scope_reviewed": ["artifact"],
+                "findings": [],
+                "non_findings": [],
+                "coverage_gaps": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(codex_review.shutil, "which", lambda _: None)
+
+    codex_review.run_review(
+        codex_review.build_parser().parse_args(_canonical_argv(run_root, output, external))
+    )
+
+    record = json.loads(output.read_text(encoding="utf-8"))
+    assert record["schema_version"] == "codex-review-contract-1.0"
+    assert record["status"] == "PASS"
+    assert "contract_status" not in record
+
+
+def test_explicit_canonical_flag_requires_the_article_binding(tmp_path: Path):
+    """显式要求 canonical 却缺文章链 = operator 错误，直接拒绝（不写半份记录）。"""
+
+    run_root = tmp_path / "run"
+    run_root.mkdir()
+    output = run_root / "review" / "art-001" / "independent-review.json"
+
+    with pytest.raises(SystemExit, match="--article-id"):
+        codex_review.run_review(
+            codex_review.build_parser().parse_args(
+                [
+                    "--mode", "l2",
+                    "--run-root", str(run_root),
+                    "--output", str(output),
+                    "--request", "r",
+                    "--canonical-independent-review",
+                    "--review-json", str(run_root / "l2-input.json"),
+                ]
+            )
+        )
+
+
+def test_contract_record_reports_the_state_of_the_gate_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """结论只落在契约记录里时，"门禁那份还是占位符"必须可见。"""
+
+    run_root = _canonical_run_root(tmp_path)
+    output = run_root / "review" / "art-001" / "codex-l2-review.json"
+    external = run_root / "review" / "art-001" / "l2-input.json"
+    external.write_text(
+        json.dumps(
+            {
+                "decision": "approve",
+                "scope_reviewed": ["artifact"],
+                "findings": [],
+                "non_findings": [],
+                "coverage_gaps": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(codex_review.shutil, "which", lambda _: None)
+
+    codex_review.run_review(
+        codex_review.build_parser().parse_args(_canonical_argv(run_root, output, external))
+    )
+    assert json.loads(output.read_text(encoding="utf-8"))["canonical_record_state"] == "missing"
+
+    (run_root / "review" / "art-001" / "independent-review.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "article-independent-review-v1",
+                "article_id": "art-001",
+                "status": "PENDING",
+                "decision": "human_review_required",
+            }
+        ),
+        encoding="utf-8",
+    )
+    codex_review.run_review(
+        codex_review.build_parser().parse_args(_canonical_argv(run_root, output, external))
+    )
+    assert json.loads(output.read_text(encoding="utf-8"))["canonical_record_state"] == "placeholder"
+
+
+def test_canonical_name_without_the_article_chain_records_the_gap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    run_root = _canonical_run_root(tmp_path)
+    output = run_root / "review" / "art-001" / "independent-review.json"
+    external = run_root / "review" / "art-001" / "l2-input.json"
+    external.write_text(
+        json.dumps(
+            {
+                "decision": "approve",
+                "scope_reviewed": ["artifact"],
+                "findings": [],
+                "non_findings": [],
+                "coverage_gaps": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(codex_review.shutil, "which", lambda _: None)
+
+    codex_review.run_review(
+        codex_review.build_parser().parse_args(
+            [
+                "--mode", "l2",
+                "--run-root", str(run_root),
+                "--output", str(output),
+                "--request", "r",
+                "--review-json", str(external),
+            ]
+        )
+    )
+
+    record = json.loads(output.read_text(encoding="utf-8"))
+    assert record["schema_version"] == "codex-review-contract-1.0"  # 不假装写成 canonical
+    assert record["canonical_record_incomplete"] == [
+        "--article-id",
+        "--artifact-path",
+        "--body-path",
+        "--title-pack-path",
+    ]
+    assert "canonical" in capsys.readouterr().err

@@ -14,6 +14,15 @@ completion checks apply.  This keeps the L2 gate available after the Codex CLI
 is retired.  The module and file names are historical identifiers; they are not
 a runtime dependency on the Codex CLI.
 
+Canonical independent-review records (2026-09-18, daily-009 复盘): the gate and
+the generator engine read ``review/<aid>/independent-review.json`` in the
+``article-independent-review-v1`` shape, while this tool's own record is the
+``codex-review-contract-1.0`` shape.  Pointing ``--output`` at
+``independent-review.json`` (or passing ``--canonical-independent-review``)
+makes the tool write the canonical shape directly — ``status=complete`` plus the
+full artifact binding — so no reviewer has to hand-copy a record that the
+engine would later overwrite with a PENDING placeholder.
+
 The normal record is explicitly repository code-review evidence.  Its successful
 ``review_completed`` decision is not an article-independent ``approve``.
 """
@@ -37,6 +46,75 @@ from article_group.run_contract import REQUIRED_RUN_CONTRACT, is_strict_run_cont
 
 SCHEMA_VERSION = "codex-review-contract-1.0"
 DEFAULT_SCHEMA = Path(__file__).resolve().parent.parent / "schemas" / "codex-review-contract.json"
+CANONICAL_RECORD_NAME = "independent-review.json"
+
+
+def _binding_gaps(args: argparse.Namespace) -> list[str]:
+    """写 canonical 记录还缺哪些文章链参数（缺了门禁只会把它读成 invalid）。"""
+
+    return [
+        flag
+        for flag, value in (
+            ("--article-id", getattr(args, "article_id", None)),
+            ("--artifact-path", getattr(args, "artifact_path", None)),
+            ("--body-path", getattr(args, "body_path", None)),
+            ("--title-pack-path", getattr(args, "title_pack_path", None)),
+        )
+        if not (isinstance(value, str) and value.strip())
+    ]
+
+
+def _canonical_target(args: argparse.Namespace, gaps: list[str]) -> bool:
+    """这份记录要不要按门禁读的 canonical 契约写。
+
+    - 显式 ``--canonical-independent-review``：意图明确，缺文章链直接报错退出；
+    - ``--output`` 文件名就是 canonical 约定名 ``independent-review.json``
+      （``final_review`` 的默认路径）：链齐全时按 canonical 写。
+    """
+
+    if args.mode != "l2":
+        return False
+    explicit = bool(getattr(args, "canonical_independent_review", False))
+    named = Path(args.output).name == CANONICAL_RECORD_NAME
+    if not (explicit or named):
+        return False
+    if gaps:
+        if explicit:
+            raise SystemExit(
+                "canonical independent-review 记录需要 "
+                + "、".join(gaps)
+                + "（门禁按文章链逐项核验绑定）"
+            )
+        return False
+    return True
+
+
+def _display_path(run_root: Path, target: Path) -> str:
+    """run 内文件记相对路径，run 外记绝对路径（沿用 run 内其他产物的口径）。"""
+
+    resolved = Path(target).expanduser().resolve()
+    root = Path(run_root).expanduser().resolve()
+    if resolved.is_relative_to(root):
+        return resolved.relative_to(root).as_posix()
+    return str(resolved)
+
+
+def _canonical_record_state(run_root: Path, article_id: str) -> str:
+    """门禁读的那份 canonical 记录现在是什么状态。
+
+    ``missing`` / ``placeholder`` / ``finished`` 三态。契约记录里带上它，
+    "结论只写在契约记录里、门禁那份还是占位符"就不再是隐形状态
+    （2026-09-18，daily-009：正是这个隐形状态让一次 approve 在系统里消失）。
+    """
+
+    from article_group.independent_review import is_placeholder_record
+
+    path = Path(run_root) / "review" / article_id / CANONICAL_RECORD_NAME
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return "missing"
+    return "placeholder" if is_placeholder_record(record) else "finished"
 
 
 def _utc_now() -> str:
@@ -217,6 +295,8 @@ def run_review(args: argparse.Namespace) -> int:
         )
     if not args.run_root.exists():
         raise SystemExit(f"run root does not exist: {args.run_root}")
+    canonical_gaps = _binding_gaps(args) if args.mode == "l2" else []
+    canonical = _canonical_target(args, canonical_gaps)
 
     if external_review is not None:
         command = ["review-json", str(external_review)]
@@ -378,6 +458,7 @@ def run_review(args: argparse.Namespace) -> int:
             if structured is None or "decision" not in structured or "findings" not in structured:
                 record["error"] = "l2_structured_result_missing"
                 record["decision"] = "evidence_insufficient"
+                record["status"] = "UNVERIFIED"
                 record["coverage_gaps"] = ["l2_structured_result_missing"]
                 record["exit_code"] = 1
             else:
@@ -389,6 +470,7 @@ def run_review(args: argparse.Namespace) -> int:
                 record["status"] = "PASS" if record.get("decision") == "approve" else "FAIL"
                 record["exit_code"] = 0
                 record["review_source"] = "external_review_json"
+                record["review_evidence_path"] = _display_path(args.run_root, external_review)
         else:
             decision = structured.get("decision") if structured else None
             if not isinstance(decision, str) or not decision.strip():
@@ -430,6 +512,44 @@ def run_review(args: argparse.Namespace) -> int:
                     record["coverage_gaps"] = list(record.get("coverage_gaps") or []) + [
                         f"title_freeze:{freeze_report['status']}"
                     ]
+    if canonical:
+        from article_group.independent_review import canonicalize_independent_review_record
+
+        record = canonicalize_independent_review_record(
+            record,
+            article_id=args.article_id,
+            article_task_id=getattr(args, "article_task_id", None),
+            run_root=args.run_root,
+            status="complete" if record.get("structured_result") is True else "UNVERIFIED",
+        )
+    elif str(getattr(args, "article_id", "") or "").strip():
+        # 只写契约记录时，如实标注门禁那份 canonical 记录的状态；这次结论若只落在
+        # 契约记录里而 canonical 还是占位符，就在产物与 stderr 里同时可见。
+        aid = str(args.article_id).strip()
+        state = _canonical_record_state(Path(args.run_root), aid)
+        record["canonical_record_state"] = state
+        if state != "finished" and record.get("decision") in {
+            "approve",
+            "approved",
+            "approve-with-notes",
+        }:
+            print(
+                f"注意：门禁读的 review/{aid}/{CANONICAL_RECORD_NAME} 是 {state}；"
+                f"本次 approve 只写在这份契约记录里。"
+                f"加 --canonical-independent-review 或把 --output 指到 "
+                f"review/{aid}/{CANONICAL_RECORD_NAME} 重录一次。",
+                file=sys.stderr,
+            )
+    elif canonical_gaps and Path(args.output).name == CANONICAL_RECORD_NAME:
+        # 输出名暗示 canonical，但没有文章链 —— 只能按契约形状写；不假装写成了
+        # canonical 记录，把缺的参数记进产物并告知（门禁会把这份读成 invalid）。
+        record["canonical_record_incomplete"] = canonical_gaps
+        print(
+            "注意：--output 是 canonical 约定名独立复核记录，但缺少 "
+            + "、".join(canonical_gaps)
+            + "；本份按契约形状写，门禁会读成 invalid。补齐文章链后重录。",
+            file=sys.stderr,
+        )
     _write_json(
         args.output, record,
         run_dir=_evidence_run(args.run_root, args.output),
@@ -479,6 +599,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--review-json",
         type=Path,
         help="Record a structured review JSON produced by another agent harness instead of invoking the Codex CLI.",
+    )
+    parser.add_argument(
+        "--canonical-independent-review",
+        action="store_true",
+        help=(
+            "按门禁读的 article-independent-review-v1 契约写这份记录"
+            "（status=complete；输出名是 independent-review.json 时自动生效）"
+        ),
     )
     parser.add_argument(
         "--force",

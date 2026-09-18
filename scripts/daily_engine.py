@@ -16,6 +16,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import scripts.generate_daily_001 as base
 from article_group.content_fidelity import evaluate_content_fidelity
+from article_group.independent_review import is_placeholder_record
 from article_group.prose_pilot import analyze_text
 from article_group.run_gates import COMPLIANCE_GATE_REASON, run_all_gates
 from article_group.style_gate import validate_markdown_file
@@ -437,6 +438,58 @@ def content_record(
     _write_json_evidence(path, data, reason=f"daily_engine:content-fidelity:{aid}")
 
 
+def ensure_independent_review_placeholder(aid: str, delivery_path: str) -> bool:
+    """"这篇还没复核"时补一份 canonical 占位记录；已有结论就不动它。
+
+    判据为什么不再是 ``status == "complete"``（2026-09-18，daily-009 复盘）：
+    ``codex_review`` 写的是契约记录（``status=PASS/FAIL``），门禁读的是
+    canonical 记录（``review/{aid}/independent-review.json``）。只认 "complete"
+    会让引擎把一份 approve/PASS 记录当成"还没复核"，用 PENDING 占位符覆盖它——
+    哈希绑定依旧逐位相同，``evidence_rebind`` 看不出异常，门禁又把 PENDING 只当
+    治理待办，于是"已批准"在系统里静默消失。判据统一到
+    ``independent_review.is_placeholder_record``：只有状态与结论都还是待复核的
+    占位符可以按新哈希刷新，跑出结论的记录与带 stale 痕迹的记录都保留。
+
+    返回 True 表示这次写了占位记录。
+    """
+
+    review_path = ROOT / f"review/{aid}/independent-review.json"
+    existing = None
+    if review_path.exists():
+        try:
+            existing = json.loads(review_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            existing = None
+    if not is_placeholder_record(existing):
+        return False
+    write_json(
+        f"review/{aid}/independent-review.json",
+        {
+            "schema_version": "article-independent-review-v1",
+            "article_task_id": f"at-{aid}",
+            "article_id": aid,
+            "run_id": RUN_ID,
+            "created_from_run": RUN_ID,
+            "artifact_path": delivery_path,
+            "artifact_sha256": digest(ROOT / delivery_path),
+            "draft_path": f"drafts/{aid}/body_draft.md",
+            "draft_sha256": digest(ROOT / f"drafts/{aid}/body_draft.md"),
+            "body_path": f"drafts/{aid}/body_draft.md",
+            "body_sha256": digest(ROOT / f"drafts/{aid}/body_draft.md"),
+            "title_pack_path": f"review/{aid}/title-pack.json",
+            "title_pack_sha256": digest(ROOT / f"review/{aid}/title-pack.json"),
+            "attempt": 1,
+            "max_attempts": 3,
+            "status": "PENDING",
+            "decision": "human_review_required",
+            "next_step": "independent_review_required",
+            "scope": "single_article",
+            "publication_authorization": "not_authorized",
+        },
+    )
+    return True
+
+
 def reviews_and_delivery(bodies_map: dict[str, str]) -> None:
     for aid, body in bodies_map.items():
         base.write_text(f"drafts/{aid}/body_draft.md", body)
@@ -508,46 +561,8 @@ def reviews_and_delivery(bodies_map: dict[str, str]) -> None:
         from article_group.title_freeze import freeze as _freeze_title_pack
 
         _freeze_title_pack(ROOT, aid)
-        # L2 canonical 记录保护（2026-09-16）：completed 的复核记录是 L2 复核员
-        # 或修稿循环归档后的权威产物，生成器不得回写 PENDING 占位覆盖它
-        # （daily-005 曾因此丢失 controller 已接受的 needs_changes 记录）。
-        review_path = ROOT / f"review/{aid}/independent-review.json"
-        existing = None
-        if review_path.exists():
-            try:
-                existing = json.loads(review_path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                existing = None
-        completed = (
-            isinstance(existing, dict)
-            and str(existing.get("status") or "").lower() == "complete"
-        )
-        if not completed:
-            write_json(
-                f"review/{aid}/independent-review.json",
-                {
-                    "schema_version": "article-independent-review-v1",
-                    "article_task_id": f"at-{aid}",
-                    "article_id": aid,
-                    "run_id": RUN_ID,
-                    "created_from_run": RUN_ID,
-                    "artifact_path": delivery_path,
-                    "artifact_sha256": digest(ROOT / delivery_path),
-                    "draft_path": f"drafts/{aid}/body_draft.md",
-                    "draft_sha256": digest(ROOT / f"drafts/{aid}/body_draft.md"),
-                    "body_path": f"drafts/{aid}/body_draft.md",
-                    "body_sha256": digest(ROOT / f"drafts/{aid}/body_draft.md"),
-                    "title_pack_path": f"review/{aid}/title-pack.json",
-                    "title_pack_sha256": digest(ROOT / f"review/{aid}/title-pack.json"),
-                    "attempt": 1,
-                    "max_attempts": 3,
-                    "status": "PENDING",
-                    "decision": "human_review_required",
-                    "next_step": "independent_review_required",
-                    "scope": "single_article",
-                    "publication_authorization": "not_authorized",
-                },
-            )
+        # L2 canonical 记录保护（2026-09-16；判据 2026-09-18 修正，见函数注释）。
+        ensure_independent_review_placeholder(aid, delivery_path)
         hook = STRONGEST_HOOKS[aid]
         write_json(f"review/style-gate-markdown-{aid}.json", validate_markdown_file(ROOT / delivery_path, hook=hook))
         write_json(

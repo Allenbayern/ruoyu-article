@@ -21,6 +21,14 @@ The Vault notes are the canonical content and governance references. Do not infe
 - Preserve the existing deterministic gates, evidence manifests, hashes, previews, and final-review behavior.
 - Independent review output is evidence only. It cannot authorize publication, merge, deployment, or state promotion.
 - Execution model is the agent session model (dsh default `shenwendp/deepseek-v4.1-flash`). L2 adversarial review runs in a separate read-only subagent; record its structured result with `python -m article_group.codex_review --mode l2 --review-json <review.json>` (historical file name, no Codex CLI required).
+  - **Write the record the gate reads**: point `--output` at
+    `review/<aid>/independent-review.json` (plus `--article-id/--artifact-path/--body-path/--title-pack-path`).
+    That path is the canonical `article-independent-review-v1` record and is written with
+    `status=complete`; `--canonical-independent-review` forces the same shape for any output name.
+    A record under any other name stays in the `codex-review-contract-1.0` shape (status `PASS`/`FAIL`)
+    and the gate does not read it — the tool then records `canonical_record_state` and warns
+    (daily-009: an approve that lived only in the sidecar was silently replaced by the generator's
+    PENDING placeholder, and nothing in the pipeline could see it).
 
 ### Sealed runs and evidence writes (repo-operational, 2026-09-17)
 

@@ -19,6 +19,27 @@ SCHEMA_VERSION = "article-independent-review-v1"
 DEFAULT_MAX_ATTEMPTS = 3
 PASS_DECISIONS = {"approve", "approved", "pass"}
 UNVERIFIED_DECISIONS = {"timeout", "evidence_insufficient"}
+COMPLETE_STATUS = "complete"
+UNVERIFIED_STATUS = "UNVERIFIED"
+# "这轮复核跑完了"的原始状态写法：契约记录写 PASS/FAIL，canonical 记录写 complete。
+# 三者都表示"结论已经产生"，绝不能被引擎占位符当成"还没复核"覆盖掉。
+FINISHED_STATUSES = frozenset({"complete", "pass", "failed", "fail"})
+# 引擎占位符的形状：状态与结论都还是"待复核"。只有这种形状可以被按新哈希刷新。
+PLACEHOLDER_STATUSES = frozenset({"", "pending"})
+PLACEHOLDER_DECISIONS = frozenset(
+    {"", "pending", "human_review_required", "independent_review_required"}
+)
+# canonical 记录的 next_step 只要求非空，取值按结论映射（沿用 daily-005 的口径）。
+NEXT_STEP_BY_DECISION = {
+    "approve": "stop",
+    "approved": "stop",
+    "approve-with-notes": "stop",
+    "needs_changes": "needs_changes",
+    "evidence_insufficient": "independent_review_required",
+    "review_failed": "resume_review",
+    "timeout": "resume_review",
+}
+DEFAULT_NEXT_STEP = "independent_review_required"
 _SHA256 = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
@@ -64,6 +85,98 @@ def _manifest_run_id(root: Path) -> str:
         if isinstance(run_id, str) and run_id.strip():
             return run_id.strip()
     return root.name
+
+
+def is_placeholder_record(record: object) -> bool:
+    """是否只是"这篇还没复核"的占位记录（引擎可以按新哈希安全刷新）。
+
+    判据刻意保守（2026-09-18，daily-009 复盘）：只有状态与结论**都**还是待复核
+    才叫占位符。任何真跑过一轮的记录（approve / needs_changes / UNVERIFIED），
+    以及带失效痕迹（stale）的记录，都是证据，生成器不得覆盖。
+
+    daily-009 的 approve 就是在这里被静默毁掉的：``codex_review`` 写的是契约记录
+    （``status=PASS``），而引擎当时只认 ``status == "complete"``，于是重跑时把
+    approve 换成了 PENDING 占位符——哈希绑定是对的（``evidence_rebind`` 看不出
+    异常），门禁又把 PENDING 只当治理待办，批准在系统里消失得无声无息。
+    """
+
+    if not isinstance(record, Mapping):
+        return True
+    if record.get("stale") or record.get("stale_reason") or record.get("superseded"):
+        return False
+    status = str(record.get("status") or "").strip().lower()
+    decision = str(record.get("decision") or "").strip().lower()
+    return status in PLACEHOLDER_STATUSES and decision in PLACEHOLDER_DECISIONS
+
+
+def _canonical_status(record: Mapping[str, Any], explicit: str | None) -> str:
+    if explicit is not None and str(explicit).strip():
+        return str(explicit).strip()
+    raw = str(record.get("contract_status") or record.get("status") or "").strip()
+    # "跑完但没通过"（FAIL）同样是结论；只有没跑出结论的才留在 UNVERIFIED。
+    return COMPLETE_STATUS if raw.lower() in FINISHED_STATUSES else UNVERIFIED_STATUS
+
+
+def canonicalize_independent_review_record(
+    record: Mapping[str, Any] | object,
+    *,
+    article_id: str,
+    article_task_id: str | None = None,
+    run_root: str | Path | None = None,
+    status: str | None = None,
+    max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+) -> dict[str, Any]:
+    """把复核产物规范成门禁读的 ``article-independent-review-v1`` 记录。
+
+    为什么需要（daily-009 复盘）：引擎、门禁读的是 canonical 记录，而
+    ``codex_review`` 写的是契约记录（``schema_version=codex-review-contract-1.0``
+    + ``status=PASS``）。两者之间没有任何工具负责转换，operator 只能手抄一份；
+    手抄件一旦被引擎重跑覆盖，批准就静默消失。本函数让写手一次写对，
+    并且自校验（``canonical_validation_errors``）——写出来的记录门禁读不了，
+    在产物里就能看见，而不是等门禁放行之后才发现。
+
+    ``status`` 显式给出时用它；否则从原记录的 ``contract_status``/``status``
+    推导（PASS/FAIL/complete → ``complete``，其余 → ``UNVERIFIED``）。
+    """
+
+    if not isinstance(record, Mapping):
+        raise ValueError("record_must_be_an_object")
+    aid = str(article_id or "").strip()
+    if not aid:
+        raise ValueError("article_id_required")
+
+    canonical: dict[str, Any] = dict(record)
+    original_status = str(canonical.get("status") or "").strip()
+    canonical["schema_version"] = SCHEMA_VERSION
+    canonical["article_id"] = aid
+    canonical["article_task_id"] = str(
+        article_task_id or canonical.get("article_task_id") or f"at-{aid}"
+    )
+    if _nonblank(canonical.get("created_from_run")):
+        # 引擎占位符与 batch.json 都按 "2026-09-17/daily-009" 记 run_id；
+        # 契约记录只有目录名，这里统一到 canonical 口径。
+        canonical["run_id"] = canonical["created_from_run"]
+    if not _nonblank(canonical.get("draft_path")):
+        canonical["draft_path"] = canonical.get("body_path") or canonical.get("artifact_path")
+    if not _nonblank(canonical.get("draft_sha256")):
+        canonical["draft_sha256"] = canonical.get("body_sha256") or canonical.get(
+            "artifact_sha256"
+        )
+    canonical["status"] = _canonical_status(canonical, status)
+    if original_status and original_status.lower() not in {"complete", "unverified"}:
+        canonical["contract_status"] = original_status
+    if not _nonblank(canonical.get("next_step")):
+        canonical["next_step"] = NEXT_STEP_BY_DECISION.get(
+            str(canonical.get("decision") or "").strip().lower(), DEFAULT_NEXT_STEP
+        )
+    if type(canonical.get("max_attempts")) is not int or canonical["max_attempts"] < 1:
+        canonical["max_attempts"] = max_attempts
+    canonical["scope"] = canonical.get("scope") or "single_article"
+    canonical["publication_authorization"] = "not_authorized"
+    canonical["canonical_validation_errors"] = validate_independent_review_record(
+        canonical, run_root=run_root, strict=True
+    )
+    return canonical
 
 
 def build_independent_review_binding(
@@ -305,8 +418,17 @@ def plan_resume(
 
 __all__ = [
     "build_independent_review_binding",
+    "canonicalize_independent_review_record",
+    "COMPLETE_STATUS",
     "DEFAULT_MAX_ATTEMPTS",
+    "DEFAULT_NEXT_STEP",
+    "FINISHED_STATUSES",
+    "is_placeholder_record",
+    "NEXT_STEP_BY_DECISION",
+    "PLACEHOLDER_DECISIONS",
+    "PLACEHOLDER_STATUSES",
     "SCHEMA_VERSION",
+    "UNVERIFIED_STATUS",
     "evaluate_independent_review",
     "plan_resume",
     "validate_independent_review_record",
