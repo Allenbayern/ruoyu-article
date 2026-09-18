@@ -29,6 +29,12 @@ The Vault notes are the canonical content and governance references. Do not infe
     and the gate does not read it — the tool then records `canonical_record_state` and warns
     (daily-009: an approve that lived only in the sidecar was silently replaced by the generator's
     PENDING placeholder, and nothing in the pipeline could see it).
+  - **The review JSON must satisfy `schemas/codex-review-contract.json`** (severity ∈
+    `blocker|major|minor`, the fixed finding keys, no extra keys). A review that does not is
+    recorded as `UNVERIFIED` with `contract_errors` — never as a verdict — and a `blocker`/`major`
+    finding can never be recorded as an approve (the decision is downgraded to `needs_changes`
+    and the change is recorded). daily-009's reviewer used self-invented keys
+    (`id`/`category`/`location`…), which the old `--review-json` path copied through unchallenged.
 
 ### Sealed runs and evidence writes (repo-operational, 2026-09-17)
 

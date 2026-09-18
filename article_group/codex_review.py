@@ -23,6 +23,14 @@ makes the tool write the canonical shape directly — ``status=complete`` plus t
 full artifact binding — so no reviewer has to hand-copy a record that the
 engine would later overwrite with a PENDING placeholder.
 
+Contract enforcement (2026-09-18, B5′): every structured L2 review is validated
+against ``schemas/codex-review-contract.json`` (severity ∈ blocker/major/minor,
+exact finding keys, no extra keys).  A review that does not satisfy it is
+recorded as ``UNVERIFIED`` with ``contract_errors`` — never as a verdict.  And a
+``blocker``/``major`` finding can never be recorded as an approve: such a
+decision is downgraded to ``needs_changes`` and the change is recorded
+(``decision_adjusted_from`` / ``severity_mapping``).
+
 The normal record is explicitly repository code-review evidence.  Its successful
 ``review_completed`` decision is not an article-independent ``approve``.
 """
@@ -30,6 +38,7 @@ The normal record is explicitly repository code-review evidence.  Its successful
 from __future__ import annotations
 
 import argparse
+from collections.abc import Mapping
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -285,6 +294,102 @@ def _load_review_json(text: str) -> dict[str, Any] | None:
     return None
 
 
+CONTRACT_REVIEW_KEYS = ("decision", "scope_reviewed", "findings", "non_findings", "coverage_gaps")
+BLOCKING_SEVERITIES = frozenset({"blocker", "major"})
+APPROVING_DECISIONS = frozenset({"approve", "approved", "approve-with-notes", "pass"})
+
+
+def validate_review_contract(review: object, schema_path: str | Path) -> list[str]:
+    """按 ``schemas/codex-review-contract.json`` 校验复核 JSON。
+
+    2026-09-18（B5′）：契约里 severity 早就是 blocker/major/minor 三级，但
+    ``--review-json`` 路径此前只挑 5 个 key 拷贝，复核员自造
+    ``id/category/location/...`` 也无人拦——字段漂移就这样进了记录。现在按契约
+    拒收：不合契约的复核只能记成 UNVERIFIED，不能记成结论。
+
+    schema 读不到、jsonschema 不可用都 fail-closed（按"不合契约"处理）。
+    """
+
+    try:
+        schema = json.loads(Path(schema_path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        return [f"schema_unavailable:{type(exc).__name__}"]
+    try:
+        from jsonschema import Draft202012Validator, FormatChecker
+    except ImportError as exc:  # pragma: no cover - runtime dependency guard
+        return [f"jsonschema_unavailable:{type(exc).__name__}"]
+    validator = Draft202012Validator(schema, format_checker=FormatChecker())
+    errors: list[str] = []
+    for error in sorted(validator.iter_errors(review), key=lambda item: list(item.absolute_path)):
+        location = "/".join(str(part) for part in error.absolute_path) or "<root>"
+        errors.append(f"{location}:{error.validator}:{error.message}"[:300])
+    return errors[:20]
+
+
+def severity_decision_adjustment(decision: object, findings: object) -> dict[str, Any] | None:
+    """severity → decision 的映射规则（2026-09-18，B5′）。
+
+    有 blocker/major 就是阻断项：复核员即使写了 approve 也不能批准，按 fail-closed
+    降级成 needs_changes。minor 不触发降级（daily-009 的 approve 只带 minor）。
+    返回 ``None`` 表示不需要改判。
+    """
+
+    if not isinstance(findings, list):
+        return None
+    blocking = sorted(
+        {
+            str(finding.get("severity"))
+            for finding in findings
+            if isinstance(finding, Mapping) and str(finding.get("severity")) in BLOCKING_SEVERITIES
+        }
+    )
+    if not blocking:
+        return None
+    if str(decision or "").strip().lower() not in APPROVING_DECISIONS:
+        return None
+    return {
+        "from": decision,
+        "to": "needs_changes",
+        "blocking_severities": blocking,
+    }
+
+
+def _apply_l2_contract(
+    record: dict[str, Any],
+    structured: object,
+    schema_path: str | Path,
+) -> bool:
+    """把一份结构化 L2 复核并入记录；不合契约就 fail-closed 记 UNVERIFIED。
+
+    返回 True 表示复核满足契约并已并入（``exit_code`` 由调用方按各自语义处理）。
+    """
+
+    contract_errors = validate_review_contract(structured, schema_path)
+    if contract_errors:
+        record["error"] = "l2_review_contract_invalid"
+        record["contract_errors"] = contract_errors
+        record["decision"] = "evidence_insufficient"
+        record["status"] = "UNVERIFIED"
+        record["coverage_gaps"] = ["l2_review_contract_invalid"]
+        return False
+    assert isinstance(structured, Mapping)
+    for key in CONTRACT_REVIEW_KEYS:
+        if key in structured:
+            record[key] = structured[key]
+    record["coverage_gaps"] = structured.get("coverage_gaps", [])
+    record["structured_result"] = True
+    adjustment = severity_decision_adjustment(record.get("decision"), record.get("findings"))
+    if adjustment:
+        record["decision_adjusted_from"] = adjustment["from"]
+        record["severity_mapping"] = adjustment
+        record["decision"] = adjustment["to"]
+        record["coverage_gaps"] = list(record.get("coverage_gaps") or []) + [
+            "severity_mapping:blocking_finding_cannot_approve"
+        ]
+    record["status"] = "PASS" if record.get("decision") == "approve" else "FAIL"
+    return True
+
+
 def run_review(args: argparse.Namespace) -> int:
     external_review = getattr(args, "review_json", None)
     codex = None if external_review is not None else shutil.which("codex")
@@ -440,12 +545,8 @@ def run_review(args: argparse.Namespace) -> int:
         if args.mode == "l2":
             structured = _parse_l2_output(output)
             if structured is not None:
-                for key in ("decision", "scope_reviewed", "findings", "non_findings", "coverage_gaps"):
-                    if key in structured:
-                        record[key] = structured[key]
-                record["coverage_gaps"] = structured.get("coverage_gaps", [])
-                record["structured_result"] = True
-                record["status"] = "PASS" if record.get("decision") == "approve" else "FAIL"
+                if not _apply_l2_contract(record, structured, args.schema):
+                    record["exit_code"] = 1
             else:
                 record["error"] = "l2_structured_result_missing"
         else:
@@ -461,14 +562,12 @@ def run_review(args: argparse.Namespace) -> int:
                 record["status"] = "UNVERIFIED"
                 record["coverage_gaps"] = ["l2_structured_result_missing"]
                 record["exit_code"] = 1
-            else:
-                for key in ("decision", "scope_reviewed", "findings", "non_findings", "coverage_gaps"):
-                    if key in structured:
-                        record[key] = structured[key]
-                record["coverage_gaps"] = structured.get("coverage_gaps", [])
-                record["structured_result"] = True
-                record["status"] = "PASS" if record.get("decision") == "approve" else "FAIL"
+            elif _apply_l2_contract(record, structured, args.schema):
                 record["exit_code"] = 0
+                record["review_source"] = "external_review_json"
+                record["review_evidence_path"] = _display_path(args.run_root, external_review)
+            else:
+                record["exit_code"] = 1
                 record["review_source"] = "external_review_json"
                 record["review_evidence_path"] = _display_path(args.run_root, external_review)
         else:
@@ -556,6 +655,12 @@ def run_review(args: argparse.Namespace) -> int:
         reason=f"codex_review:{args.mode}", force=bool(getattr(args, "force", False)),
     )
     print(json.dumps({"output": str(args.output), "exit_code": record.get("exit_code"), "decision": record["decision"]}, ensure_ascii=False))
+    if record.get("contract_errors"):
+        print(
+            "复核 JSON 不合契约，已按 UNVERIFIED 记录（不构成结论）："
+            + "；".join(str(error) for error in record["contract_errors"][:5]),
+            file=sys.stderr,
+        )
     return 0 if record.get("exit_code") == 0 and record["decision"] not in {"evidence_insufficient", "review_failed"} else 1
 
 

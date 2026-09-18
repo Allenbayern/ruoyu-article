@@ -264,10 +264,20 @@ def test_l2_review_json_records_an_externally_produced_review(tmp_path: Path, mo
             {
                 "decision": "needs_changes",
                 "scope_reviewed": ["artifact"],
-                "findings": [{"id": "F1", "severity": "high"}],
+                "findings": [
+                    {
+                        "severity": "major",
+                        "target": "正文第 3 段",
+                        "evidence": "该句在材料包里找不到来源",
+                        "counterexample_or_failure_mode": "改稿后仍可能残留同类断言",
+                        "required_fix": "删除或补来源",
+                        "recheck": "重跑账本预检并逐句比对",
+                    }
+                ],
                 "non_findings": [],
                 "coverage_gaps": ["no runtime execution"],
-            }
+            },
+            ensure_ascii=False,
         ),
         encoding="utf-8",
     )
@@ -536,7 +546,16 @@ def test_canonical_flag_keeps_a_rejected_review_complete_but_not_passing(
             {
                 "decision": "needs_changes",
                 "scope_reviewed": ["artifact"],
-                "findings": [{"severity": "major", "target": "正文第 3 段", "evidence": "无源断言"}],
+                "findings": [
+                    {
+                        "severity": "major",
+                        "target": "正文第 3 段",
+                        "evidence": "无源断言",
+                        "counterexample_or_failure_mode": "同类断言可能残留",
+                        "required_fix": "删除或补来源",
+                        "recheck": "重跑账本预检",
+                    }
+                ],
                 "non_findings": [],
                 "coverage_gaps": [],
             },
@@ -697,3 +716,245 @@ def test_canonical_name_without_the_article_chain_records_the_gap(
         "--title-pack-path",
     ]
     assert "canonical" in capsys.readouterr().err
+
+
+# --- 契约拒收与 severity→decision 映射（2026-09-18，B5′）---------------------
+
+
+def _review_json(path: Path, payload: dict) -> Path:
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+VALID_FINDING = {
+    "severity": "minor",
+    "target": "delivery.md line 19",
+    "evidence": "账本条目少了「十四阿哥送的寿礼」这一环",
+    "counterexample_or_failure_mode": "读者会把来源里的细节当成正文自述",
+    "required_fix": "扩账本条目或改写该句",
+    "recheck": "重跑账本预检确认 warning 归零",
+}
+
+
+def test_review_json_with_a_self_invented_finding_shape_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """daily-009 的复核员自造了 id/category/location…，此前无人拦。"""
+
+    run_root = tmp_path / "run"
+    run_root.mkdir()
+    output = run_root / "review.json"
+    external = _review_json(
+        run_root / "l2-input.json",
+        {
+            "decision": "approve",
+            "scope_reviewed": ["artifact"],
+            "findings": [
+                {
+                    "id": "Y1",
+                    "severity": "minor",
+                    "category": "ledger_coverage",
+                    "location": "delivery.md line 19",
+                    "summary": "账本明细未收全来源要素",
+                }
+            ],
+            "non_findings": [],
+            "coverage_gaps": [],
+        },
+    )
+    monkeypatch.setattr(codex_review.shutil, "which", lambda _: None)
+
+    exit_code = codex_review.run_review(
+        codex_review.build_parser().parse_args(
+            [
+                "--mode", "l2",
+                "--run-root", str(run_root),
+                "--output", str(output),
+                "--request", "r",
+                "--review-json", str(external),
+            ]
+        )
+    )
+
+    record = json.loads(output.read_text(encoding="utf-8"))
+    assert exit_code == 1
+    assert record["decision"] == "evidence_insufficient"
+    assert record["status"] == "UNVERIFIED"
+    assert record["error"] == "l2_review_contract_invalid"
+    assert record["coverage_gaps"] == ["l2_review_contract_invalid"]
+    assert any("findings/0" in error for error in record["contract_errors"])
+    # 复核原文仍然留档（拒收不等于丢证据），并给人一句能读的拒绝理由
+    assert "Y1" in output.with_suffix(".log").read_text(encoding="utf-8")
+    assert "不合契约" in capsys.readouterr().err
+
+
+def test_review_json_missing_a_contract_key_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    run_root = tmp_path / "run"
+    run_root.mkdir()
+    output = run_root / "review.json"
+    external = _review_json(
+        run_root / "l2-input.json",
+        {
+            "decision": "approve",
+            "findings": [],
+            "non_findings": [],
+            "coverage_gaps": [],
+        },
+    )
+    monkeypatch.setattr(codex_review.shutil, "which", lambda _: None)
+
+    codex_review.run_review(
+        codex_review.build_parser().parse_args(
+            [
+                "--mode", "l2",
+                "--run-root", str(run_root),
+                "--output", str(output),
+                "--request", "r",
+                "--review-json", str(external),
+            ]
+        )
+    )
+
+    record = json.loads(output.read_text(encoding="utf-8"))
+    assert record["status"] == "UNVERIFIED"
+    assert any("scope_reviewed" in error for error in record["contract_errors"])
+
+
+def test_blocking_finding_cannot_be_recorded_as_an_approve(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    run_root = tmp_path / "run"
+    run_root.mkdir()
+    output = run_root / "review.json"
+    external = _review_json(
+        run_root / "l2-input.json",
+        {
+            "decision": "approve",
+            "scope_reviewed": ["artifact"],
+            "findings": [{**VALID_FINDING, "severity": "major"}],
+            "non_findings": [],
+            "coverage_gaps": [],
+        },
+    )
+    monkeypatch.setattr(codex_review.shutil, "which", lambda _: None)
+
+    codex_review.run_review(
+        codex_review.build_parser().parse_args(
+            [
+                "--mode", "l2",
+                "--run-root", str(run_root),
+                "--output", str(output),
+                "--request", "r",
+                "--review-json", str(external),
+            ]
+        )
+    )
+
+    record = json.loads(output.read_text(encoding="utf-8"))
+    assert record["decision"] == "needs_changes"
+    assert record["decision_adjusted_from"] == "approve"
+    assert record["severity_mapping"]["blocking_severities"] == ["major"]
+    assert record["status"] == "FAIL"
+    assert "severity_mapping:blocking_finding_cannot_approve" in record["coverage_gaps"]
+
+
+def test_minor_findings_still_allow_an_approve(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """daily-009 的 approve 只带 minor：映射规则不能把这种正常批准也降级。"""
+
+    run_root = tmp_path / "run"
+    run_root.mkdir()
+    output = run_root / "review.json"
+    external = _review_json(
+        run_root / "l2-input.json",
+        {
+            "decision": "approve",
+            "scope_reviewed": ["artifact"],
+            "findings": [VALID_FINDING],
+            "non_findings": ["来源逐字核对通过"],
+            "coverage_gaps": [],
+        },
+    )
+    monkeypatch.setattr(codex_review.shutil, "which", lambda _: None)
+
+    codex_review.run_review(
+        codex_review.build_parser().parse_args(
+            [
+                "--mode", "l2",
+                "--run-root", str(run_root),
+                "--output", str(output),
+                "--request", "r",
+                "--review-json", str(external),
+            ]
+        )
+    )
+
+    record = json.loads(output.read_text(encoding="utf-8"))
+    assert record["decision"] == "approve"
+    assert record["status"] == "PASS"
+    assert "severity_mapping" not in record
+
+
+def test_rejected_contract_never_becomes_a_canonical_approval(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from article_group.independent_review import evaluate_independent_review
+
+    run_root = _canonical_run_root(tmp_path)
+    output = run_root / "review" / "art-001" / "independent-review.json"
+    external = _review_json(
+        run_root / "review" / "art-001" / "l2-input.json",
+        {
+            "decision": "approve",
+            "scope_reviewed": ["artifact"],
+            "findings": [{"id": "Y1", "severity": "minor"}],
+            "non_findings": [],
+            "coverage_gaps": [],
+        },
+    )
+    monkeypatch.setattr(codex_review.shutil, "which", lambda _: None)
+
+    codex_review.run_review(
+        codex_review.build_parser().parse_args(_canonical_argv(run_root, output, external))
+    )
+
+    record = json.loads(output.read_text(encoding="utf-8"))
+    assert record["schema_version"] == "article-independent-review-v1"
+    assert record["status"] == "UNVERIFIED"
+    assert record["error"] == "l2_review_contract_invalid"
+    assert evaluate_independent_review(record)["pass"] is False
+
+
+def test_native_l2_output_is_validated_against_the_contract(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    run_root = tmp_path / "run"
+    run_root.mkdir()
+    output = run_root / "review.json"
+
+    class Completed:
+        returncode = 0
+        stdout = json.dumps(
+            {
+                "decision": "approve",
+                "scope_reviewed": ["artifact"],
+                "findings": [{"severity": "very-high", "target": "x"}],
+                "non_findings": [],
+                "coverage_gaps": [],
+            }
+        )
+        stderr = ""
+
+    monkeypatch.setattr(codex_review.shutil, "which", lambda _: "/usr/bin/codex")
+    monkeypatch.setattr(codex_review.subprocess, "run", lambda *args, **kwargs: Completed())
+
+    exit_code = codex_review.run_review(
+        codex_review.build_parser().parse_args(
+            [
+                "--mode", "l2",
+                "--run-root", str(run_root),
+                "--output", str(output),
+                "--request", "r",
+            ]
+        )
+    )
+
+    record = json.loads(output.read_text(encoding="utf-8"))
+    assert exit_code == 1
+    assert record["status"] == "UNVERIFIED"
+    assert record["error"] == "l2_review_contract_invalid"
