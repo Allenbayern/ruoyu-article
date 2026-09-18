@@ -79,8 +79,9 @@ def ref(path, version="1.0"):
 
 @pytest.fixture()
 def spec(tmp_path: Path):
-    root = tmp_path / "daily-fake"
-    root.mkdir()
+    # run 根形态（runs/<date>/<id>）：写才会走留底通道，测试才能验证"接进通道"这件事。
+    root = tmp_path / "runs" / "2026-09-18" / "daily-fake"
+    root.mkdir(parents=True)
     spec_path = tmp_path / "run_fake_daily.py"
     spec_path.write_text(SPEC_TEMPLATE.format(root=str(root)), encoding="utf-8")
     return daily_engine.load_spec(spec_path), root
@@ -277,3 +278,64 @@ def test_cli_rejects_a_missing_spec(tmp_path, capsys: pytest.CaptureFixture):
     exit_code = daily_engine.main(["--spec", str(tmp_path / "nope.py")])
     assert exit_code == 2
     assert "spec 模块不存在" in capsys.readouterr().err
+
+
+# --- 写手通道（2026-09-18，B7′）--------------------------------------------
+
+
+def test_spec_writers_go_through_the_channel(spec):
+    """spec 的 write_json/write_text 在 bind_spec 里被包进留底通道。"""
+
+    from article_group.evidence_write import read_changelog
+
+    loaded, root = spec
+    daily_engine.bind_spec(loaded)
+
+    daily_engine.write_text("drafts/art-001/body_draft.md", "第一版")
+    daily_engine.write_text("drafts/art-001/body_draft.md", "第二版")
+
+    assert (root / "drafts" / "art-001" / "body_draft.md").read_text(encoding="utf-8") == "第二版\n"
+    reasons = [entry["reason"] for entry in read_changelog(root)]
+    assert reasons.count("daily_engine:drafts/art-001/body_draft.md") == 2
+    snapshots = list((root / "review" / ".before").rglob("drafts/art-001/body_draft.md"))
+    assert snapshots and snapshots[0].read_text(encoding="utf-8") == "第一版\n"
+
+
+def test_base_helper_writes_go_through_the_channel(spec):
+    """base（generate_daily_001）的写不再绕过留底通道（daily-009 曾 63/152 文件无账）。"""
+
+    from article_group.evidence_write import read_changelog
+    from scripts import generate_daily_001 as base
+
+    loaded, root = spec
+    daily_engine.bind_spec(loaded)
+
+    base.write_text("delivery/art-001/delivery.md", "# 标题\n\n正文")
+    base.write_json("review/art-001/title-pack.json", {"directions": [{"title": "标题"}]})
+
+    assert (root / "delivery" / "art-001" / "delivery.md").read_text(encoding="utf-8") == "# 标题\n\n正文\n"
+    assert json.loads((root / "review" / "art-001" / "title-pack.json").read_text(encoding="utf-8")) == {
+        "directions": [{"title": "标题"}]
+    }
+    reasons = {entry["reason"] for entry in read_changelog(root)}
+    assert "daily_engine:delivery/art-001/delivery.md" in reasons
+    assert "daily_engine:review/art-001/title-pack.json" in reasons
+
+
+def test_base_writes_stay_raw_when_base_root_is_another_run(spec, tmp_path: Path):
+    """别的调用方改了 base.ROOT 时按原样裸写，不记到本 run 的账上。"""
+
+    from article_group.evidence_write import read_changelog
+    from scripts import generate_daily_001 as base
+
+    loaded, root = spec
+    daily_engine.bind_spec(loaded)
+    other = tmp_path / "runs" / "2026-09-18" / "daily-other"
+    other.mkdir(parents=True)
+    base.ROOT = other
+
+    base.write_text("notes/x.md", "历史重跑")
+
+    assert (other / "notes" / "x.md").read_text(encoding="utf-8") == "历史重跑\n"
+    assert read_changelog(root) == []
+    assert read_changelog(other) == []

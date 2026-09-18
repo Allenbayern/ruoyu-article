@@ -8,8 +8,11 @@
 - 名单里过期条目（模块已删或不再写 run）→ 同样失败，防止名单变成摆设；
 - `PENDING` 是**明处的欠账**，不是许可：它们只是被运行时护栏兜住，仍应逐个接入留底通道。
 
-探针是启发式的（`run_dir|run_root|batch_dir` + 常见写调用）；它的失效方向是**漏检**，
-所以它不构成"已全保"的证明——真正的保证来自 `runs_guard` 的运行时拦截。
+探针是启发式的（`run_dir|run_root|batch_dir|ROOT|RUN_ROOT|RUN_ID` + 常见写调用）；它的
+失效方向是**漏检**，所以它不构成"已全保"的证明——真正的保证来自 `runs_guard` 的运行时拦截。
+2026-09-18（B7′）补上 `ROOT|RUN_ROOT|RUN_ID`：spec 模块与 `generate_daily_00X` 用的是
+模块级 `ROOT`，此前**整个扫不到**，其中 base 的写还真的绕过了留底通道（daily-009 有
+63/152 个文件无账）。
 """
 from __future__ import annotations
 
@@ -18,7 +21,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-RUN_HINTS = re.compile(r"\brun_dir\b|\brun_root\b|\bbatch_dir\b")
+RUN_HINTS = re.compile(r"\brun_dir\b|\brun_root\b|\bbatch_dir\b|\bROOT\b|\bRUN_ROOT\b|\bRUN_ID\b")
 WRITE_CALLS = re.compile(
     r"write_text\(|write_bytes\(|json\.dump\(|shutil\.copy|shutil\.move|copytree\(|"
     r"rmtree\(|os\.replace\(|os\.remove\(|os\.unlink\(|os\.rename\(|os\.makedirs\(|"
@@ -46,7 +49,27 @@ OUT_OF_SCOPE: dict[str, str] = {
     "scripts/run_sandbox.py": "只写 /tmp 副本（副本内 SEALED 已改名为 from-source）",
     # 历史/一次性
     "scripts/run_daily_005_record_review.py": "历史一次性脚本（daily-005 录制复核），已定格不再用于新 run",
+    "scripts/run_real_daily_003.py": "历史一次性生成器（daily-003，自带 main() 直接写 run），已定格",
     "scripts/run_real_daily_004.py": "历史一次性生成器（daily-004），已定格",
+    "scripts/generate_daily_002.py": "历史一次性生成器（daily-002），已定格；同 run_real_daily_004",
+    # spec 数据模块：只定义数据与裸写函数，唯一入口是 __main__ → daily_engine.build_run，
+    # build_run 会把 spec 的 write_json/write_text 包进留底通道后才调用（见
+    # tests/test_daily_engine_staging.py::test_spec_writers_go_through_the_channel）。
+    "scripts/run_real_daily_005.py": "spec 数据模块（daily-005）：入口 daily_engine.build_run，写函数在 bind_spec 里被包进通道",
+    "scripts/run_real_daily_006.py": "spec 数据模块（daily-006）：同上",
+    "scripts/run_real_daily_007.py": "spec 数据模块（daily-007）：同上",
+    "scripts/run_real_daily_008.py": "spec 数据模块（daily-008）：同上",
+    "scripts/run_real_daily_009.py": "spec 数据模块（daily-009）：同上",
+    # 引擎共用 helper：活动入口只有 build_run，bind_spec 已把它的写函数换成走通道的版本。
+    "scripts/generate_daily_001.py": "引擎共用 helper（base）：bind_spec 把 base.write_json/write_text 换成走通道的版本；"
+                                     "自带 ROOT 是历史 daily-001，直接跑属历史重跑",
+    # 其它位置
+    "scripts/gen_sources_021.py": "写 runs/<date>/ 证据文件（日目录，非 run 目录）；与 mp_fetch 同口径",
+    "scripts/preview_route_audit.py": "审计 CLI：ROOT 指仓库根，只写显式 --output 报告",
+    "scripts/move_completed_20260807.py": "视频隔离区搬运（/vol2 素材盘；RUN_ID 是隔离批次号，不写 runs/ 下的文章 run）",
+    "scripts/move_completed_to_quarantine.py": "视频隔离区搬运（同上，2026-08-06 批次）",
+    "scripts/patches/2026-09-17-mac/patch_daily_engine_wechat.py": "一次性补丁：改仓库源码，不写 run",
+    "scripts/patches/2026-09-17-mac/patch_evidence_rebind.py": "一次性补丁：改仓库源码，不写 run",
     "scripts/patches/2026-09-17-mac/patch_closed_run_guard.py": "一次性补丁：改仓库源码，不写 run",
     "scripts/patches/2026-09-17-mac/patch_daily_engine_step_log.py": "一次性补丁：改仓库源码，不写 run",
     "scripts/patches/2026-09-17-mac/patch_evidence_write.py": "一次性补丁：改仓库源码，不写 run",
@@ -90,6 +113,23 @@ def _scan() -> dict[str, dict[str, bool]]:
 def _guard_covered(info: dict[str, bool]) -> bool:
     """in-package 的模块必然经包 __init__ 导入 → 护栏自动装上。"""
     return info["in_package"] or info["imports_package"]
+
+
+def test_probe_sees_the_spec_modules_and_the_shared_helper() -> None:
+    """B7′：spec 与 base 用的是模块级 ``ROOT``，探针必须看得见它们。
+
+    2026-09-18 之前，``run_real_daily_009.py``（写 run 的 spec）与
+    ``generate_daily_001.py``（引擎共用 helper）都在扫描范围外，于是它们的裸写
+    既没被登记，也没人发现 base 的写绕过了留底通道。
+    """
+
+    found = _scan()
+    for name in (
+        "scripts/run_real_daily_008.py",
+        "scripts/run_real_daily_009.py",
+        "scripts/generate_daily_001.py",
+    ):
+        assert name in found, f"探针又看不见 {name} 了（RUN_HINTS 退化了？）"
 
 
 def test_every_run_writer_is_classified() -> None:

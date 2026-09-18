@@ -1219,8 +1219,47 @@ def _require_prerequisites(stage: PipelineStage) -> None:
         )
 
 
+_BASE_RAW_WRITERS: dict[str, Callable] | None = None
+
+
+def _route_write_for_base(path: str, value: object, *, kind: str) -> None:
+    """base 的写：只有 ``base.ROOT`` 就是本次绑定的 run 时才走通道。
+
+    历史脚本（如 ``run_real_daily_003.py``）会改 ``base.ROOT`` 后直接调
+    ``base.write_text``；那种调用按原样裸写，别把产物记到别的 run 的账上。
+    """
+
+    assert _BASE_RAW_WRITERS is not None
+    if Path(base.ROOT) != Path(ROOT):
+        _BASE_RAW_WRITERS[kind](path, value)
+        return
+    _route_write(path, value, kind=kind, raw=_BASE_RAW_WRITERS[kind])
+
+
+def _route_base_writes() -> None:
+    """把 base（``scripts.generate_daily_001``）的模块级写函数也接进留底通道。
+
+    为什么需要（2026-09-18，B7′）：引擎的阶段函数里有一批 ``base.write_text`` /
+    ``base.title_records`` / ``base.topic_cards`` 调用，它们走的是 base 自己的
+    ``write_json``/``write_text``（模块级全局查找），**不经过**引擎的 ``_route_write``。
+    结果是 daily-009 有 63/152 个文件在账本里查不到（含 ``delivery/*/delivery.md``、
+    ``review/*/title-pack.json``、``review/*/source-stripped.md``）：既没有 before-image，
+    也没有 changelog，事后只剩"最后一次打包"的 mtime 可看。
+
+    包装保持产物字节不变（同样的 ``ensure_ascii=False, indent=2`` 与 ``rstrip()+\\n``），
+    只是多走一次留底+记账+封存守门。幂等：重复 bind 不会套娃（原始写函数记在模块里）。
+    """
+
+    global _BASE_RAW_WRITERS
+    if _BASE_RAW_WRITERS is None:
+        _BASE_RAW_WRITERS = {"json": base.write_json, "text": base.write_text}
+    base.ROOT = ROOT
+    base.write_json = lambda path, value: _route_write_for_base(path, value, kind="json")
+    base.write_text = lambda path, value: _route_write_for_base(path, value, kind="text")
+
+
 def bind_spec(spec) -> None:
-    """绑定 spec 数据，并把 spec 的裸写包进留底通道。"""
+    """绑定 spec 数据，并把 spec 与 base 的裸写包进留底通道。"""
 
     bind_names = (
         "ROOT", "RUN_ID", "GROUP_ID", "CAPTURED_AT", "CONTRACT",
@@ -1240,6 +1279,7 @@ def bind_spec(spec) -> None:
     _raw_write_json, _raw_write_text = write_json, write_text
     globals()["write_json"] = lambda path, value: _route_write(path, value, kind="json", raw=_raw_write_json)
     globals()["write_text"] = lambda path, value: _route_write(path, value, kind="text", raw=_raw_write_text)
+    _route_base_writes()
 
 
 def build_run(
