@@ -108,6 +108,12 @@ already closed and published run, with no backup.
   and quote gaps stay warnings. The LLM half remains the advisory
   `scripts/ledger_coverage_precheck.py`. With this gate wired, historical runs are *not* grandfathered:
   daily-009 art-002 alone has four error-level gaps (bare years absent from the ledger).
+- **`content_result=PASS` requires an approving L2** (controller ruling 2026-09-18, N2).
+  An unfinished or missing L2 no longer shows content `PASS`: it stays governance `PENDING` but the
+  content dimension becomes `PENDING`, and a completed non-approve L2 (the `BLOCKED` path) is
+  labelled content `FAIL`. Reason: with the old口径 "L2 pending 不阻断", a batch that never ran L2
+  scored *better* on the content dimension than one that ran and failed. Human sign-off items are
+  unaffected — "人没签字" is still not a content blocker — and historical runs are not re-judged.
 - **Incremental L2 review has a real diff.** `--base-review <previous record>` records
   `base_review_diff`: which binding hashes moved, a unified diff of the delivery against the
   hash-matched `review/.before/<stamp>/…` snapshot, and the base↔current finding pairing

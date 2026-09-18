@@ -141,8 +141,10 @@ def _dimensions_for_reason(reason: str) -> dict[str, str]:
             "governance_result": "PENDING",
         }
     if reason.startswith("gate:independent_review"):
+        # 2026-09-18（N2 裁决）：content_result=PASS 的前提是 L2=approve。
+        # L2 跑完但未通过（needs_changes / UNVERIFIED）是内容判定，内容栏不得写 PASS。
         return {
-            "content_result": "PASS",
+            "content_result": "FAIL",
             "evidence_result": "FAIL",
             "governance_result": "PENDING",
         }
@@ -185,6 +187,11 @@ _EVIDENCE_PENDING_MARKERS = (
     "source_",
     "stale",
 )
+# 2026-09-18（N2 裁决）：content_result=PASS 的前提是 L2=approve。复核未完成
+# （pending / missing）时内容栏不得显示 PASS——否则"没跑 L2"比"跑了没过"更容易拿到
+# CONTENT_READY（daily-009 就是内容 READY + 治理 PENDING 并存）。人没签字仍不算内容
+# 阻塞：这里记 PENDING，不记 FAIL；历史 run 不追溯重判。
+_CONTENT_GATED_BY_L2_MARKERS = ("independent_review=",)
 _GOVERNANCE_PENDING_MARKERS = (
     "independent_review=",
     "controller_acceptance=",
@@ -214,6 +221,8 @@ def _pending_dimensions(items: list[str]) -> dict[str, str]:
     for item in items:
         normalized = item.lower()
         if any(marker in normalized for marker in _CONTENT_PENDING_MARKERS):
+            dimensions["content_result"] = "PENDING"
+        if any(marker in normalized for marker in _CONTENT_GATED_BY_L2_MARKERS):
             dimensions["content_result"] = "PENDING"
         if any(marker in normalized for marker in _EVIDENCE_PENDING_MARKERS):
             dimensions["evidence_result"] = "PENDING"

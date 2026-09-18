@@ -1503,3 +1503,53 @@ def test_load_controller_waivers_fails_closed_on_malformed_input(tmp_path: Path)
         json.dumps({"waivers": {"fact_density": "art-001"}}), encoding="utf-8"
     )
     assert _load_controller_waivers(root) == {}
+
+
+# --- N2 裁决（2026-09-18）：content_result=PASS 的前提是 L2=approve -------------
+
+
+def test_an_unfinished_l2_cannot_show_content_pass(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """复核未完成 → 治理 PENDING，同时内容栏不得写 PASS（否则"没跑 L2"最划算）。"""
+
+    from article_group import final_review as fr
+
+    batch = _make_batch(tmp_path)
+    monkeypatch.setattr(
+        fr,
+        "_review_completion_items",
+        lambda *args, **kwargs: ["art-001: independent_review=pending"],
+    )
+
+    report = evaluate_batch(batch)
+
+    assert report["verdict"] == PENDING
+    assert report["content_result"] == "PENDING"
+    assert report["governance_result"] == "PENDING"
+
+
+def test_human_signature_items_still_do_not_block_content(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """人没签字仍不算内容阻塞（Vault 口径）：内容栏保持 PASS。"""
+
+    from article_group import final_review as fr
+
+    batch = _make_batch(tmp_path)
+    monkeypatch.setattr(
+        fr,
+        "_review_completion_items",
+        lambda *args, **kwargs: ["art-001: human_readability_attestation=pending (PENDING)"],
+    )
+
+    report = evaluate_batch(batch)
+
+    assert report["verdict"] == PENDING
+    assert report["content_result"] == "PASS"
+    assert report["governance_result"] == "PENDING"
+
+
+def test_a_completed_non_approve_l2_is_not_labelled_content_pass() -> None:
+    from article_group.final_review import _dimensions_for_reason
+
+    dimensions = _dimensions_for_reason("gate:independent_review")
+
+    assert dimensions["content_result"] == "FAIL"
+    assert dimensions["governance_result"] == "PENDING"
