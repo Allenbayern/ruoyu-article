@@ -40,6 +40,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Mapping
 from datetime import datetime, timezone
+import difflib
 import hashlib
 import json
 import os
@@ -297,6 +298,186 @@ def _load_review_json(text: str) -> dict[str, Any] | None:
 CONTRACT_REVIEW_KEYS = ("decision", "scope_reviewed", "findings", "non_findings", "coverage_gaps")
 BLOCKING_SEVERITIES = frozenset({"blocker", "major"})
 APPROVING_DECISIONS = frozenset({"approve", "approved", "approve-with-notes", "pass"})
+DIFF_LINE_LIMIT = 400
+
+
+def _load_base_record(path: Path) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _snapshot_matching_sha256(run_root: Path, relative_path: str, sha256: str) -> Path | None:
+    """在 run 的留底目录里找哈希**逐位相同**的历史版本。"""
+
+    if not sha256:
+        return None
+    for candidate in sorted((run_root / "review" / ".before").glob(f"*/{relative_path}"), reverse=True):
+        if _sha256(candidate) == sha256:
+            return candidate
+    return None
+
+
+def _text_diff(before: str, after: str) -> dict[str, Any]:
+    before_lines = before.splitlines()
+    after_lines = after.splitlines()
+    lines = list(
+        difflib.unified_diff(before_lines, after_lines, fromfile="base", tofile="current", lineterm="", n=2)
+    )
+    added = sum(1 for line in lines if line.startswith("+") and not line.startswith("+++"))
+    removed = sum(1 for line in lines if line.startswith("-") and not line.startswith("---"))
+    return {
+        "changed": before != after,
+        "added_lines": added,
+        "removed_lines": removed,
+        "truncated": len(lines) > DIFF_LINE_LIMIT,
+        "diff": "\n".join(lines[:DIFF_LINE_LIMIT]),
+    }
+
+
+def _binding_changes(base_record: Mapping[str, Any], record: Mapping[str, Any]) -> list[dict[str, str]]:
+    changes: list[dict[str, str]] = []
+    for hash_field, path_field in (
+        ("artifact_sha256", "artifact_path"),
+        ("body_sha256", "body_path"),
+        ("title_pack_sha256", "title_pack_path"),
+    ):
+        before = str(base_record.get(hash_field) or "")
+        after = str(record.get(hash_field) or "")
+        if before != after:
+            changes.append(
+                {
+                    "field": hash_field,
+                    "path": str(record.get(path_field) or base_record.get(path_field) or ""),
+                    "base_sha256": before,
+                    "current_sha256": after,
+                }
+            )
+    return changes
+
+
+def _finding_key(finding: object) -> str:
+    if not isinstance(finding, Mapping):
+        return ""
+    severity = str(finding.get("severity") or "").strip().lower()
+    target = str(finding.get("target") or finding.get("location") or finding.get("id") or "").strip()
+    return f"{severity}|{target}" if (severity or target) else ""
+
+
+def _finding_diff(base_findings: object, current_findings: object) -> dict[str, list[Any]]:
+    """上轮 findings 与本轮配对：still_open / no_longer_reported / new。"""
+
+    def index(findings: object) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        for finding in findings if isinstance(findings, list) else []:
+            key = _finding_key(finding)
+            if key:
+                out.setdefault(key, finding)
+        return out
+
+    base_index = index(base_findings)
+    current_index = index(current_findings)
+    return {
+        "still_open": [current_index[key] for key in current_index if key in base_index],
+        "no_longer_reported": [base_index[key] for key in base_index if key not in current_index],
+        "new": [current_index[key] for key in current_index if key not in base_index],
+    }
+
+
+def build_base_review_diff(
+    base_record: object,
+    record: Mapping[str, Any],
+    *,
+    run_root: str | Path,
+) -> dict[str, Any]:
+    """算出"相对上一轮复核，交付稿与绑定到底变了什么"（B4，2026-09-18）。
+
+    为什么需要：``--base-review`` 此前只记血缘（``base_review`` + ``base_review_sha256``），
+    声明了 diff-only 却没有任何 diff —— 复核员拿到的仍是"当前这一版"，只能靠记忆核对
+    上一轮。现在补齐三件事：
+
+    1. **绑定 diff**：artifact / body / title_pack 三项哈希谁变了（含 base 与当前值）；
+    2. **交付稿文本 diff**：按 base 记录的 ``artifact_sha256`` 在 run 的留底目录里找到
+       哈希逐位相同的历史版本，再对当前交付稿做 unified diff。找不到就如实记
+       ``snapshot_not_found`` 并说明"只按当前稿复核"——不假装算过；
+    3. **findings diff**：上轮与本轮按 (severity, target) 配对，分别记
+       ``still_open`` / ``no_longer_reported`` / ``new``。
+
+    ``no_longer_reported`` 只说明"本轮没再报"，不等于已修复——复核员仍要逐条确认。
+    """
+
+    result: dict[str, Any] = {
+        "scope_mode": "diff_only",
+        "binding_changes": [],
+        "artifact_diff": {"status": "unavailable"},
+        "finding_diff": {"still_open": [], "no_longer_reported": [], "new": []},
+        "note": "no_longer_reported 只表示本轮未再报出，不等于已修复。",
+    }
+    if not isinstance(base_record, Mapping):
+        result["artifact_diff"] = {"status": "base_review_unreadable"}
+        result["binding_changes"] = _binding_changes({}, record)
+        result["finding_diff"] = _finding_diff([], record.get("findings"))
+        return result
+
+    root = Path(run_root)
+    result["base_review"] = str(base_record.get("base_review") or "")
+    result["base_decision"] = str(base_record.get("decision") or "")
+    result["binding_changes"] = _binding_changes(base_record, record)
+
+    base_sha = str(base_record.get("artifact_sha256") or "")
+    current_sha = str(record.get("artifact_sha256") or "")
+    artifact_path = str(record.get("artifact_path") or base_record.get("artifact_path") or "")
+    artifact_diff: dict[str, Any] = {
+        "artifact_path": artifact_path,
+        "base_sha256": base_sha,
+        "current_sha256": current_sha,
+    }
+    target = root / artifact_path if artifact_path else None
+    if not base_sha:
+        # 上一轮不是本工具记下的记录（例如只归档了原始复核 JSON）：没有绑定哈希就没有
+        # 可比对的版本，如实说明，别用 mtime 猜一份"大概是那一版"。
+        artifact_diff["status"] = "base_binding_missing"
+        artifact_diff["reason"] = (
+            "上一轮记录没有 artifact_sha256 绑定（像是原始复核 JSON，不是 codex_review 记录）；"
+            "本轮只能记血缘，无法定位历史版本做 diff"
+        )
+    elif base_sha == current_sha:
+        artifact_diff["status"] = "unchanged"
+    elif target is None or not target.is_file():
+        artifact_diff["status"] = "artifact_unreadable"
+    else:
+        snapshot = _snapshot_matching_sha256(root, artifact_path, base_sha)
+        if snapshot is None:
+            artifact_diff["status"] = "snapshot_not_found"
+            artifact_diff["reason"] = (
+                f"留底目录里没有 {artifact_path} 的 base 版本（sha256={base_sha[:16]}…）："
+                "本轮只按当前稿复核，没有 diff 可看"
+            )
+        else:
+            try:
+                before = snapshot.read_text(encoding="utf-8")
+                after = target.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as exc:
+                artifact_diff["status"] = f"unreadable:{type(exc).__name__}"
+            else:
+                artifact_diff["status"] = "diff_available"
+                artifact_diff["base_snapshot"] = str(snapshot.relative_to(root).as_posix())
+                artifact_diff.update(_text_diff(before, after))
+    result["artifact_diff"] = artifact_diff
+    if record.get("contract_errors"):
+        # 本轮复核没过契约校验：findings 没并进记录，直接配对会得出"上轮全部消失"的假象。
+        result["finding_diff"] = {
+            "still_open": [],
+            "no_longer_reported": [],
+            "new": [],
+            "status": "not_comparable",
+            "reason": "本轮复核未通过契约校验，findings 未并入记录",
+        }
+        return result
+    result["finding_diff"] = _finding_diff(base_record.get("findings"), record.get("findings"))
+    return result
 
 
 def validate_review_contract(review: object, schema_path: str | Path) -> list[str]:
@@ -611,6 +792,11 @@ def run_review(args: argparse.Namespace) -> int:
                     record["coverage_gaps"] = list(record.get("coverage_gaps") or []) + [
                         f"title_freeze:{freeze_report['status']}"
                     ]
+    # B4（2026-09-18）：--base-review 不再只记血缘，真的算出"相对上一轮变了什么"。
+    if getattr(args, "base_review", None):
+        record["base_review_diff"] = build_base_review_diff(
+            _load_base_record(Path(args.base_review)), record, run_root=Path(args.run_root)
+        )
     if canonical:
         from article_group.independent_review import canonicalize_independent_review_record
 
@@ -693,7 +879,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--base-review",
         type=Path,
-        help="上一轮已归档的 L2 记录：声明本轮为 diff-only 增量复核并记录基线哈希。",
+        help="上一轮已归档的 L2 记录：按 diff-only 记（绑定 diff + 交付稿 unified diff + findings 配对），基线哈希入库。",
     )
     parser.add_argument(
         "--allow-unfrozen-title",

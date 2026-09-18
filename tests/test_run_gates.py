@@ -8,6 +8,7 @@ import pytest
 
 from article_group.git_hygiene import validate_infra_ready
 from article_group.run_gates import (
+    build_assertion_coverage_gate,
     build_compliance_gate_record,
     build_compliance_not_run_record,
     build_git_hygiene_snapshot,
@@ -116,6 +117,7 @@ def test_run_all_gates_writes_artifacts_and_reports_fail_without_exit(tmp_path):
         "review/gates/topic-five-questions.json",
         "review/gates/git-hygiene.json",
         "review/gates/compliance-gate.json",
+        "review/gates/assertion-coverage.json",
     }
     hierarchy = writes["task-hierarchy-validation-report.json"]
     assert hierarchy["pass"] is False
@@ -199,3 +201,98 @@ def test_run_all_gates_passes_on_daily_005():
     report = build_task_hierarchy_report(DAILY_005)
     assert report["pass"] is True
     assert report["errors"] == []
+
+
+# --- 正文断言 ↔ 账本覆盖门禁（2026-09-18，B1）--------------------------------
+
+
+def _assertion_run(run_root: Path, *, body: str, ledger: str) -> Path:
+    import json
+
+    (run_root / "task-hierarchy").mkdir(parents=True, exist_ok=True)
+    (run_root / "task-hierarchy/article-task-art-001.json").write_text(
+        json.dumps({"article_id": "art-001"}), encoding="utf-8"
+    )
+    (run_root / "delivery/art-001").mkdir(parents=True, exist_ok=True)
+    (run_root / "delivery/art-001/delivery.md").write_text(f"# 标题\n\n{body}\n", encoding="utf-8")
+    (run_root / "material-packs").mkdir(parents=True, exist_ok=True)
+    (run_root / "material-packs/art-001.json").write_text(
+        json.dumps({"obtained_facts_by_source": {"src-a": [ledger]}}), encoding="utf-8"
+    )
+    (run_root / "review/art-001").mkdir(parents=True, exist_ok=True)
+    return run_root
+
+
+def test_assertion_coverage_gate_blocks_an_unbacked_time_span(tmp_path):
+    """daily-008 漏过的那一类：读者面写了跨度，账本里没有对应条目。"""
+
+    _assertion_run(tmp_path, body="十几年过去，这句台词还在被引用。", ledger="剧组在片场拍了一百天。")
+
+    report = build_assertion_coverage_gate(tmp_path)
+
+    assert report["pass"] is False
+    assert report["checked_articles"] == 1
+    assert any("assertion_not_in_ledger:time_span" in error for error in report["errors"])
+    assert report["articles"][0]["article_id"] == "art-001"
+
+
+def test_assertion_coverage_gate_passes_when_the_ledger_covers_the_claim(tmp_path):
+    _assertion_run(
+        tmp_path,
+        body="十几年过去，这句台词还在被引用。",
+        ledger="十几年过去，这句台词还在被引用（观众行为观察）。",
+    )
+
+    report = build_assertion_coverage_gate(tmp_path)
+
+    assert report["pass"] is True
+    assert report["errors"] == []
+
+
+def test_assertion_coverage_gate_records_warnings_without_blocking(tmp_path):
+    """引号/数字类缺口只记录：009 的 warning 就是这一类，不阻断。"""
+
+    _assertion_run(tmp_path, body="他说：“我只拍我信的。”全片 135 分钟。", ledger="他谈了创作方法。")
+
+    report = build_assertion_coverage_gate(tmp_path)
+
+    assert report["pass"] is True
+    assert any("quote" in warning for warning in report["warnings"])
+
+
+def test_assertion_coverage_gate_flags_a_missing_delivery(tmp_path):
+    import json
+
+    (tmp_path / "task-hierarchy").mkdir()
+    (tmp_path / "task-hierarchy/article-task-art-001.json").write_text(
+        json.dumps({"article_id": "art-001"}), encoding="utf-8"
+    )
+
+    report = build_assertion_coverage_gate(tmp_path)
+
+    assert report["pass"] is False
+    assert report["errors"] == ["art-001:delivery_missing"]
+
+
+def test_assertion_coverage_gate_writes_per_article_reports(tmp_path):
+    _assertion_run(tmp_path, body="十几年过去，这句台词还在被引用。", ledger="剧组在片场拍了一百天。")
+    writes: dict[str, dict] = {}
+
+    build_assertion_coverage_gate(
+        tmp_path, write_article_reports=lambda rel, value: writes.__setitem__(rel, value)
+    )
+
+    assert "review/art-001/assertion-coverage.json" in writes
+    assert writes["review/art-001/assertion-coverage.json"]["aid"] == "art-001"
+
+
+def test_run_all_gates_blocks_on_an_unbacked_assertion(tmp_path, capsys):
+    _assertion_run(tmp_path, body="十几年过去，这句台词还在被引用。", ledger="剧组在片场拍了一百天。")
+
+    with pytest.raises(SystemExit) as exc:
+        run_all_gates(tmp_path, lambda rel, value: None)
+    assert exc.value.code == 1
+    assert "assertion_not_in_ledger" in capsys.readouterr().err
+
+    summary = run_all_gates(tmp_path, lambda rel, value: None, fail_on_error=False)
+    assert summary["assertion_coverage"] == "fail"

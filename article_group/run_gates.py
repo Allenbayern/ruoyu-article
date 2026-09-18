@@ -234,6 +234,64 @@ def build_topic_five_questions_gate(run_root: str | Path) -> dict[str, Any]:
     }
 
 
+def build_assertion_coverage_gate(
+    run_root: str | Path,
+    *,
+    write_article_reports: WriteFn | None = None,
+) -> dict[str, Any]:
+    """读者面断言 ↔ 账本覆盖的确定性门禁（2026-09-18，B1）。
+
+    为什么需要（daily-008 复盘 → daily-009 复核）：008 的账本 46 条事实全部锚定、
+    机器门禁全绿，L2 第一轮仍判两条 major——读者面写了「十几年过去」与
+    「《让子弹飞》的台词还在被引用」，账本里没有对应条目；这两类断言正好从
+    逐字引号比对与 LLM 抽查之间漏过去。确定性检查（
+    :mod:`article_group.assertion_ledger_coverage`）当时就写好了，但只挂在手工脚本
+    ``scripts/ledger_coverage_precheck.py`` 上、**不阻断**，于是复核时谁也拦不住。
+
+    现在它进门禁：error 级缺口（时间跨度/受众行为）阻断，warning 级（数字/引号）
+    只记录。``write_article_reports`` 给了写入器时，逐篇报告落到
+    ``review/<aid>/assertion-coverage.json`` 作为证据。
+    """
+
+    from article_group.assertion_ledger_coverage import check_coverage
+
+    root = Path(run_root)
+    articles: list[dict[str, Any]] = []
+    errors: list[str] = []
+    warnings: list[str] = []
+    for path in sorted((root / "task-hierarchy").glob("article-task-*.json")):
+        task = _load_json_mapping(path) or {}
+        aid = str(task.get("article_id") or path.stem.removeprefix("article-task-"))
+        report = check_coverage(root, aid)
+        article_errors = [str(error) for error in report.get("errors", [])]
+        if report.get("status") == "no_delivery":
+            article_errors.append("delivery_missing")
+        articles.append(
+            {
+                "article_id": aid,
+                "status": report.get("status"),
+                "ledger_entries": report.get("ledger_entries", 0),
+                "assertions": report.get("assertions", 0),
+                "errors": article_errors,
+                "warnings": [str(w) for w in report.get("warnings", [])],
+            }
+        )
+        errors.extend(f"{aid}:{error}" for error in article_errors)
+        warnings.extend(f"{aid}:{warning}" for warning in report.get("warnings", []))
+        if write_article_reports is not None:
+            write_article_reports(f"review/{aid}/assertion-coverage.json", dict(report))
+    return {
+        "schema_version": "assertion-coverage-gate-v1",
+        "pass": not errors,
+        "checked_articles": len(articles),
+        "errors": sorted(set(errors)),
+        "warnings": sorted(set(warnings)),
+        "articles": articles,
+        "note": "确定性检查：时间跨度/受众行为缺口阻断（L2 判 major 的两类），数字/引号记录不阻断。",
+        "publication_authorization": "not_authorized",
+    }
+
+
 def run_all_gates(
     run_root: str | Path,
     write_json: WriteFn,
@@ -268,6 +326,10 @@ def run_all_gates(
     five_questions = build_topic_five_questions_gate(run_root)
     write_json("review/gates/topic-five-questions.json", five_questions)
 
+    # B1（2026-09-18）：正文断言 ↔ 账本覆盖进门前置成门禁（逐篇报告一并留底）。
+    assertion_report = build_assertion_coverage_gate(run_root, write_article_reports=write_json)
+    write_json("review/gates/assertion-coverage.json", assertion_report)
+
     compliance_failed = compliance.get("full_gate") == "run" and not compliance.get("pass")
     if fail_on_error and (
         not hierarchy_report["pass"]
@@ -275,6 +337,7 @@ def run_all_gates(
         or not editorial_report["pass"]
         or not independent_report["pass"]
         or not five_questions["pass"]
+        or not assertion_report["pass"]
         or compliance_failed
     ):
         payload = {
@@ -283,6 +346,7 @@ def run_all_gates(
             "editorial_protocol": editorial_report,
             "independent_review_gate": independent_report,
             "topic_five_questions": five_questions,
+            "assertion_coverage_gate": assertion_report,
             "compliance_gate": compliance,
         }
         print(
@@ -297,6 +361,7 @@ def run_all_gates(
         "editorial_protocol": "pass" if editorial_report["pass"] else "fail",
         "independent_review": "pass" if independent_report["pass"] else "fail",
         "topic_five_questions": "pass" if five_questions["pass"] else "fail",
+        "assertion_coverage": "pass" if assertion_report["pass"] else "fail",
         "git_hygiene_infra": "pass" if hygiene["pass"] else "fail",
         "compliance_gate": (
             "not_run"
@@ -309,6 +374,7 @@ def run_all_gates(
 
 __all__ = [
     "COMPLIANCE_GATE_REASON",
+    "build_assertion_coverage_gate",
     "build_compliance_gate_record",
     "build_compliance_not_run_record",
     "build_editorial_protocol_report",

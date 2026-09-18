@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -958,3 +959,327 @@ def test_native_l2_output_is_validated_against_the_contract(tmp_path: Path, monk
     assert exit_code == 1
     assert record["status"] == "UNVERIFIED"
     assert record["error"] == "l2_review_contract_invalid"
+
+
+# --- 增量的"只读 diff"（2026-09-18，B4）--------------------------------------
+
+
+def _base_review_setup(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """建一个 run：交付稿 + 上一轮复核记录 + 留底里的 base 版本交付稿。"""
+
+    from article_group.independent_review import build_independent_review_binding
+
+    run_root = _canonical_run_root(tmp_path)
+    delivery = run_root / "delivery" / "art-001" / "delivery.md"
+    base_text = delivery.read_text(encoding="utf-8")
+    binding = build_independent_review_binding(
+        run_root,
+        artifact_path="delivery/art-001/delivery.md",
+        body_path="drafts/art-001/body_draft.md",
+        title_pack_path="review/art-001/title-pack.json",
+        created_from_run="2026-09-18/daily-900",
+    )
+    base_record = run_root / "review" / "art-001" / "codex-l2-review-r1.json"
+    base_record.write_text(
+        json.dumps(
+            {
+                "schema_version": "codex-review-contract-1.0",
+                "decision": "needs_changes",
+                **binding,
+                "findings": [
+                    {"severity": "major", "target": "第 1 段", "evidence": "无源年份"},
+                    {"severity": "minor", "target": "第 2 段", "evidence": "引号未标"},
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    # 引擎/base 的写走过留底通道，delivery 的历史版本就躺在 review/.before/<stamp>/ 下。
+    snapshot = run_root / "review" / ".before" / "20260918T000000" / "delivery" / "art-001" / "delivery.md"
+    snapshot.parent.mkdir(parents=True, exist_ok=True)
+    snapshot.write_text(base_text, encoding="utf-8")
+    return run_root, base_record, delivery
+
+
+def test_base_review_diff_shows_what_changed_since_the_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    run_root, base_record, delivery = _base_review_setup(tmp_path)
+    delivery.write_text("# 标题\n\n正文改过了，加了一句话。\n", encoding="utf-8")
+    output = run_root / "review" / "art-001" / "codex-l2-review-r2.json"
+    external = run_root / "review" / "art-001" / "l2-input.json"
+    external.write_text(
+        json.dumps(
+            {
+                "decision": "approve",
+                "scope_reviewed": ["diff"],
+                "findings": [
+                    {
+                        "severity": "minor",
+                        "target": "第 2 段",
+                        "evidence": "引号仍未标",
+                        "counterexample_or_failure_mode": "读者会把引语当叙述",
+                        "required_fix": "加引号",
+                        "recheck": "逐句比对",
+                    }
+                ],
+                "non_findings": ["第 1 段的年份已补账本"],
+                "coverage_gaps": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(codex_review.shutil, "which", lambda _: None)
+
+    exit_code = codex_review.run_review(
+        codex_review.build_parser().parse_args(
+            [
+                "--mode", "l2",
+                "--run-root", str(run_root),
+                "--output", str(output),
+                "--request", "只复核上一轮后的改动",
+                "--article-id", "art-001",
+                "--artifact-path", "delivery/art-001/delivery.md",
+                "--body-path", "drafts/art-001/body_draft.md",
+                "--title-pack-path", "review/art-001/title-pack.json",
+                "--review-json", str(external),
+                "--base-review", str(base_record),
+            ]
+        )
+    )
+
+    record = json.loads(output.read_text(encoding="utf-8"))
+    assert exit_code == 0
+    assert record["scope_mode"] == "diff_only"
+    diff = record["base_review_diff"]
+    artifact = diff["artifact_diff"]
+    assert artifact["status"] == "diff_available"
+    assert artifact["changed"] is True
+    assert "正文改过了" in artifact["diff"]
+    assert artifact["added_lines"] >= 1 and artifact["removed_lines"] >= 1
+    assert [change["field"] for change in diff["binding_changes"]] == ["artifact_sha256"]
+    assert [item["target"] for item in diff["finding_diff"]["still_open"]] == ["第 2 段"]
+    assert [item["target"] for item in diff["finding_diff"]["no_longer_reported"]] == ["第 1 段"]
+    assert diff["finding_diff"]["new"] == []
+
+
+def test_base_review_diff_reports_a_missing_snapshot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    run_root, base_record, delivery = _base_review_setup(tmp_path)
+    for snapshot in (run_root / "review" / ".before").rglob("delivery.md"):
+        snapshot.unlink()
+    delivery.write_text("# 标题\n\n又改了一版。\n", encoding="utf-8")
+    output = run_root / "review" / "art-001" / "codex-l2-review-r2.json"
+    external = run_root / "review" / "art-001" / "l2-input.json"
+    external.write_text(
+        json.dumps(
+            {
+                "decision": "needs_changes",
+                "scope_reviewed": ["diff"],
+                "findings": [],
+                "non_findings": [],
+                "coverage_gaps": ["diff 不可得"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(codex_review.shutil, "which", lambda _: None)
+
+    codex_review.run_review(
+        codex_review.build_parser().parse_args(
+            [
+                "--mode", "l2",
+                "--run-root", str(run_root),
+                "--output", str(output),
+                "--request", "r",
+                "--article-id", "art-001",
+                "--artifact-path", "delivery/art-001/delivery.md",
+                "--body-path", "drafts/art-001/body_draft.md",
+                "--title-pack-path", "review/art-001/title-pack.json",
+                "--review-json", str(external),
+                "--base-review", str(base_record),
+            ]
+        )
+    )
+
+    record = json.loads(output.read_text(encoding="utf-8"))
+    artifact = record["base_review_diff"]["artifact_diff"]
+    assert artifact["status"] == "snapshot_not_found"
+    assert "只按当前稿复核" in artifact["reason"]
+
+
+def test_base_review_diff_marks_an_unchanged_artifact(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    run_root, base_record, _ = _base_review_setup(tmp_path)
+    output = run_root / "review" / "art-001" / "codex-l2-review-r2.json"
+    external = run_root / "review" / "art-001" / "l2-input.json"
+    external.write_text(
+        json.dumps(
+            {
+                "decision": "approve",
+                "scope_reviewed": ["diff"],
+                "findings": [],
+                "non_findings": [],
+                "coverage_gaps": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(codex_review.shutil, "which", lambda _: None)
+
+    codex_review.run_review(
+        codex_review.build_parser().parse_args(
+            [
+                "--mode", "l2",
+                "--run-root", str(run_root),
+                "--output", str(output),
+                "--request", "r",
+                "--article-id", "art-001",
+                "--artifact-path", "delivery/art-001/delivery.md",
+                "--body-path", "drafts/art-001/body_draft.md",
+                "--title-pack-path", "review/art-001/title-pack.json",
+                "--review-json", str(external),
+                "--base-review", str(base_record),
+            ]
+        )
+    )
+
+    record = json.loads(output.read_text(encoding="utf-8"))
+    assert record["base_review_diff"]["artifact_diff"]["status"] == "unchanged"
+    assert record["base_review_diff"]["binding_changes"] == []
+    assert len(record["base_review_diff"]["finding_diff"]["no_longer_reported"]) == 2
+
+
+def test_base_review_diff_survives_into_the_canonical_record(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    run_root, base_record, delivery = _base_review_setup(tmp_path)
+    delivery.write_text("# 标题\n\n正文改过了。\n", encoding="utf-8")
+    output = run_root / "review" / "art-001" / "independent-review.json"
+    external = run_root / "review" / "art-001" / "l2-input.json"
+    external.write_text(
+        json.dumps(
+            {
+                "decision": "approve",
+                "scope_reviewed": ["diff"],
+                "findings": [],
+                "non_findings": [],
+                "coverage_gaps": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(codex_review.shutil, "which", lambda _: None)
+
+    codex_review.run_review(
+        codex_review.build_parser().parse_args(
+            [
+                "--mode", "l2",
+                "--run-root", str(run_root),
+                "--output", str(output),
+                "--request", "r",
+                "--article-id", "art-001",
+                "--artifact-path", "delivery/art-001/delivery.md",
+                "--body-path", "drafts/art-001/body_draft.md",
+                "--title-pack-path", "review/art-001/title-pack.json",
+                "--review-json", str(external),
+                "--base-review", str(base_record),
+            ]
+        )
+    )
+
+    record = json.loads(output.read_text(encoding="utf-8"))
+    assert record["schema_version"] == "article-independent-review-v1"
+    assert record["status"] == "complete"
+    assert record["base_review_diff"]["artifact_diff"]["status"] == "diff_available"
+
+
+def test_base_review_diff_does_not_compare_against_a_rejected_review(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """本轮复核没过契约时，不能说"上轮 findings 全都消失了"。"""
+
+    run_root, base_record, delivery = _base_review_setup(tmp_path)
+    delivery.write_text("# 标题\n\n正文改过了。\n", encoding="utf-8")
+    output = run_root / "review" / "art-001" / "codex-l2-review-r2.json"
+    external = run_root / "review" / "art-001" / "l2-input.json"
+    external.write_text(
+        json.dumps(
+            {
+                "decision": "approve",
+                "scope_reviewed": ["diff"],
+                "findings": [{"id": "Y1", "severity": "minor"}],  # 自造形状 → 契约拒收
+                "non_findings": [],
+                "coverage_gaps": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(codex_review.shutil, "which", lambda _: None)
+
+    codex_review.run_review(
+        codex_review.build_parser().parse_args(
+            [
+                "--mode", "l2",
+                "--run-root", str(run_root),
+                "--output", str(output),
+                "--request", "r",
+                "--article-id", "art-001",
+                "--artifact-path", "delivery/art-001/delivery.md",
+                "--body-path", "drafts/art-001/body_draft.md",
+                "--title-pack-path", "review/art-001/title-pack.json",
+                "--review-json", str(external),
+                "--base-review", str(base_record),
+            ]
+        )
+    )
+
+    record = json.loads(output.read_text(encoding="utf-8"))
+    assert record["status"] == "UNVERIFIED"
+    diff = record["base_review_diff"]
+    assert diff["artifact_diff"]["status"] == "diff_available"  # 交付稿 diff 仍然有用
+    assert diff["finding_diff"]["status"] == "not_comparable"
+    assert diff["finding_diff"]["no_longer_reported"] == []
+
+
+def test_base_review_without_a_binding_says_so(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """上一轮只归档了原始复核 JSON（daily-009 的 r1/r2 就是这样）：没有绑定哈希可比。"""
+
+    run_root, base_record, delivery = _base_review_setup(tmp_path)
+    base_record.write_text(
+        json.dumps({"decision": "needs_changes", "findings": [], "scope_reviewed": []}),
+        encoding="utf-8",
+    )
+    delivery.write_text("# 标题\n\n又改了一版。\n", encoding="utf-8")
+    output = run_root / "review" / "art-001" / "codex-l2-review-r2.json"
+    external = run_root / "review" / "art-001" / "l2-input.json"
+    external.write_text(
+        json.dumps(
+            {
+                "decision": "approve",
+                "scope_reviewed": ["diff"],
+                "findings": [],
+                "non_findings": [],
+                "coverage_gaps": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(codex_review.shutil, "which", lambda _: None)
+
+    codex_review.run_review(
+        codex_review.build_parser().parse_args(
+            [
+                "--mode", "l2",
+                "--run-root", str(run_root),
+                "--output", str(output),
+                "--request", "r",
+                "--article-id", "art-001",
+                "--artifact-path", "delivery/art-001/delivery.md",
+                "--body-path", "drafts/art-001/body_draft.md",
+                "--title-pack-path", "review/art-001/title-pack.json",
+                "--review-json", str(external),
+                "--base-review", str(base_record),
+            ]
+        )
+    )
+
+    artifact = json.loads(output.read_text(encoding="utf-8"))["base_review_diff"]["artifact_diff"]
+    assert artifact["status"] == "base_binding_missing"
+    assert "无法定位历史版本" in artifact["reason"]

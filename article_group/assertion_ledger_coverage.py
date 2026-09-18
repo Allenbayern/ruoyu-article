@@ -207,6 +207,29 @@ def check_coverage(run_dir: str | Path, aid: str) -> dict[str, Any]:
     }
 
 
+def write_report(path: Path, report: Mapping[str, Any], *, run_dir: Path) -> None:
+    """报告进 run 时走留底通道（留底+记账+封存守门）；run 外保持普通写入。
+
+    2026-09-18：本模块此前在写手覆盖 lint 的 PENDING 名单里（"写 run 但绕过通道"）。
+    """
+
+    from article_group.run_seal import is_run_root
+
+    payload = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
+    if is_run_root(run_dir):
+        from article_group.evidence_write import write_evidence
+
+        write_evidence(
+            path,
+            payload,
+            run_dir=run_dir,
+            reason=f"assertion_ledger_coverage:{report.get('aid', '')}",
+        )
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(payload, encoding="utf-8")
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m article_group.assertion_ledger_coverage",
@@ -225,9 +248,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     report = check_coverage(args.run_root, args.aid)
     if args.write and report["status"] == "ok":
-        target = args.run_root / "review" / args.aid / "assertion-coverage.json"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        write_report(
+            args.run_root / "review" / args.aid / "assertion-coverage.json",
+            report,
+            run_dir=args.run_root,
+        )
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
@@ -252,6 +277,7 @@ __all__ = [
     "split_paragraphs",
     "extract_assertions",
     "check_coverage",
+    "write_report",
     "main",
 ]
 

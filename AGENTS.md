@@ -98,6 +98,23 @@ already closed and published run, with no backup.
 - These rules are repository-operational. Changing the Vault's canonical notes
   still requires explicit write-back authorization.
 
+### Content gates and incremental review (repo-operational, 2026-09-18)
+
+- **Reader-facing assertions must be backed by the ledger, and this now blocks.**
+  `article_group.run_gates.build_assertion_coverage_gate` runs the deterministic half of the
+  reader-surface↔ledger check for every article task, writes `review/<aid>/assertion-coverage.json`
+  plus `review/gates/assertion-coverage.json`, and fails `run_all_gates` on error-level gaps
+  (time-span / audience-action claims with no ledger entry — the two daily-008 majors). Number
+  and quote gaps stay warnings. The LLM half remains the advisory
+  `scripts/ledger_coverage_precheck.py`. With this gate wired, historical runs are *not* grandfathered:
+  daily-009 art-002 alone has four error-level gaps (bare years absent from the ledger).
+- **Incremental L2 review has a real diff.** `--base-review <previous record>` records
+  `base_review_diff`: which binding hashes moved, a unified diff of the delivery against the
+  hash-matched `review/.before/<stamp>/…` snapshot, and the base↔current finding pairing
+  (`still_open` / `no_longer_reported` / `new`). A missing base snapshot is recorded as
+  `snapshot_not_found` ("本轮只按当前稿复核"), never faked; `no_longer_reported` means only
+  "not reported again this round", not "fixed".
+
 ## Agent handoff
 
 For any task involving host tooling or retired runtimes, read these project materials after the canonical Vault rules:

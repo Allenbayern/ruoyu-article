@@ -81,12 +81,12 @@ OUT_OF_SCOPE: dict[str, str] = {
 }
 
 # ── 待收口：确实写 run 内证据、但还没走留底通道（运行时由护栏兜住） ──
+# 2026-09-18 收口（B1）：assertion_ledger_coverage 的报告改写走 write_report → evidence_write。
 # 2026-09-17 第二批收口（已改走通道、从此不在名单里）：codex_review（L2 复核记录 + 日志）、
 # delivery（纯文本交付副本）、content_delivery（交付记录）、daily_engine（引擎产物）。
 # 第三批：新管线三个写手（cards / package / distill）改为"产物自带 integrity 为主 +
 # run 账本一条产物级锚点"（见 evidence_write.anchor_artifact），也不再欠账。
 PENDING: dict[str, str] = {
-    "article_group/assertion_ledger_coverage.py": "写账本覆盖报告进 run：下一步改 write_evidence_json(force=…)",
     "article_group/v4/verification.py": "旁路校验产物（v4 冻结层）：接入前先确认是否仍在用",
     "article_group/v5/verification.py": "旁路校验产物（v5 冻结层）：同上",
     "scripts/codex_daily_article_runner.py": "消费清单按路径写、可覆盖（有读回校验但无留底）：下一步接入留底通道或改成 new-only",
