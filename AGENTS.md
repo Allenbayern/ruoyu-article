@@ -121,15 +121,22 @@ already closed and published run, with no backup.
   while the evidence itself is fine. The rule lives in `article_group.evidence_paths`:
   - a relative path is written **only when it round-trips** (`(root/rel).resolve() == artifact`);
   - auto-detection accepts only the canonical run shape `…/runs/<YYYY-MM-DD>/<id>` (and the root
-    must be a real ancestor). `run_seal.is_run_root` counts the *first* `runs` component and checks
-    neither date nor directory-ness, so `runs/<X>/<file>` (58 such files in this repo) and
-    "runs before runs" layouts would otherwise produce `"."` / a wrong relative path — both are
-    L2-verified failure modes from 2026-09-18. Anything else falls back to the absolute path;
-    callers that know their layout (the engine) pass `run_root=` explicitly and are unaffected;
+    must be a real ancestor). Anything else falls back to the absolute path; callers that know
+    their layout (the engine) pass `run_root=` explicitly and are unaffected;
   - legacy absolute records are rebased by the `runs/<date>/<id>/` tail (innermost candidate first,
     purely lexical so a deleted source run still works). The rebase only *finds* the candidate —
     the `sha256` comparison right after it is still what authorizes it, for both style-gate and
     preview evidence.
+- **`run_seal.is_run_root` is shape-strict** (tightened 2026-09-18 after L2 falsified the old rule).
+  It now scans **every** `runs` component, requires the `<date>` component to be `YYYY-MM-DD`, and
+  rejects a candidate that is an existing non-directory. All three were measured, not theoretical:
+  `runs/<X>/<file>` (58 such files) made `anchor_artifact` treat the file as a run root and raise
+  `FileExistsError`; `runs/radar/dailyhot` and `runs/<day>/quarantine` were counted as run roots;
+  and in a "runs before runs" layout the outer directory won while the real run root was never
+  recognized (anchors written to the wrong place, writers recording wrong relative paths). On the
+  live tree the change reclassifies exactly 3 directories and 58 files. Non-existent paths still
+  match by shape (lexical), so deleted-source rebases keep working. `runs_guard` does **not** use
+  `is_run_root` (it probes ancestors for `SEALED`), so the sealed-write guard is unaffected.
 - **Incremental L2 review has a real diff.** `--base-review <previous record>` records
   `base_review_diff`: which binding hashes moved, a unified diff of the delivery against the
   hash-matched `review/.before/<stamp>/…` snapshot, and the base↔current finding pairing

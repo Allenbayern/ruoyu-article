@@ -34,13 +34,21 @@ def test_a_file_directly_under_runs_stays_absolute(tmp_path: Path) -> None:
     assert run_relative_reference(loose) == str(loose.resolve())
 
 
-def test_runs_before_runs_layout_stays_absolute_for_auto_detection(tmp_path: Path) -> None:
+def test_runs_before_runs_layout_is_recognized_by_shape(tmp_path: Path) -> None:
+    """'runs 之前还有 runs'：is_run_root 扫全部 runs 组件后，真 run 根被承认。
+
+    旧判据只认第一个 runs 组件：外层目录被当 run 根 → 写出的相对路径原地就 BLOCKED。
+    根因修好后自动识别给出**正确**相对路径（而不是退回绝对路径）。
+    """
+
+    from article_group.run_seal import find_run_root
+
     run = _run(tmp_path, "home", "runs", "proj", "runs", "2026-09-18", "daily-952")
     delivery = run / "delivery" / "delivery.md"
 
-    # 自动识别：# 不可信 → 绝对路径（改前的绝对路径在原地是正确的，不能退化成错误相对）
-    assert run_relative_reference(delivery) == str(delivery.resolve())
-    # 显式 run_root（daily_engine 的口径）：记相对且可往返
+    assert find_run_root(delivery) == run
+    assert run_relative_reference(delivery) == "delivery/delivery.md"
+    # 显式 run_root（daily_engine 的口径）同样记相对
     assert run_relative_reference(delivery, run_root=run) == "delivery/delivery.md"
 
 

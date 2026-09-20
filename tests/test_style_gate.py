@@ -704,8 +704,11 @@ def test_a_file_directly_under_runs_keeps_an_absolute_path(tmp_path: Path):
     assert report["artifact_path"] == str(loose.resolve())
 
 
-def test_runs_before_runs_layout_keeps_an_absolute_path(tmp_path: Path):
-    """'runs 之前还有 runs'：自动识别会误判外层目录，写出的相对路径原地就 BLOCKED。"""
+def test_runs_before_runs_layout_records_the_inner_run_relative_path(tmp_path: Path):
+    """'runs 之前还有 runs'：真 run 根被承认后记**正确**相对路径，原地读回仍通过。
+
+    旧判据（只看第一个 runs 组件）会把外层目录当 run 根，写出原地就 BLOCKED 的相对路径。
+    """
 
     from article_group.final_review import _validate_style_artifact
 
@@ -715,11 +718,10 @@ def test_runs_before_runs_layout_keeps_an_absolute_path(tmp_path: Path):
     delivery.write_text("# 标题\n\n## 小节\n\n正文一段。\n", encoding="utf-8")
 
     report = validate_markdown_file(delivery)
-    assert report["artifact_path"] == str(delivery.resolve())
+    assert report["artifact_path"] == "delivery/delivery.md"
     _, errors = _validate_style_artifact(report, run, [delivery], review_surface="markdown_codex")
-    assert errors == []  # 原地读回必须仍然通过（绝对路径是安全的退路）
+    assert errors == []
 
-    # 引擎口径（显式 run_root）不受这条限制，仍记相对路径。
     explicit = validate_markdown_file(delivery, run_root=run)
     assert explicit["artifact_path"] == "delivery/delivery.md"
     assert _validate_style_artifact(explicit, run, [delivery], review_surface="markdown_codex")[1] == []

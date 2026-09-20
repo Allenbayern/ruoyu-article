@@ -26,6 +26,7 @@ import datetime as _dt
 import hashlib
 import json
 import os
+import re
 import sys
 from collections.abc import Iterator, Sequence
 from pathlib import Path
@@ -57,12 +58,35 @@ def manifest_path(run_dir: str | Path) -> Path:
     return Path(run_dir) / MANIFEST_NAME
 
 
+_RUN_DIR_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
 def is_run_root(path: str | Path) -> bool:
-    """`runs/<date>/<run-id>` 形态才算 run 根（历史脚本也常写 runs/ 下的日目录）。"""
-    parts = Path(path).resolve().parts
-    if "runs" not in parts:
-        return False
-    return len(parts[parts.index("runs") + 1:]) == 2
+    """`runs/<date>/<run-id>` 形态才算 run 根（历史脚本也常写 runs/ 下的日目录）。
+
+    判据 2026-09-18 收紧，三条都是 L2 只读复核实测出来的形状误判：
+
+    - **扫描路径里所有 `runs` 组件**，而不是只看第一个：`…/runs/proj/runs/<date>/<id>`
+      这种"runs 之前还有 runs"的布局里，旧判据把外层目录当 run 根、真正的 run 根反而不被
+      承认（锚点写错地方、写手记错相对路径）；
+    - **`<date>` 必须是 `YYYY-MM-DD`**：否则 `runs/radar/dailyhot`、`runs/<day>/quarantine`
+      这类普通目录也会被当成 run 根；
+    - **候选本身是已存在的非目录时不算 run 根**：`runs/<X>/<文件>`（仓库里 58 个）曾让
+      `evidence_write.anchor_artifact` 把文件当 run 根去建目录，直接 `FileExistsError`。
+
+    不存在的路径仍按形状判定（纯词法），"源 run 已删除"的重定位/锚点判定不会失效。
+    """
+    resolved = Path(path).expanduser().resolve()
+    parts = resolved.parts
+    for index, part in enumerate(parts):
+        if part != "runs" or len(parts) - (index + 1) != 2:
+            continue
+        if not _RUN_DIR_DATE.fullmatch(parts[index + 1]):
+            continue
+        if resolved.is_file():
+            continue
+        return True
+    return False
 
 
 def find_run_root(path: str | Path) -> Path | None:
