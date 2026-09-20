@@ -18,6 +18,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from article_group import run_seal, runs_guard
 from article_group.evidence_write import read_changelog, write_evidence
 from article_group.run_state import seal, seal_articles
@@ -214,3 +216,30 @@ def test_sandbox_copy_is_not_reported_as_drift(tmp_path: Path) -> None:
     assert "不适用" in result.stdout
     # 源 run 仍然照常校验
     assert run_seal.verify(root)["status"] == "intact"
+
+
+def test_a_nested_runs_layout_is_sealed_guarded_and_verified(tmp_path: Path) -> None:
+    """nested-runs 布局里的封存闭环：intact → 拦写 → 进程外篡改 → drifted。
+
+    2026-09-18 L2 复核：这种布局旧判据下根本不被认作 run 根（引擎裸写），
+    所以"封存护栏在这种布局里是否照样生效"必须实测——护栏不依赖 is_run_root
+    （它沿父链找 SEALED），这里把结论钉住。
+    """
+
+    root = tmp_path / "home" / "runs" / "proj" / "runs" / "2026-09-18" / "daily-960-nested"
+    (root / "delivery").mkdir(parents=True)
+    (root / "delivery" / "delivery.md").write_text("正文\n", encoding="utf-8")
+
+    seal(root, identity="owner", articles=seal_articles(root))
+    assert run_seal.verify(root)["status"] == "intact"
+
+    with pytest.raises(runs_guard.SealedWriteBlocked):
+        (root / "delivery" / "delivery.md").write_text("偷改\n", encoding="utf-8")
+
+    # 进程外写入（护栏契约里明确不覆盖的那一层）：由全量哈希清单发现
+    subprocess.run(["bash", "-c", f"printf x >> {root / 'delivery' / 'delivery.md'}"], check=True)
+    report = run_seal.verify(root)
+    assert report["status"] == "drifted"
+    changes = {change["path"]: change for change in report["changes"]}
+    assert changes["delivery/delivery.md"]["kind"] == "modified"
+    assert changes["delivery/delivery.md"]["authorized"] is False  # 无账改动

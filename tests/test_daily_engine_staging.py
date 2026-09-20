@@ -339,3 +339,29 @@ def test_base_writes_stay_raw_when_base_root_is_another_run(spec, tmp_path: Path
     assert (other / "notes" / "x.md").read_text(encoding="utf-8") == "历史重跑\n"
     assert read_changelog(root) == []
     assert read_changelog(other) == []
+
+
+def test_the_engine_routes_writes_in_a_nested_runs_layout(tmp_path: Path):
+    """nested-runs 布局（…/runs/<x>/runs/<date>/<id>）里引擎产物照样进留底通道。
+
+    2026-09-18 L2 复核：旧 is_run_root 只看第一个 `runs` 组件 → 这种布局里
+    `_route_write` 判 ROOT 不是 run 根 → **全部裸写**（无 before-image、无账本）。
+    实测（同 spec 同数据，daily-008 副本）：旧代码 25 条账 / delivery 0 条，
+    新代码 100 条 / delivery 2 + title-pack 4。
+    """
+
+    from article_group.evidence_write import read_changelog
+
+    run = tmp_path / "home" / "runs" / "proj" / "runs" / "2026-09-18" / "daily-nested"
+    run.mkdir(parents=True)
+    spec_path = tmp_path / "spec_nested.py"
+    spec_path.write_text(SPEC_TEMPLATE.format(root=str(run)), encoding="utf-8")
+
+    daily_engine.build_run(daily_engine.load_spec(spec_path), stages=["drafts_write"])
+
+    assert (run / "drafts" / "art-001" / "body_draft.md").is_file()
+    reasons = {entry["reason"] for entry in read_changelog(run)}
+    assert "daily_engine:drafts/art-001/body_draft.md" in reasons
+    for outer in (tmp_path / "home" / "runs", tmp_path / "home" / "runs" / "proj",
+                  tmp_path / "home" / "runs" / "proj" / "runs"):
+        assert not (outer / "evidence-changelog.jsonl").exists()

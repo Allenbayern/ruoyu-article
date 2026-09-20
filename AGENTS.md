@@ -137,6 +137,15 @@ already closed and published run, with no backup.
   live tree the change reclassifies exactly 3 directories and 58 files. Non-existent paths still
   match by shape (lexical), so deleted-source rebases keep working. `runs_guard` does **not** use
   `is_run_root` (it probes ancestors for `SEALED`), so the sealed-write guard is unaffected.
+  Verified end-to-end (2026-09-18) by running the **full 19-stage pipeline** inside
+  `…/home/runs/proj/runs/2026-09-18/daily-9n1` (a daily-008 copy + stub renderer): the fixed code
+  ledgers `delivery/*` ×2 and `review/*/title-pack.json` ×4 (100 entries) where the pre-fix code
+  produced 25 entries and **zero** for those two artifacts (silent plain writes, no outer changelog
+  either). In the same layout: seal → `verify` intact → in-process write blocked →
+  out-of-process tamper → `drifted` (exit 2). Regression guards live in
+  `tests/test_daily_engine_staging.py::test_the_engine_routes_writes_in_a_nested_runs_layout`
+  (provably fails under the old rule) and
+  `tests/test_run_seal.py::test_a_nested_runs_layout_is_sealed_guarded_and_verified`.
 - **Incremental L2 review has a real diff.** `--base-review <previous record>` records
   `base_review_diff`: which binding hashes moved, a unified diff of the delivery against the
   hash-matched `review/.before/<stamp>/…` snapshot, and the base↔current finding pairing
