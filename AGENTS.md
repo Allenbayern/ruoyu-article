@@ -194,6 +194,22 @@ not a guaranteed result.
 - Keep source evidence in metadata/review artifacts; do not expose internal review language in final article copy.
 - Historical batches are evidence for learning only, never the current draft or delivery object unless explicitly assigned.
 
+## Daily topic selection (controller decision 2026-09-21)
+
+选题是**两道门**，不是 agent 自主交接：
+
+1. Agent 先把发现面搜刮干净：R0 雷达快照（`runs/radar/dailyhot/<date>.classified.json`）、
+   公众号订阅索引（`wechat_articles_sync` / `wechat_articles_search`）、当日媒体与官方报道；
+   并对每个候选做**证据准备度粗核**（有没有一手来源、来源角色够不够撑住落点）。
+2. Agent 交出一份**候选清单**——每个候选至少给：作品/事件、事件簇、当日信号与热度、
+   读者是谁、落点（读者拿走哪一句话）、content_map 象限、证据准备度、已知风险。
+3. **controller 从中选定具体选题**（可以增、删、改向）。选定之后才进入 brief / 起草 /
+   门禁 / L2 复核。
+
+规则：**在 controller 选定之前，不立项、不写 spec、不起草**。默认节奏是
+「先搜刮 → 给可选项 → 等选定」。反例：daily-010 未经这一步直接成稿，选题被 controller
+否定、整批重跑。候选池与证据照旧落 `runs/<run-id>/`；本条只约束**何时开始写**。
+
 ## Vault write-back
 
 Do not modify the Vault by default. When a durable rule or correction is explicitly approved for write-back, update the named canonical note and preserve its frontmatter and wikilinks. Candidate findings belong in a clearly marked provisional note, not directly in canonical rules.
