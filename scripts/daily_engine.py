@@ -141,6 +141,29 @@ def _required_claim_levels(aid: str) -> list[str]:
     return levels or ["event_exists"]
 
 
+def _source_capture(source_id: str, spec: Mapping[str, Any] | None) -> tuple[str, str]:
+    """来源的抓取类型与声明等级：由 spec 按来源声明，缺省才是 page_fulltext/fulltext。
+
+    为什么（daily-011 L2 art-001 major）：腾讯/公众号两条来源的 artifact 头部写明
+    “正文未渲染／摘要片段（非全文）”，引擎却一律写成 page_fulltext + fulltext，
+    material_acceptance 与 claim-source-check 据此放行，等于让产物自述证据等级。
+    """
+
+    capture = str((spec or {}).get("capture_type") or "page_fulltext").strip() or "page_fulltext"
+    level = str((spec or {}).get("declared_source_level") or "fulltext").strip() or "fulltext"
+    return capture, level
+
+
+def _intended_claim_kinds(aid: str) -> list[str]:
+    """材料包声明的声索类型：由 spec 按篇声明，缺省沿用历史模板值。"""
+
+    spec = (MATERIAL_SPECS or {}).get(aid) if isinstance(MATERIAL_SPECS, Mapping) else None
+    kinds = (spec or {}).get("intended_claim_kinds")
+    if isinstance(kinds, (list, tuple)) and kinds:
+        return [str(item).strip() for item in kinds if str(item).strip()]
+    return ["program_titles", "program_schedule"]
+
+
 def discovery() -> None:
     write_json(
         "discovery/discovery-radar-r0.json",
@@ -184,12 +207,21 @@ def source_manifest() -> None:
                 "source_capability": spec["source_capability"],
                 "source_url": spec["source_url"],
                 "source_type": spec["source_type"],
-                "capture_type": "page_fulltext",
+                "capture_type": _source_capture(source_id, spec)[0],
                 **({"usage_note": spec["usage_note"]} if spec.get("usage_note") else {}),
-                "declared_source_level": "fulltext",
+                "declared_source_level": _source_capture(source_id, spec)[1],
                 "artifact_path": spec["artifact_path"],
                 "artifact_sha256": digest(ROOT / spec["artifact_path"]),
                 "captured_at": CAPTURED_AT,
+                **(
+                    {
+                        "recaptured_at": CAPTURED_AT,
+                        "recapture_reason": spec["recapture_reason"],
+                        "previous_artifact_sha256": spec.get("previous_artifact_sha256", ""),
+                    }
+                    if spec.get("recapture_reason")
+                    else {}
+                ),
             }
         )
     write_json(
@@ -418,14 +450,14 @@ def material_pack(aid: str) -> None:
             {
                 "material_id": f"mat-{source_id}",
                 "source_id": source_id,
-                "capture_type": "page_fulltext",
-                "declared_source_level": "fulltext",
+                "capture_type": _source_capture(source_id, info)[0],
+                "declared_source_level": _source_capture(source_id, info)[1],
                 "source_capability": info["source_capability"],
                 "capability_levels": levels,
                 "source_role": info["source_role"],
                 "supports_mode": info["supports_mode"],
                 "cannot_support": info["cannot_support"],
-                "locator": f"source:{source_id}:fulltext",
+                "locator": f"source:{source_id}:{_source_capture(source_id, info)[1]}",
                 **({"usage_note": info["usage_note"]} if info.get("usage_note") else {}),
                 "obtained_facts": list(spec["by_source"].get(source_id, [])),
             }
@@ -468,7 +500,7 @@ def material_pack(aid: str) -> None:
             "article_mode": spec["mode"],
             "required_source_roles": [spec["role"]],
             "core_question": spec["question"],
-            "intended_claim_kinds": ["program_titles", "program_schedule"],
+            "intended_claim_kinds": _intended_claim_kinds(aid),
             "sources": sources,
             "obtained_facts": [item["text"] for item in spec["facts"]],
             "obtained_facts_by_source": spec["by_source"],
@@ -638,8 +670,8 @@ def reviews_and_delivery(bodies_map: dict[str, str]) -> None:
                     {
                         "source_id": source_id,
                         "url": SOURCES[source_id]["source_url"],
-                        "locator": "fulltext",
-                        "source_level": "fulltext",
+                        "locator": _source_capture(source_id, SOURCES[source_id])[1],
+                        "source_level": _source_capture(source_id, SOURCES[source_id])[1],
                         "accessed_at": CAPTURED_AT,
                     }
                     for source_id in SOURCE_IDS[aid]

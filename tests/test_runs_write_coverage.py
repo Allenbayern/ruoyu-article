@@ -63,6 +63,8 @@ OUT_OF_SCOPE: dict[str, str] = {
     "scripts/run_real_daily_010.py": "spec 数据模块（daily-010）：入口同样是 daily_engine.build_run；除数据外只在 §8 包装 "
                                      "base.content_record/topic_cards/title_records/editorial_record，包装内的回写一律调 "
                                      "base.write_json（bind_spec 已把它换成走通道的版本），不直接落盘",
+    "scripts/run_real_daily_011.py": "spec 数据模块（daily-011，three_article_daily）：同 daily-010 的 §8 包装方式，"
+                                     "包装内回写一律调 base.write_json（走留底通道），不直接落盘",
     # 引擎共用 helper：活动入口只有 build_run，bind_spec 已把它的写函数换成走通道的版本。
     "scripts/generate_daily_001.py": "引擎共用 helper（base）：bind_spec 把 base.write_json/write_text 换成走通道的版本；"
                                      "自带 ROOT 是历史 daily-001，直接跑属历史重跑",
