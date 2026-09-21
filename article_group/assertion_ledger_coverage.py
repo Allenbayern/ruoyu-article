@@ -67,6 +67,27 @@ CATEGORY_SEVERITY = {
 _SPECIFIC_SPAN_RE = re.compile(r"[0-9]|十几|十多|数十|近[0-9一二三四五六七八九十]|将近")
 _TRAILING_PUNCT = "。！？，、；：）)】」』"
 
+# 计数后缀归一（2026-09-20，daily-009 复盘）：正文写「1998年」，账本条目却是英文
+# 「Based on the 1998 Dark Horse…」——逐字口径会把"账本有同一年份"判成缺口（假红）。
+# 这里只做**形态**归一：数字 + 计数后缀 ⇄ 裸数字。它不跨语言（万 ⇄ million 不归它管）、
+# 不碰文字跨度（「十九年前」仍需账本有对应条目），因此不会把"账本真的没有"洗成通过。
+_COUNTER_SUFFIX_RE = re.compile(r"^(\d+(?:\.\d+)?)\s*(?:年|年代|月|日|号|时|点|分|秒|届|期|季)$")
+
+
+def _counter_variants(claim: str) -> list[str]:
+    """给出"去掉计数后缀"的等价写法；无后缀时只有原写法。"""
+    stripped = claim.strip().rstrip(_TRAILING_PUNCT)
+    variants = [stripped]
+    match = _COUNTER_SUFFIX_RE.match(stripped)
+    if match:
+        variants.append(match.group(1))
+    return variants
+
+
+def _covered_in_ledger(claim: str, ledger_blob: str) -> bool:
+    """正文断言 → 账本：逐字口径 + 计数后缀归一（其余口径不变）。"""
+    return any(_covered(variant, ledger_blob) for variant in _counter_variants(claim))
+
 
 def _load_json(path: Path) -> Mapping[str, Any]:
     try:
@@ -170,7 +191,7 @@ def check_coverage(run_dir: str | Path, aid: str) -> dict[str, Any]:
 
     uncovered: list[dict[str, Any]] = []
     for item in assertions:
-        if _covered(item["claim"], ledger_blob):
+        if _covered_in_ledger(item["claim"], ledger_blob):
             continue
         severity = CATEGORY_SEVERITY.get(item["category"], "warning")
         if (item["category"] == "time_span" and severity == "error"

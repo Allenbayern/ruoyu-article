@@ -69,6 +69,59 @@ def _route_write(path: str, value: object, *, kind: str, raw) -> None:
     _write_text_evidence(target, str(value).rstrip() + "\n", reason=f"daily_engine:{path}")
 
 
+def _now_iso() -> str:
+    """本进程的运行时刻（UTC，ISO8601 秒级）。
+
+    discovery / task-card 这些"运行自述时间"以前写死成 2026-09-15T14:40:00+00:00
+    （daily-001 模板常量），会让 radar 的 generated_at/fetched_at 早于它记录的信号
+    本身（daily-010 L2 r5 minor：radar 写 9-15，信号最早 9-17/9-19）。
+    """
+
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _task_card_reader(aid: str) -> str:
+    """任务卡的目标读者：优先用本批材料包的 audience，缺省才退回通用描述。"""
+
+    spec = (MATERIAL_SPECS or {}).get(aid) if isinstance(MATERIAL_SPECS, Mapping) else None
+    reader = str((spec or {}).get("audience") or "").strip()
+    return reader or "当前电影与剧集观众"
+
+
+def _task_card_outline(aid: str) -> str:
+    """任务卡的写作路线：spec 可用 TASK_CARD_BODY_OUTLINE 按篇声明，缺省退回通用三行。"""
+
+    outlines = globals().get("TASK_CARD_BODY_OUTLINE") or {}
+    lines = outlines.get(aid) if isinstance(outlines, Mapping) else None
+    if not lines:
+        lines = [
+            "先给出具体事实或现场",
+            "再解释创作取舍如何改变人物关系",
+            "最后回到读者能转述的判断和边界",
+        ]
+    body = "".join(f"- {str(line).strip()}\n" for line in lines if str(line).strip())
+    return f"body_outline:\n{body}"
+
+
+def _required_claim_levels(aid: str) -> list[str]:
+    """crawl 任务需要的声索层级：由本批材料包实际用到的层级推导。
+
+    以前写死 ["event_exists","character_setup","scene_action","dialogue"]（daily-001
+    的剧情稿模板），政策/市场类稿件会被描述成需要人物设定与场面动作级证据
+    （daily-010 L2 r5 minor）。
+    """
+
+    spec = (MATERIAL_SPECS or {}).get(aid) if isinstance(MATERIAL_SPECS, Mapping) else None
+    levels: list[str] = []
+    for fact in (spec or {}).get("facts") or []:
+        level = str((fact or {}).get("level") or "").strip()
+        if level and level not in levels:
+            levels.append(level)
+    return levels or ["event_exists"]
+
+
 def discovery() -> None:
     write_json(
         "discovery/discovery-radar-r0.json",
@@ -81,12 +134,12 @@ def discovery() -> None:
             "candidate_pool_eligible": False,
             "evidence_eligible": False,
             "next_action": "needs_editorial_research",
-            "generated_at": "2026-09-15T14:40:00+00:00",
+            "generated_at": _now_iso(),
             "records": [
                 {
                     "source": source,
                     "endpoint": "http://192.168.100.123:4399/api/topsearch/" + source.split("-", 1)[1],
-                    "fetched_at": "2026-09-15T14:40:00+00:00",
+                    "fetched_at": _now_iso(),
                     "locator": title,
                     "item_index": index,
                     "score": score,
@@ -224,6 +277,24 @@ def candidates() -> None:
     write_json("review/topic-five-questions.json", evaluate_five_questions(selected))
 
 
+def _source_ref_list(sources: object) -> list[str]:
+    """把 spec 的 source 声明规范成来源 id 列表（daily-010 L2 r4 major 修复）。
+
+    spec 的 ``BRIEF_SPECS`` 允许写单个 id，也允许写逗号分隔的多个 id（人读的任务卡
+    ``source_scope`` 一直是逗号串）。旧实现把整个字符串塞进单元素列表
+    （``[sources]``），于是 ``task-cards/*.json`` 与 ``crawl-task-*.json`` 的
+    ``source_refs`` 变成一个逗号串——``article_group.provenance``
+    （``current_source_unknown:task_card:...``）会判未登记来源，声明
+    ``provenance_contract_version`` 的批次会被 final_review 直接 BLOCKED。
+    这里只做拆分归一：单个 id 仍得到单元素列表（历史 spec 行为不变）。
+    """
+
+    if isinstance(sources, (list, tuple)):
+        return [str(item).strip() for item in sources if str(item).strip()]
+    text = str(sources or "")
+    return [part.strip() for part in text.split(",") if part.strip()]
+
+
 def briefs_and_tasks() -> None:
     for aid in BRIEFS:
         write_text(f"briefs/writing-brief-{aid}.md", BRIEFS[aid])
@@ -240,11 +311,8 @@ def briefs_and_tasks() -> None:
             f"article_mode: {mode}\n"
             f"required_source_roles: [{role}]\n"
             f"core_question: {question}\n"
-            "reader: 当前电影与剧集观众\n"
-            "body_outline:\n"
-            "- 先给出具体事实或现场\n"
-            "- 再解释创作取舍如何改变人物关系\n"
-            "- 最后回到读者能转述的判断和边界\n"
+            f"reader: {_task_card_reader(aid)}\n"
+            f"{_task_card_outline(aid)}"
             f"source_scope: {sources}\n"
             f"{TASK_CARD_REQUIRED_FIELDS[aid]}",
         )
@@ -257,7 +325,7 @@ def briefs_and_tasks() -> None:
                 "article_mode": mode,
                 "required_source_roles": [role],
                 "core_question": question,
-                "source_refs": [sources],
+                "source_refs": _source_ref_list(sources),
             },
         )
         write_json(
@@ -301,8 +369,8 @@ def briefs_and_tasks() -> None:
                 "state": "material_ready",
                 "status": "accepted",
                 "return_status": "accepted_for_draft",
-                "source_refs": [sources],
-                "required_claim_levels": ["event_exists", "character_setup", "scene_action", "dialogue"],
+                "source_refs": _source_ref_list(sources),
+                "required_claim_levels": _required_claim_levels(aid),
             },
         )
     write_json(
@@ -1269,12 +1337,16 @@ def bind_spec(spec) -> None:
         "digest", "write_json", "write_text", "ref",
         "RADAR_RECORDS", "SOURCES", "CANDIDATES", "REJECTED_PRIOR_WORKS",
         "SLOT_DECISIONS",
-        "TASK_CARD_REQUIRED_FIELDS", "STRONGEST_HOOKS",
+        "TASK_CARD_REQUIRED_FIELDS", "STRONGEST_HOOKS", "TASK_CARD_BODY_OUTLINE",
         "MATERIAL_SPECS", "BRIEFS", "BRIEF_SPECS", "BODIES",
         "CONTENT_RECORD_ARGS", "TITLES", "SOURCE_IDS", "MODES",
         "RULE_CLAIMS", "BATCH_SPECS",
     )
-    globals().update({name: getattr(spec, name) for name in bind_names})
+    # 可选字段（如 TASK_CARD_BODY_OUTLINE）缺失时不再抛 AttributeError：
+    # 历史 spec 逐个补字段的成本高于让引擎按缺省值工作。
+    for name in bind_names:
+        if hasattr(spec, name):
+            globals()[name] = getattr(spec, name)
 
     # 把 spec 的裸写包进留底通道（2026-09-17）：引擎产物从此有 before-image 与记账，
     # 封存 run 上默认拒绝。spec 模块（run_real_daily_00x.py）保持原样不必逐个改。

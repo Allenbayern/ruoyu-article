@@ -161,3 +161,63 @@ def test_cli_strict_exit_code_and_write(tmp_path: Path, capsys: pytest.CaptureFi
 def test_cli_non_strict_returns_zero_even_with_errors(tmp_path: Path):
     root = _write_run(tmp_path, DELIVERY_GAPS)
     assert main(["--run-root", str(root), "--aid", "art-001"]) == 0
+
+
+# ── 计数后缀归一（2026-09-20，daily-009 复盘） ──────────────────────────────
+# 009 的 art-002 被新门禁判红 4 条 time_span，逐条回源后是两类：
+#   形态差异：正文「1998年」 vs 账本英文「Based on the 1998 Dark Horse…」（该修）
+#   真缺口：  正文「2006年 / 2007年」账本压根没有条目（该红，不能洗）
+# 下面把两类都钉住：形态差异不再假红，真缺口仍然报 error。
+DELIVERY_YEAR_CN = """# 标题
+
+## 一节
+
+影片改编自弗兰克·米勒与 Lynn Varley 1998年为 Dark Horse 创作的漫画。
+"""
+
+DELIVERY_YEAR_CN_ABSENT = """# 标题
+
+## 一节
+
+这部电影 1776年上映的说法没有依据。
+"""
+
+
+def test_counter_suffix_matches_bare_number_in_ledger(tmp_path: Path):
+    """正文「1998年」⇄ 账本英文「1998」：形态差异不再假红。"""
+    root = _write_run(tmp_path, DELIVERY_YEAR_CN,
+                      pack_facts=["Based on the 1998 Dark Horse Comics limited series"])
+    report = check_coverage(root, "art-001")
+    assert report["errors"] == [], report["errors"]
+    assert not [i for i in report["uncovered"] if i["claim"] == "1998年"]
+
+
+def test_counter_suffix_does_not_match_a_different_year(tmp_path: Path):
+    """归一不会把"账本真的没有"洗成通过：只给了 2011，1998年 仍报缺口。"""
+    root = _write_run(tmp_path, DELIVERY_YEAR_CN,
+                      pack_facts=["In April 2011, it was reported that two actors were in talks"])
+    report = check_coverage(root, "art-001")
+    assert any("1998年" in item for item in report["errors"]), report["errors"]
+
+
+def test_counter_suffix_keeps_absolute_gap_red(tmp_path: Path):
+    """真缺口保持 error 级（009 的 2006/2007 就属这一类）。"""
+    root = _write_run(tmp_path, DELIVERY_YEAR_CN_ABSENT, pack_facts=["影片由同名漫画改编"])
+    report = check_coverage(root, "art-001")
+    assert any("1776年" in item for item in report["errors"]), report["errors"]
+
+
+def test_counter_suffix_does_not_touch_relative_spans(tmp_path: Path):
+    """文字跨度不归它管：「十九年前」仍需账本有条目。"""
+    root = _write_run(
+        tmp_path,
+        """# 标题
+
+## 一节
+
+十九年前柏林放映时被嘘，这段旧事他至今还记得。
+""",
+        pack_facts=["影片 2006 年上映"],
+    )
+    report = check_coverage(root, "art-001")
+    assert any("十九年前" in item for item in report["errors"] + report["warnings"]), report
