@@ -32,6 +32,13 @@ RUN_PROFILES: dict[str, RunProfile] = {
         article_count=2,
         slot_labels=("A", "B"),
     ),
+    # 2026-09-21：controller 直接指定三篇（daily-011）。与 three_slot_controlled 的区别
+    # 是它面向日更：槽位 A/B/C，字数与门槛口径完全沿用 two_article_daily。
+    "three_article_daily": RunProfile(
+        name="three_article_daily",
+        article_count=3,
+        slot_labels=("A", "B", "C"),
+    ),
     "three_slot_controlled": RunProfile(
         name="three_slot_controlled",
         article_count=3,

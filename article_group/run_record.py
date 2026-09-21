@@ -41,7 +41,17 @@ def build_run_record(run_dir: str | Path) -> str:
     lines: list[str] = []
     lines.append(f"# {root.name} 运行记录（{root.parent.name}）")
     lines.append("")
-    lines.append("> 类型：`two_article_daily`（默认两篇 Markdown 成品，交付终点 `CONTENT_READY`，不发布）")
+    # 篇数与 profile 从 batch.json 读，不再写死两篇（daily-011 起支持三篇）
+    _profile_name = "two_article_daily"
+    _article_count = 2
+    try:
+        _batch = json.loads((root / "batch.json").read_text(encoding="utf-8"))
+        _profile_name = str(_batch.get("run_profile") or _profile_name)
+        _article_count = int(_batch.get("article_count") or len(_batch.get("articles") or []) or 2)
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        pass
+    _count_label = {2: "默认两篇", 3: "三篇"}.get(_article_count, f"{_article_count} 篇")
+    lines.append(f"> 类型：`{_profile_name}`（{_count_label} Markdown 成品，交付终点 `CONTENT_READY`，不发布）")
     lines.append(f"> run 根：`runs/{run_id}`")
     lines.append("> 授权边界：`publication_authorization: not_authorized`，全程未发布、未推送、未合并、未写 Vault")
     lines.append("> 记录状态：provisional（agent 产出的运行记录，不是 controller 验收）")

@@ -82,6 +82,25 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _active_profile() -> str:
+    """本 run 的批次 profile：spec 可用 ``RUN_PROFILE`` 声明，缺省 two_article_daily。
+
+    以前 profile 与 required_slots 都写死成两篇，三篇批次会在 final_review 的
+    ``gate:run_profile`` 上以 article_count_mismatch 被拦（daily-011 起支持三篇）。
+    """
+
+    name = str(globals().get("RUN_PROFILE") or "").strip()
+    return name or "two_article_daily"
+
+
+def _profile_cardinality() -> int:
+    """profile 声明的篇数；未知 profile 直接抛错（fail-closed，不静默退回）。"""
+
+    from article_group.run_profile import get_run_profile
+
+    return get_run_profile(_active_profile()).article_count
+
+
 def _task_card_reader(aid: str) -> str:
     """任务卡的目标读者：优先用本批材料包的 audience，缺省才退回通用描述。"""
 
@@ -224,8 +243,8 @@ def candidates() -> None:
         {
             "schema_version": "slot-contract-v1",
             "run_id": RUN_ID,
-            "profile": "two_article_daily",
-            "required_slots": 2,
+            "profile": _active_profile(),
+            "required_slots": _profile_cardinality(),
             "distinct_event_clusters_required": True,
             "selection_rerun_required": True,
             "publication_authorization": "not_authorized",
@@ -801,7 +820,7 @@ def batch_manifest(bodies_map: dict[str, str]) -> None:
     batch = {
         "schema_version": "article-group-run-v1",
         "run_id": RUN_ID,
-        "run_profile": "two_article_daily",
+        "run_profile": _active_profile(),
         "run_profile_contract_version": "run-profile-v1",
         "run_profile_required": True,
         "milestone": "M2 content-handoff",
@@ -1340,7 +1359,7 @@ def bind_spec(spec) -> None:
         "TASK_CARD_REQUIRED_FIELDS", "STRONGEST_HOOKS", "TASK_CARD_BODY_OUTLINE",
         "MATERIAL_SPECS", "BRIEFS", "BRIEF_SPECS", "BODIES",
         "CONTENT_RECORD_ARGS", "TITLES", "SOURCE_IDS", "MODES",
-        "RULE_CLAIMS", "BATCH_SPECS",
+        "RULE_CLAIMS", "BATCH_SPECS", "RUN_PROFILE",
     )
     # 可选字段（如 TASK_CARD_BODY_OUTLINE）缺失时不再抛 AttributeError：
     # 历史 spec 逐个补字段的成本高于让引擎按缺省值工作。
@@ -1371,6 +1390,17 @@ def build_run(
     """
 
     bind_spec(spec)
+    # 篇数守卫：只对声明了 BATCH_SPECS 的真 run 生效（staging/step-log 用的最小 spec
+    # 桩不带批次数据，不能被它拦住）。
+    batch_specs = globals().get("BATCH_SPECS") or {}
+    if batch_specs:
+        expected = _profile_cardinality()
+        actual = len(batch_specs)
+        if actual != expected:
+            raise ValueError(
+                f"篇数与 profile 不符：{_active_profile()} 要求 {expected} 篇，"
+                f"spec 的 BATCH_SPECS 给了 {actual} 篇（拒绝静默降级）"
+            )
     body_map = bodies()
     plan = stage_plan(body_map)
     selected = select_stages(plan, stages=stages, from_stage=from_stage)

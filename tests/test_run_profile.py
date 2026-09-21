@@ -48,3 +48,36 @@ def test_run_profile_supports_legacy_three_slot_profile_without_changing_slot_la
         ],
     }
     assert validate_batch_profile(batch, require_explicit=True) == []
+
+
+def test_three_article_daily_profile_matches_daily_gates():
+    """三篇日更 profile（daily-011 起）：A/B/C 三槽，字数与门槛口径同两篇。"""
+
+    from article_group.run_profile import get_run_profile, validate_batch_profile
+
+    profile = get_run_profile("three_article_daily")
+    assert profile.article_count == 3
+    assert profile.slot_labels == ("A", "B", "C")
+    assert profile.min_cjk_chars == 900
+    assert profile.max_cjk_chars == 2800
+
+    batch = {
+        "run_profile": "three_article_daily",
+        "articles": [
+            {"article_id": "art-001", "slot": "A"},
+            {"article_id": "art-002", "slot": "B"},
+            {"article_id": "art-003", "slot": "C"},
+        ],
+    }
+    assert validate_batch_profile(batch, require_explicit=True) == []
+
+    two_only = {
+        "run_profile": "three_article_daily",
+        "articles": [
+            {"article_id": "art-001", "slot": "A"},
+            {"article_id": "art-002", "slot": "B"},
+        ],
+    }
+    assert "article_count_mismatch:three_article_daily:expected=3:actual=2" in validate_batch_profile(
+        two_only, require_explicit=True
+    )
