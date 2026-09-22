@@ -61,10 +61,20 @@ CATEGORY_SEVERITY = {
     "number_fact": "warning",
     "quote": "warning",
 }
-# 只有"给出具体跨度"的时间断言才算硬事实（十几/十多/数十年/2010 年…）。
-# 泛化表述（这些年/多年来/一直以来）降为 warning：实测 008 里
+# 只有"给出具体跨度"的时间断言才算硬事实（十几/十多/数十年/2010 年/七年后…）。
+# 泛化表述（这些年/多年来/近年来/一直以来）降为 warning：实测 008 里
 # 「几乎就是这些年观众对姜文的全部怨言」属作者判断，判 error 是误报。
-_SPECIFIC_SPAN_RE = re.compile(r"[0-9]|十几|十多|数十|近[0-9一二三四五六七八九十]|将近")
+#
+# 2026-09-21（daily-010/011 L2 复盘）：原正则只认阿拉伯数字与「十几/十多/数十/近X」，
+# 于是**中文数字的具体跨度**（「七年后」「十年前」「三年来」）不匹配 → 被静默从 error
+# 降成 warning，而工具自己的 note 与 run_gates 都声明"时间跨度类阻断"。实测 010/011
+# 两批共出现 3 处该形态（七年后/一年/一年），全部以 warning 溜过。
+# 这里补上中文数字 + 时间单位 + 相对后缀；泛化词（些/多/近+年）不在数字集合内，仍留 warning。
+_CN_NUMERALS = "一二三四五六七八九十两半"
+_SPECIFIC_SPAN_RE = re.compile(
+    r"[0-9]|十几|十多|数十|近[0-9一二三四五六七八九十]|将近"
+    rf"|[{_CN_NUMERALS}]+(?:年|个月|月|周|星期|天|日|届|期)(?:后|前|来|间|内|过去)"
+)
 _TRAILING_PUNCT = "。！？，、；：）)】」』"
 
 # 计数后缀归一（2026-09-20，daily-009 复盘）：正文写「1998年」，账本条目却是英文
@@ -194,10 +204,24 @@ def check_coverage(run_dir: str | Path, aid: str) -> dict[str, Any]:
         if _covered_in_ledger(item["claim"], ledger_blob):
             continue
         severity = CATEGORY_SEVERITY.get(item["category"], "warning")
+        downgraded = False
         if (item["category"] == "time_span" and severity == "error"
                 and not _SPECIFIC_SPAN_RE.search(item["claim"])):
             severity = "warning"
-        uncovered.append({**item, "severity": severity})
+            downgraded = True
+        entry = {**item, "severity": severity}
+        if item["category"] == "time_span":
+            if downgraded:
+                entry["hint"] = "泛化跨度（这些年/多年来），按校准记 warning"
+            elif severity == "error":
+                # 2026-09-21：中文数字的具体跨度（七年后/十年前）原先被静默降级，
+                # 现在按 note 声明的规则记 error。若该跨度可由账本里的年份推出
+                # （如「七年后」＝2019 首映＋2026 重映），正确的解法是把该跨度
+                # 或它的起止年份登记进账本，而不是把这条改回 warning。
+                entry["hint"] = (
+                    "具体时间跨度未进账本：请登记该跨度或其起止年份，或改写为绝对年份"
+                )
+        uncovered.append(entry)
 
     orphan: list[dict[str, str]] = []
     body_blob = "\n".join(text for _, text in paragraphs)

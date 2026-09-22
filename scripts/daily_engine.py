@@ -22,7 +22,12 @@ import scripts.generate_daily_001 as base
 from article_group.content_fidelity import evaluate_content_fidelity
 from article_group.independent_review import is_placeholder_record
 from article_group.prose_pilot import analyze_text
-from article_group.run_gates import COMPLIANCE_GATE_REASON, run_all_gates
+from article_group.run_gates import (
+    COMPLIANCE_GATE_REASON,
+    check_source_manifest_integrity,
+    run_all_gates,
+)
+from article_group.scoring_card import build_scoring_card
 from article_group.style_gate import validate_markdown_file
 from article_group.title_pack_fidelity import evaluate_title_pack
 from article_group.topic_preflight import evaluate as evaluate_five_questions
@@ -822,30 +827,23 @@ def reviews_and_delivery(bodies_map: dict[str, str]) -> None:
         # L2 canonical 记录保护（2026-09-16；判据 2026-09-18 修正，见函数注释）。
         ensure_independent_review_placeholder(aid, delivery_path)
         hook = STRONGEST_HOOKS[aid]
-        write_json(
-            f"review/style-gate-markdown-{aid}.json",
-            validate_markdown_file(ROOT / delivery_path, hook=hook, run_root=ROOT),
-        )
+        style_result = validate_markdown_file(ROOT / delivery_path, hook=hook, run_root=ROOT)
+        write_json(f"review/style-gate-markdown-{aid}.json", style_result)
+        # 评分卡诚实化（2026-09-21）：分项分原是字面常量，却要过 final_review 的下限校验，
+        # 等于对任何稿件恒真。现改为标注 card_kind=template_unmeasured + 附真实可测信号；
+        # 历史字段保留以免打断下游校验，但不再冒充测量值。
         write_json(
             f"review/scoring/{aid}.json",
-            {
-                "schema_version": "article-scoring-card-v1",
-                "article_id": aid,
-                "artifact_path": delivery_path,
-                "artifact_sha256": digest(ROOT / delivery_path),
-                "total_score": 86,
-                "evidence_score": 21,
-                "original_judgment_score": 17,
-                "information_gain_score": 17,
-                "structure_score": 13,
-                "title_value_score": 9,
-                "readability_score": 5,
-                "compliance_score": 4,
-                "first_screen_value": "首段给出具体事件与人物动作",
-                "reader_takeaway": "核心判断可转述",
-                "reader_takeaway_locator": f"p{len([p for p in bodies_map[aid].split(chr(10)+chr(10)) if p and not p.startswith('## ')])}",
-                "body_fulfillment": "正文逐段推进并标出未验证边界",
-            },
+            build_scoring_card(
+                aid=aid,
+                delivery_path=delivery_path,
+                body=bodies_map[aid],
+                digest_fn=lambda rel: digest(ROOT / rel),
+                style_gate=style_result,
+                content_fidelity=json.loads(
+                    (ROOT / f"review/{aid}/content-fidelity.json").read_text(encoding="utf-8")
+                ),
+            ),
         )
         record = base.editorial_record(aid, title, source_id=SOURCE_IDS[aid][0], delivery_path=delivery_path)
         record["run_id"] = RUN_ID
@@ -1020,18 +1018,23 @@ def batch_manifest(bodies_map: dict[str, str]) -> None:
         (ROOT / "review/gates/topic-five-questions.json").read_text(encoding="utf-8")
     )
     five_questions_pass = bool(five_questions.get("pass"))
+    # 来源清单真比对（2026-09-21）：原先把 source_manifest 写成字面常量 "pass"，
+    # 等于产物自述；sources/ 不在 .before 与 evidence_rebind 覆盖内，改源照样报 pass。
+    source_integrity = check_source_manifest_integrity(ROOT)
+    source_manifest_ok = source_integrity["status"] != "fail"
     write_json(
         "preflight-report.json",
         {
             "schema_version": "preflight-report-v1",
             "run_id": RUN_ID,
-            "status": "PASS" if five_questions_pass else "FAIL",
+            "status": "PASS" if (five_questions_pass and source_manifest_ok) else "FAIL",
             "article_rule_compliance": report["status"],
             "article_rule_compliance_report": report,
             "checks": {
                 "run_contract": "pass",
                 "selection_rerun": "pass",
-                "source_manifest": "pass",
+                "source_manifest": source_integrity["status"],
+                "source_manifest_detail": source_integrity,
                 "article_count": "pass",
                 "distinct_event_clusters": "pass",
                 "article_rule_compliance": report["status"].lower(),
@@ -1042,6 +1045,9 @@ def batch_manifest(bodies_map: dict[str, str]) -> None:
                 "compliance_gate": "not_run",
             },
             "checks_note": (
+                "source_manifest 自 2026-09-21 起为真比对（按 source-manifest.json 实算每个"
+                "artifact 的 sha256，见 source_manifest_detail；缺清单时记 not_run 而非 pass，"
+                "不改写整体状态）。"
                 "除 article_rule_compliance 外均为结构检查；article_rule_compliance 为 PENDING，"
                 "原因是 source_stripped_readability 尚待人工签署，属治理栏而非内容阻塞，"
                 "此处不把它重述为通过。task_hierarchy_contract 由 article_task_v1 对"

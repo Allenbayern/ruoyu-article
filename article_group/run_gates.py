@@ -27,6 +27,7 @@ Generators call :func:`run_all_gates` with their own ``write_json`` writer
 from __future__ import annotations
 
 from collections.abc import Mapping
+import hashlib
 import json
 import subprocess
 import sys
@@ -128,6 +129,64 @@ def _load_json_mapping(path: Path) -> Mapping[str, Any] | None:
     except (OSError, json.JSONDecodeError):
         return None
     return data if isinstance(data, Mapping) else None
+
+
+def check_source_manifest_integrity(run_root: str | Path) -> dict[str, Any]:
+    """按 source-manifest 实算每个来源 artifact 的 sha256（2026-09-21 新增）。
+
+    为什么：preflight 的 ``checks.source_manifest`` 原来是字面常量 ``"pass"``——
+    等于把"来源没被动过"写成产物自述。sources/ 既不在 ``.before`` 快照通道内，也不被
+    ``evidence_rebind`` 覆盖，于是**改写一个来源文件再重跑 manifest，preflight 照样报
+    pass**（daily-011 L2 art-002 major 的根因）。这里改成真比对。
+
+    三种状态，别混：
+    - ``pass``：清单里每个来源都有 artifact，且实算 sha256 与声明一致；
+    - ``fail``：有缺文件（``missing``）或哈希不符（``mismatched``）；
+    - ``not_run``：没有来源清单或清单里没有来源（如桩 spec 的最小 run）——
+      "没有可比对的东西"不等于"来源被动过"，不据此判 fail。
+    """
+
+    root = Path(run_root)
+    manifest = _load_json_mapping(root / "source-manifest.json")
+    if manifest is None:
+        return {
+            "status": "not_run",
+            "reason": "source_manifest_missing",
+            "checked": 0,
+            "mismatched": [],
+            "missing": [],
+        }
+    sources = manifest.get("sources")
+    if not isinstance(sources, list) or not sources:
+        return {
+            "status": "not_run",
+            "reason": "source_manifest_empty",
+            "checked": 0,
+            "mismatched": [],
+            "missing": [],
+        }
+    checked = 0
+    mismatched: list[str] = []
+    missing: list[str] = []
+    for source in sources:
+        if not isinstance(source, Mapping):
+            continue
+        sid = str(source.get("source_id") or "?")
+        relative = str(source.get("artifact_path") or "")
+        declared = str(source.get("artifact_sha256") or "")
+        target = root / relative
+        if not relative or not target.exists():
+            missing.append(sid)
+            continue
+        checked += 1
+        if hashlib.sha256(target.read_bytes()).hexdigest() != declared:
+            mismatched.append(sid)
+    return {
+        "status": "pass" if not mismatched and not missing else "fail",
+        "checked": checked,
+        "mismatched": sorted(mismatched),
+        "missing": sorted(missing),
+    }
 
 
 def build_editorial_protocol_report(run_root: str | Path) -> dict[str, Any]:

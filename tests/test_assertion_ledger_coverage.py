@@ -221,3 +221,45 @@ def test_counter_suffix_does_not_touch_relative_spans(tmp_path: Path):
     )
     report = check_coverage(root, "art-001")
     assert any("十九年前" in item for item in report["errors"] + report["warnings"]), report
+
+
+def test_chinese_numeral_specific_spans_are_error(tmp_path: Path):
+    """2026-09-21（daily-010/011 L2 复盘）：中文数字的具体跨度曾被静默降级为 warning。
+
+    原正则只认阿拉伯数字与「十几/十多/数十/近X」，于是「七年后」这类**具体跨度**既不
+    匹配、又被 time_span 的降级规则洗成 warning，而工具 note 与 run_gates 都声明时间
+    跨度类阻断——规则与输出自相矛盾。这里钉住：具体跨度必须是 error。
+    """
+    root = _write_run(
+        tmp_path,
+        "# 标题\n\n## 一\n\n七年后，这部片又回到了大银幕。\n\n十年前它在柏林放过一次。\n",
+        pack_facts=["影片 2019 年首映"],
+    )
+    report = check_coverage(root, "art-001")
+    severities = {
+        (item["claim"], item["severity"])
+        for item in report["uncovered"]
+        if item["category"] == "time_span"
+    }
+    assert any("七年后" in claim and sev == "error" for claim, sev in severities), severities
+    assert any("十年前" in claim and sev == "error" for claim, sev in severities), severities
+    assert report["errors"], "具体跨度未进 errors，等于没拦住"
+
+
+def test_vague_chinese_spans_stay_warning(tmp_path: Path):
+    """扩展正则不许误伤泛化表述：这些年/多年来/近年来仍是 warning（008 校准）。"""
+    root = _write_run(
+        tmp_path,
+        "# 标题\n\n## 一\n\n这些年观众对他的怨言，几乎都集中在这三个词上。\n\n多年来一直如此。\n",
+        pack_facts=["影片由姜文执导"],
+    )
+    report = check_coverage(root, "art-001")
+    spans = [
+        (item["claim"], item["severity"])
+        for item in report["uncovered"]
+        if item["category"] == "time_span"
+    ]
+    assert spans, "泛化跨度没被抽出来，测试前提不成立"
+    assert all(sev == "warning" for _, sev in spans), spans
+    error_text = "\n".join(str(item) for item in report["errors"])
+    assert "这些年" not in error_text and "多年来" not in error_text, error_text

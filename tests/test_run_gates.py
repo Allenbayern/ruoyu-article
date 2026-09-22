@@ -1,6 +1,8 @@
 """run_gates：日更共享门禁接线的测试（2026-09-15 制度化）。"""
 from __future__ import annotations
 
+import hashlib
+import json
 import subprocess
 from pathlib import Path
 
@@ -14,6 +16,7 @@ from article_group.run_gates import (
     build_git_hygiene_snapshot,
     build_independent_review_gate,
     build_task_hierarchy_report,
+    check_source_manifest_integrity,
     run_all_gates,
 )
 
@@ -297,3 +300,62 @@ def test_run_all_gates_blocks_on_an_unbacked_assertion(tmp_path, capsys):
 
     summary = run_all_gates(tmp_path, lambda rel, value: None, fail_on_error=False)
     assert summary["assertion_coverage"] == "fail"
+
+
+# ── 来源清单真比对（2026-09-21，daily-011 L2 art-002 major） ──────────────────
+
+
+def _manifest_run(tmp_path: Path, *, body: str = "正文", declared: str | None = None,
+                  artifact: str | None = "本文") -> Path:
+    (tmp_path / "sources").mkdir(parents=True, exist_ok=True)
+    artifact_path = tmp_path / "sources/s1.txt"
+    if artifact is not None:
+        artifact_path.write_text(artifact, encoding="utf-8")
+    digest = hashlib.sha256(artifact_path.read_bytes()).hexdigest() if artifact is not None else ""
+    (tmp_path / "source-manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "source-manifest-v1",
+                "sources": [
+                    {
+                        "source_id": "src-s1",
+                        "artifact_path": "sources/s1.txt",
+                        "artifact_sha256": digest if declared is None else declared,
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    return tmp_path
+
+
+def test_source_manifest_integrity_passes_when_hashes_match(tmp_path: Path):
+    root = _manifest_run(tmp_path)
+    report = check_source_manifest_integrity(root)
+    assert report["status"] == "pass", report
+    assert report["checked"] == 1
+    assert report["mismatched"] == [] and report["missing"] == []
+
+
+def test_source_manifest_integrity_fails_on_hash_mismatch(tmp_path: Path):
+    """改过来源文件就必须 fail——这正是原来写死 "pass" 时漏掉的场景。"""
+    root = _manifest_run(tmp_path, declared="0" * 64)
+    report = check_source_manifest_integrity(root)
+    assert report["status"] == "fail", report
+    assert report["mismatched"] == ["src-s1"]
+
+
+def test_source_manifest_integrity_fails_on_missing_artifact(tmp_path: Path):
+    root = _manifest_run(tmp_path, artifact=None)
+    report = check_source_manifest_integrity(root)
+    assert report["status"] == "fail", report
+    assert report["missing"] == ["src-s1"]
+
+
+def test_source_manifest_integrity_is_not_run_without_manifest(tmp_path: Path):
+    """"没有可比对的东西"不等于"来源被动过"：缺清单记 not_run，不据此判 fail。"""
+    report = check_source_manifest_integrity(tmp_path)
+    assert report["status"] == "not_run", report
+    assert report["reason"] == "source_manifest_missing"

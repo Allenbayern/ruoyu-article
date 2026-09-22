@@ -1604,6 +1604,15 @@ def evaluate_batch(batch_dir: str | Path) -> dict:
                 article=article_id,
                 errors=scoring_errors,
             )
+        # 未测量的评分卡不得冒充质量证据（2026-09-21）：分值本身是模板常量，
+        # 过 _SCORING_FLOORS 对任何稿件恒真。这里记成人工裁决项，让"PASS"不被读成
+        # "质量已测量"。文案刻意全中文：命中 _CONTENT_PENDING_MARKERS /
+        # _EVIDENCE_PENDING_MARKERS 会把这一栏错误地重分类成内容或证据阻塞。
+        if card.get("measured") is False:
+            human_items.append(
+                f"{article_id}: 评分卡为历史模板常量（非测量值），不得当质量判据；"
+                "可测信号见卡片内实测区块"
+            )
 
     # The scoring-card checks above deliberately run first when a review
     # artifact was changed: the caller gets the most specific stale-artifact
