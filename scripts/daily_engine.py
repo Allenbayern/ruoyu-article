@@ -27,6 +27,7 @@ from article_group.run_gates import (
     check_source_manifest_integrity,
     run_all_gates,
 )
+from article_group.assertion_ledger_coverage import apply_derived_spans
 from article_group.scoring_card import build_scoring_card
 from article_group.style_gate import validate_markdown_file
 from article_group.title_pack_fidelity import evaluate_title_pack
@@ -572,7 +573,25 @@ def content_record(
         locator = (globals().get(spec_name) or {}).get(aid)
         if locator:
             data[key] = str(locator)
+    # 派生跨度即时入账（2026-09-21，daily-011 art-001「七年后」的坑）：由已入账年份推出的
+    # 具体跨度必须在写账本的这一趟补齐，否则 assertion-coverage 会判缺口。spec 用
+    # DERIVED_SPANS 逐篇声明；补完仍有缺口就当场失败——不等 gates 阶段才发现。
+    span_gaps = apply_derived_spans(
+        data,
+        body,
+        (globals().get("DERIVED_SPANS") or {}).get(aid) or [],
+    )
+    data["ledger_span_gaps"] = span_gaps
     _write_json_evidence(path, data, reason=f"daily_engine:content-fidelity:{aid}")
+    if span_gaps:
+        print(
+            f"content_record 失败：{aid} 正文里有 {len(span_gaps)} 处具体时间跨度未进账本，"
+            "请在 CONTENT_RECORD_ARGS 的 hard 里登记该跨度，或用 DERIVED_SPANS 声明（即时入账）：",
+            file=sys.stderr,
+        )
+        for gap in span_gaps:
+            print(f"  - {gap['body_locator']} 「{gap['claim']}」：{gap['hint']}", file=sys.stderr)
+        raise SystemExit(1)
 
 
 def ensure_independent_review_placeholder(aid: str, delivery_path: str) -> bool:
@@ -1546,6 +1565,7 @@ def bind_spec(spec) -> None:
         "CONTENT_RECORD_ARGS", "TITLES", "SOURCE_IDS", "MODES",
         "RULE_CLAIMS", "BATCH_SPECS", "RUN_PROFILE",
         "EDITORIAL_DECLARATIONS", "OWN_ANALYSIS_LOCATORS", "SUBJECT_CONTENT_LOCATORS",
+        "DERIVED_SPANS",
     )
     # 可选字段（如 TASK_CARD_BODY_OUTLINE）缺失时不再抛 AttributeError：
     # 历史 spec 逐个补字段的成本高于让引擎按缺省值工作。

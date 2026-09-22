@@ -263,3 +263,58 @@ def test_vague_chinese_spans_stay_warning(tmp_path: Path):
     assert all(sev == "warning" for _, sev in spans), spans
     error_text = "\n".join(str(item) for item in report["errors"])
     assert "这些年" not in error_text and "多年来" not in error_text, error_text
+
+
+# ── 派生跨度即时入账（2026-09-21，daily-011 art-001「七年后」的坑） ──────────────
+
+
+def test_apply_derived_spans_registers_and_clears_gap():
+    """spec 声明了派生跨度 → 补进账本、标 derived=True、缺口清零。"""
+    from article_group.assertion_ledger_coverage import apply_derived_spans
+
+    body = "# 标题\n\n## 一\n\n七年后，这部片重回大银幕。\n"
+    record = {"hard_information": [{"information_id": "i1", "text": "影片 2019 年首映"}]}
+    gaps = apply_derived_spans(
+        record,
+        body,
+        [
+            {
+                "text": "影片原版 2019 年首映，2026 年重映，前后相隔七年后重回大银幕",
+                "body_locator": "p1",
+                "source_refs": ["src-a"],
+                "source_locators": ["来源: 首映年份"],
+            }
+        ],
+    )
+    assert gaps == []
+    derived = [item for item in record["hard_information"] if item.get("derived")]
+    assert len(derived) == 1
+    assert derived[0]["information_id"] == "d1"
+    assert derived[0]["independence_key"] == "derived-span-1"
+
+
+def test_apply_derived_spans_reports_remaining_gap():
+    """没声明 → 缺口如实报出来（引擎据此当场失败，而不是等 gates）。"""
+    from article_group.assertion_ledger_coverage import apply_derived_spans
+
+    body = "# 标题\n\n## 一\n\n七年后，这部片重回大银幕。\n"
+    record = {"hard_information": [{"information_id": "i1", "text": "影片 2019 年首映"}]}
+    gaps = apply_derived_spans(record, body, [])
+    assert [gap["claim"] for gap in gaps] == ["七年后"]
+    # body_locator 与账本同口径（标题不占号），另附原文块位置
+    assert gaps[0]["body_locator"] == "p1"
+    assert gaps[0]["source_position"].startswith("第")
+
+
+def test_apply_derived_spans_avoids_id_collision():
+    from article_group.assertion_ledger_coverage import apply_derived_spans
+
+    record = {"hard_information": [{"information_id": "d1", "text": "已有一条 d1"}]}
+    apply_derived_spans(
+        record,
+        "# 标题\n\n正文。\n",
+        [{"text": "派生条目", "body_locator": "p1", "source_locators": ["来源: x"]}],
+    )
+    ids = [item["information_id"] for item in record["hard_information"]]
+    assert len(ids) == len(set(ids)) == 2
+    assert "d1" in ids and "d1d" in ids

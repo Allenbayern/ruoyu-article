@@ -180,6 +180,105 @@ def _covered(claim: str, ledger_blob: str) -> bool:
     return bool(stripped) and stripped in ledger_blob
 
 
+def apply_derived_spans(
+    record: dict[str, Any],
+    body_text: str,
+    entries: Sequence[Mapping[str, Any]],
+) -> list[dict[str, str]]:
+    """把 spec 声明的派生跨度补进 ``hard_information``，返回仍未入账的跨度缺口。
+
+    "派生跨度即时入账"（2026-09-21）：正文写「七年后」而账本只登记起止年份时，
+    assertion-coverage 会判缺口。spec 用 ``DERIVED_SPANS`` 逐篇声明这类跨度，
+    引擎在**写账本的同一趟**补条目——而不是等到 gates 阶段才发现。
+
+    条目形状：``{"text": 跨度断言, "body_locator": "p2", "source_refs": [...],
+    "source_locators": [...], "note": 可选说明}``；补进去的条目标 ``derived=True``，
+    便于事后区分"从来源直接读到的事实"与"由已入账事实推出的跨度"。
+    """
+
+    items = record.get("hard_information")
+    if not isinstance(items, list):
+        items = []
+        record["hard_information"] = items
+    used_ids = {
+        str(item.get("information_id"))
+        for item in items
+        if isinstance(item, Mapping) and item.get("information_id")
+    }
+    for index, entry in enumerate(entries, start=1):
+        if not isinstance(entry, Mapping):
+            continue
+        if not str(entry.get("text") or "").strip():
+            continue
+        information_id = f"d{index}"
+        while information_id in used_ids:
+            information_id = f"{information_id}d"
+        used_ids.add(information_id)
+        items.append(
+            {
+                "information_id": information_id,
+                "text": str(entry["text"]),
+                "kind": str(entry.get("kind") or "fact"),
+                "body_locator": str(entry.get("body_locator") or ""),
+                "source_refs": list(entry.get("source_refs") or []),
+                "source_locators": list(entry.get("source_locators") or []),
+                "independence_key": str(entry.get("independence_key") or f"derived-span-{index}"),
+                "derived": True,
+                **({"note": str(entry["note"])} if entry.get("note") else {}),
+            }
+        )
+    return unregistered_spans(body_text, [str(item.get("text") or "") for item in items if isinstance(item, Mapping)])
+
+
+def ledger_paragraphs(body_text: str) -> list[tuple[int, str, int]]:
+    """按**账本口径**切段：``(p_n, text, source_position)``。
+
+    两种口径各有用途，别混：
+    - ``split_paragraphs`` 保留**原文块序号**（报告里定位文字用，标题与空块占号）；
+    - 这里只数正文段落，与 ``hard_information[].body_locator`` / content-fidelity 的
+      p_n 完全一致——凡是要**回填给 spec 作者写 body_locator** 的场景，必须用这个。
+    """
+
+    body = body_text.split("\n", 1)[1] if body_text.startswith("#") else body_text
+    out: list[tuple[int, str, int]] = []
+    for raw_index, block in enumerate(body.split("\n\n"), 1):
+        text = " ".join(block.split())
+        if text and not text.startswith("#"):
+            out.append((len(out) + 1, text, raw_index))
+    return out
+
+
+def unregistered_spans(body_text: str, ledger_texts: Sequence[str]) -> list[dict[str, str]]:
+    """正文里"给出具体跨度"但账本没有对应条目的时间断言（2026-09-21）。
+
+    为什么单独暴露这个函数：daily-011 的坑是"正文写『七年后』、账本只登记了起止年份"，
+    而具体跨度现在会被判 error。要让下一批**即时入账**（在 content_record 阶段就把派生
+    跨度补进账本），引擎需要一个不依赖 run 目录的判定入口——就是这里，复用同一套
+    ``_SPECIFIC_SPAN_RE`` / ``_covered_in_ledger``，不再另写一份正则以免漂移。
+
+    ``ledger_texts`` 传账本条目文本（``hard_information[].text``）；返回每项含
+    ``claim`` / ``paragraph`` / ``hint``。
+    """
+
+    ledger_blob = "\n".join(str(text) for text in ledger_texts)
+    gaps: list[dict[str, str]] = []
+    for p_n, text, raw_index in ledger_paragraphs(body_text):
+        for item in extract_assertions([(p_n, text)]):
+            if item["category"] != "time_span" or not _SPECIFIC_SPAN_RE.search(item["claim"]):
+                continue
+            if _covered_in_ledger(item["claim"], ledger_blob):
+                continue
+            gaps.append(
+                {
+                    "claim": item["claim"],
+                    "body_locator": f"p{p_n}",
+                    "source_position": f"第{raw_index}块",
+                    "hint": "具体时间跨度未进账本：请登记该跨度或其起止年份，或改写为绝对年份",
+                }
+            )
+    return gaps
+
+
 def check_coverage(run_dir: str | Path, aid: str) -> dict[str, Any]:
     """双向覆盖检查：读者面→账本 缺口 + 账本→读者面 孤儿条目。"""
     root = Path(run_dir)
