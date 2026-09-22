@@ -581,6 +581,22 @@ def run_review(args: argparse.Namespace) -> int:
         )
     if not args.run_root.exists():
         raise SystemExit(f"run root does not exist: {args.run_root}")
+
+    output_path = Path(args.output).expanduser()
+    if not output_path.is_absolute():
+        resolved_against_cwd = output_path.resolve()
+        resolved_run_root = Path(args.run_root).expanduser().resolve()
+        if resolved_against_cwd.is_relative_to(resolved_run_root):
+            args.output = resolved_against_cwd
+        elif (resolved_run_root / output_path).parent.exists() or (
+            output_path.parts and output_path.parts[0] in ("review", "gates", "delivery")
+        ):
+            args.output = (resolved_run_root / output_path).resolve()
+        else:
+            args.output = resolved_against_cwd
+    else:
+        args.output = output_path.resolve()
+
     canonical_gaps = _binding_gaps(args) if args.mode == "l2" else []
     canonical = _canonical_target(args, canonical_gaps)
 

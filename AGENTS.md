@@ -194,6 +194,15 @@ not a guaranteed result.
 - Keep source evidence in metadata/review artifacts; do not expose internal review language in final article copy.
 - Historical batches are evidence for learning only, never the current draft or delivery object unless explicitly assigned.
 
+### 批次间内容独立与元继承（controller 2026-09-21 定）
+
+- **文章与人物完全解耦（零跨期关联）**：
+  每批次（例如跑 012）的正文、人物、角色、故事、剧情，与历史批次（001～011）**完全独立、零关联、无继承**。
+  严禁在正文中做跨批次人物联动、写成连续宇宙、提及“往期/上期某人物”，或把前几期人物拉入新文章作对比。每篇均为自闭环的独立深度单篇。
+- **跨批次唯一合法继承（仅限元数据与系统层，绝不渗透至内容）**：
+  1. **经验总结与流程优化**：每次跑完，仅在 `RUN-RECORD.md`、`STEP-LOG.md` 或经验手册中沉淀工程与写作经验（门禁排布、断言覆盖、反 AI 腔调优、写作节奏等），用于优化下一次跑批的 pipeline 和模型提示词。
+  2. **选题与人物去重台账**：每次跑完，记录已写过的作品名、核心人物/实体、事件簇（`event_cluster_id`），纳入跨批查重历史库（`portfolio_gate` 跨批查重）。后续批次严格去重，坚决防止人物重复与选题撞车。
+
 ## Daily topic selection (controller decision 2026-09-21)
 
 选题是**两道门**，不是 agent 自主交接：

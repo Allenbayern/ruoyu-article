@@ -1283,3 +1283,58 @@ def test_base_review_without_a_binding_says_so(tmp_path: Path, monkeypatch: pyte
     artifact = json.loads(output.read_text(encoding="utf-8"))["base_review_diff"]["artifact_diff"]
     assert artifact["status"] == "base_binding_missing"
     assert "无法定位历史版本" in artifact["reason"]
+
+
+def test_codex_review_rebases_run_relative_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """当 --output 传 run-relative 路径（如 review/<aid>/...）时，自动锚定至 run-root 下。"""
+    run_root = tmp_path / "runs" / "2026-09-21" / "daily-test"
+    review_dir = run_root / "review" / "art-001"
+    review_dir.mkdir(parents=True)
+    external = review_dir / "external.json"
+    external.write_text(
+        json.dumps(
+            {
+                "decision": "approve",
+                "scope_reviewed": ["art-001"],
+                "findings": [],
+                "non_findings": ["pass"],
+                "coverage_gaps": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    delivery = run_root / "delivery" / "art-001" / "delivery.md"
+    delivery.parent.mkdir(parents=True)
+    delivery.write_text("# Title\n\nBody", encoding="utf-8")
+    body = run_root / "drafts" / "art-001" / "body_draft.md"
+    body.parent.mkdir(parents=True)
+    body.write_text("Body", encoding="utf-8")
+    tp = review_dir / "title-pack.json"
+    tp.write_text(json.dumps({"selected": "Title"}), encoding="utf-8")
+
+    monkeypatch.setattr(codex_review.shutil, "which", lambda _: None)
+
+    exit_code = codex_review.run_review(
+        codex_review.build_parser().parse_args(
+            [
+                "--mode", "l2",
+                "--run-root", str(run_root),
+                "--output", "review/art-001/independent-review.json",
+                "--request", "review",
+                "--article-id", "art-001",
+                "--article-task-id", "at-art-001",
+                "--artifact-path", "delivery/art-001/delivery.md",
+                "--body-path", "drafts/art-001/body_draft.md",
+                "--title-pack-path", "review/art-001/title-pack.json",
+                "--review-json", str(external),
+                "--canonical-independent-review",
+                "--allow-unfrozen-title",
+            ]
+        )
+    )
+    assert exit_code == 0
+    expected_file = review_dir / "independent-review.json"
+    assert expected_file.exists(), "产物应落在 run_root / review / art-001 / independent-review.json"
+    record = json.loads(expected_file.read_text(encoding="utf-8"))
+    assert record["decision"] == "approve"
+
