@@ -36,6 +36,7 @@ from typing import Any, Callable
 from .article_task_v1 import validate_task_hierarchy_run
 from .claim_source_check import check_run_material_packs
 from .compliance_gate import crosscheck_pool_five_gates, validate_pool_five_gates
+from .editorial_gate import build_editorial_gate
 from .editorial_review import evaluate_editorial_record
 from .git_hygiene import validate_infra_ready
 
@@ -297,6 +298,7 @@ def run_all_gates(
     write_json: WriteFn,
     *,
     fail_on_error: bool = True,
+    editorial_declarations: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Write the three gate artifacts into the run and return a summary.
 
@@ -330,6 +332,11 @@ def run_all_gates(
     assertion_report = build_assertion_coverage_gate(run_root, write_article_reports=write_json)
     write_json("review/gates/assertion-coverage.json", assertion_report)
 
+    # 编辑质量门禁（2026-09-21，daily-010 编读复盘）：读者面结构与承诺兑现的机械判定。
+    # 默认只报警；spec 用 EDITORIAL_DECLARATIONS 逐篇声明才硬拦（fail-closed）。
+    editorial_quality = build_editorial_gate(run_root, editorial_declarations)
+    write_json("review/gates/editorial-gate.json", editorial_quality)
+
     compliance_failed = compliance.get("full_gate") == "run" and not compliance.get("pass")
     if fail_on_error and (
         not hierarchy_report["pass"]
@@ -338,6 +345,7 @@ def run_all_gates(
         or not independent_report["pass"]
         or not five_questions["pass"]
         or not assertion_report["pass"]
+        or not editorial_quality["pass"]
         or compliance_failed
     ):
         payload = {

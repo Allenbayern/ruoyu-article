@@ -558,6 +558,15 @@ def content_record(
     paras = [p for p in body.split("\n\n") if p and not p.startswith("## ")]
     data["reader_takeaway_locator"] = f"p{len(paras)}"
     data["standalone_check"]["judgment_locator"] = f"p{len(paras)}"
+    # 编辑门禁要的两个定位符（2026-09-21，daily-010 编读复盘）：由 spec 逐篇声明，
+    # 缺失时不写字段（门禁只对声明了 own_analysis/subject_content 的篇硬拦）。
+    for key, spec_name in (
+        ("own_analysis_locator", "OWN_ANALYSIS_LOCATORS"),
+        ("subject_content_locator", "SUBJECT_CONTENT_LOCATORS"),
+    ):
+        locator = (globals().get(spec_name) or {}).get(aid)
+        if locator:
+            data[key] = str(locator)
     _write_json_evidence(path, data, reason=f"daily_engine:content-fidelity:{aid}")
 
 
@@ -576,7 +585,7 @@ def ensure_independent_review_placeholder(aid: str, delivery_path: str) -> bool:
     返回 True 表示这次写了占位记录。
     """
 
-    review_path = ROOT / f"review/{aid}/independent-review.json"
+    review_path = _root_dir() / f"review/{aid}/independent-review.json"
     existing = None
     if review_path.exists():
         try:
@@ -594,19 +603,145 @@ def ensure_independent_review_placeholder(aid: str, delivery_path: str) -> bool:
             "run_id": RUN_ID,
             "created_from_run": RUN_ID,
             "artifact_path": delivery_path,
-            "artifact_sha256": digest(ROOT / delivery_path),
+            "artifact_sha256": digest(_root_dir() / delivery_path),
             "draft_path": f"drafts/{aid}/body_draft.md",
-            "draft_sha256": digest(ROOT / f"drafts/{aid}/body_draft.md"),
+            "draft_sha256": digest(_root_dir() / f"drafts/{aid}/body_draft.md"),
             "body_path": f"drafts/{aid}/body_draft.md",
-            "body_sha256": digest(ROOT / f"drafts/{aid}/body_draft.md"),
+            "body_sha256": digest(_root_dir() / f"drafts/{aid}/body_draft.md"),
             "title_pack_path": f"review/{aid}/title-pack.json",
-            "title_pack_sha256": digest(ROOT / f"review/{aid}/title-pack.json"),
+            "title_pack_sha256": digest(_root_dir() / f"review/{aid}/title-pack.json"),
             "attempt": 1,
             "max_attempts": 3,
             "status": "PENDING",
             "decision": "human_review_required",
             "next_step": "independent_review_required",
             "scope": "single_article",
+            "publication_authorization": "not_authorized",
+        },
+    )
+    return True
+
+
+def _root_dir() -> Path:
+    """run 根目录：spec/测试可能把 ROOT 设成字符串，统一在读取点转成 Path。
+
+    为什么要这层（2026-09-21）：stub spec 驱动的单测把 ``ROOT`` 设成 str，
+    ``ROOT / "review/..."`` 直接抛 ``TypeError: unsupported operand type(s) for /``；
+    现有 ``ensure_independent_review_placeholder`` 也有同样的隐患，一并收口。
+    """
+
+    return Path(ROOT)
+
+
+def editor_read() -> None:
+    """编读阶段（2026-09-21 新增）：为每篇写请求包 + 占位记录，位置在冻结之前。
+
+    为什么要在 ``content_record`` 之后、``reviews_and_delivery``（冻结标题与交付）之前：
+    daily-011 的三轮 L2 复盘表明，**编辑意见一旦在冻结之后提出，每改一句正文都会让
+    标题包 / L2 approve / 渲染的哈希全部失效**。顺序必须是
+    写稿 → 编读（未冻结）→ 改定 → L2（固定哈希）→ 人工验收。
+
+    引擎自己不跑 LLM：机械部分在 ``article_group.editorial_gate`` 里判，判决部分由独立
+    子代理读 ``review/{aid}/editor-read-request.json`` 后把结论写回
+    ``review/{aid}/editor-review.json``（走 ``codex_review`` 的留底通道）。这里只负责
+    （a）把请求包写全，让编读不必自己翻 run；（b）落一份可被门禁看见的占位记录。
+    """
+
+    args_by_aid = {args["aid"]: args for args in CONTENT_RECORD_ARGS}
+    declarations = globals().get("EDITORIAL_DECLARATIONS") or {}
+    for aid, args in args_by_aid.items():
+        titles = TITLES.get(aid) or []
+        planned_title = titles[0][0] if titles else ""
+        declaration = declarations.get(aid) if isinstance(declarations.get(aid), Mapping) else {}
+        write_json(
+            f"review/{aid}/editor-read-request.json",
+            {
+                "schema_version": "editor-read-request-v1",
+                "article_id": aid,
+                "run_id": RUN_ID,
+                "planned_title": planned_title,
+                "title_directions": [list(item) for item in titles],
+                "core_object": args.get("core_object"),
+                "core_question": args.get("question"),
+                "landing": args.get("takeaway"),
+                "mechanism": args.get("mechanism"),
+                "boundary": args.get("boundary"),
+                "reader": (MATERIAL_SPECS.get(aid) or {}).get("audience"),
+                "artifact_paths": {
+                    "body": f"drafts/{aid}/body_draft.md",
+                    "content_fidelity": f"review/{aid}/content-fidelity.json",
+                    "material_pack": f"material-packs/{aid}.json",
+                    "sources_dir": "sources/",
+                    "delivery": f"delivery/{aid}/delivery.md",
+                },
+                "questions": [
+                    "标题问的是什么？正文有没有真的回答它？回答它的是哪一段，靠的是本文的分析还是当事人的自述？",
+                    "哪些段落属于转述链（他说/他提到/他给出/在他看来/有评论说），哪些是本文自己的判断？比例如何？",
+                    "开头三段能否让目标读者留下来？成稿里有没有更好的句子可以提到开头？",
+                    "材料包里有哪些事实或引语没有被用，而它们本可以让文章更好？",
+                    "结尾是否落在最高价值的内容上？有没有泄气段、重复段、跑题段？",
+                    "全篇有没有一个具体的人（含受影响方）与一个具体动作或场景？",
+                    "对已经知道这条新闻的读者，读完的净增量是什么（新事实／新解释）？",
+                ],
+                "declared_checks": declaration,
+                "reply_contract": {
+                    "record_path": f"review/{aid}/editor-review.json",
+                    "keys": [
+                        "decision",
+                        "scope_reviewed",
+                        "findings",
+                        "non_findings",
+                        "coverage_gaps",
+                    ],
+                    "finding_keys": [
+                        "severity",
+                        "target",
+                        "evidence",
+                        "counterexample_or_failure_mode",
+                        "required_fix",
+                        "recheck",
+                    ],
+                    "severity_rule": "按对读者的伤害判：读不懂／读完无收获＝blocker 或 major；影响质感与节奏＝minor",
+                },
+                "scope_exclusions": [
+                    "不要重审证据正确性、来源哈希、账本绑定、引语逐字（那些已由 L2 复核）",
+                    "读者面零自证是既有规则，不要把「不点名来源」当缺陷",
+                    "不做道德说教，不预测票房",
+                ],
+                "publication_authorization": "not_authorized",
+            },
+        )
+        _ensure_editor_review_placeholder(aid)
+
+
+def _ensure_editor_review_placeholder(aid: str) -> bool:
+    """编读记录占位符：只有还是待复核状态才按新哈希刷新（沿用 daily-009 的判据）。"""
+
+    path = _root_dir() / f"review/{aid}/editor-review.json"
+    existing = None
+    if path.exists():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            existing = None
+    if not is_placeholder_record(existing):
+        return False
+    body_path = f"drafts/{aid}/body_draft.md"
+    write_json(
+        f"review/{aid}/editor-review.json",
+        {
+            "schema_version": "article-editor-review-v1",
+            "article_id": aid,
+            "run_id": RUN_ID,
+            "created_from_run": RUN_ID,
+            "body_path": body_path,
+            "body_sha256": digest(_root_dir() / body_path),
+            "request_path": f"review/{aid}/editor-read-request.json",
+            "attempt": 1,
+            "max_attempts": 3,
+            "status": "PENDING",
+            "decision": "human_review_required",
+            "next_step": "editor_read_required",
             "publication_authorization": "not_authorized",
         },
     )
@@ -808,7 +943,11 @@ def gates() -> None:
     compliance_gate explicit not_run.  Future daily generators should import
     the same helper instead of re-implementing it.
     """
-    run_all_gates(ROOT, write_json)
+    run_all_gates(
+        ROOT,
+        write_json,
+        editorial_declarations=globals().get("EDITORIAL_DECLARATIONS") or {},
+    )
 
 
 def batch_manifest(bodies_map: dict[str, str]) -> None:
@@ -1240,6 +1379,14 @@ def stage_plan(body_map: Mapping[str, str] | None = None) -> list[PipelineStage]
         )
     plan.append(
         PipelineStage(
+            "editor_read",
+            "editor_read",
+            editor_read,
+            requires=tuple(f"review/{args['aid']}/content-fidelity.json" for args in CONTENT_RECORD_ARGS),
+        )
+    )
+    plan.append(
+        PipelineStage(
             "reviews_and_delivery",
             "reviews_and_delivery",
             (lambda: reviews_and_delivery(bodies_map)),
@@ -1392,6 +1539,7 @@ def bind_spec(spec) -> None:
         "MATERIAL_SPECS", "BRIEFS", "BRIEF_SPECS", "BODIES",
         "CONTENT_RECORD_ARGS", "TITLES", "SOURCE_IDS", "MODES",
         "RULE_CLAIMS", "BATCH_SPECS", "RUN_PROFILE",
+        "EDITORIAL_DECLARATIONS", "OWN_ANALYSIS_LOCATORS", "SUBJECT_CONTENT_LOCATORS",
     )
     # 可选字段（如 TASK_CARD_BODY_OUTLINE）缺失时不再抛 AttributeError：
     # 历史 spec 逐个补字段的成本高于让引擎按缺省值工作。

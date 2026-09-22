@@ -136,6 +136,7 @@ def test_stage_plan_lists_every_unit_in_order(spec):
         "bodies",
         "drafts_write",
         "content_record:art-001",
+        "editor_read",
         "reviews_and_delivery",
         "evidence_rebind",
         "portfolio",
