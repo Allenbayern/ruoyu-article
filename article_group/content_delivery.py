@@ -50,6 +50,7 @@ _GOVERNANCE_MARKERS = (
     "delivery_state=",
     "html_delivery_state=",
     "editorial-review-record",
+    "评分卡为历史模板常量",
 )
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 _H1_RE = re.compile(r"^\s{0,3}#\s+(?P<title>.+?)\s*$", re.MULTILINE)

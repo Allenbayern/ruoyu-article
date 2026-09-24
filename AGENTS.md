@@ -20,7 +20,7 @@ The Vault notes are the canonical content and governance references. Do not infe
 - After each run, write a `RUN-RECORD.md` in the run root following `templates/RUN-RECORD.md` (eight sections). Every gate that did not run or does not apply must be recorded explicitly (`not_run` + reason) — never skipped silently.
 - Preserve the existing deterministic gates, evidence manifests, hashes, previews, and final-review behavior.
 - Independent review output is evidence only. It cannot authorize publication, merge, deployment, or state promotion.
-- Execution model is the agent session model (dsh default `shenwendp/deepseek-v4.1-flash`). L2 adversarial review runs in a separate read-only subagent; record its structured result with `python -m article_group.codex_review --mode l2 --review-json <review.json>` (historical file name, no Codex CLI required).
+- Execution model is the agent session model (dsh default `shenwendp/deepseek-v4.1-flash`). L2 adversarial review runs in a separate read-only subagent; record its structured result with `python -m article_group.dsh_review --mode l2 --review-json <review.json>` (legacy `codex_review` alias retained).
   - **Write the record the gate reads**: point `--output` at
     `review/<aid>/independent-review.json` (plus `--article-id/--artifact-path/--body-path/--title-pack-path`).
     That path is the canonical `article-independent-review-v1` record and is written with
@@ -51,7 +51,7 @@ already closed and published run, with no backup.
   explicitly. `restore()` puts a file back from its newest snapshot. Wired today:
   the ledger precheck, `evidence_rebind`, `title_freeze`, `wechat_render`,
   `close_out` (including its `STEP-LOG.md`), `final_review`, `run_record`,
-  `scripts/record_controller_acceptance.py`, `codex_review` (L2 record + review
+  `scripts/record_controller_acceptance.py`, `dsh_review` / `codex_review` (L2 record + review
   log), `delivery` (plain copy), `content_delivery` (handoff record), and
   `daily_engine` (its spec helpers are wrapped); `--force` is passed down to the
   subprocess writers so a forced close-out is not half-effective.
@@ -97,6 +97,41 @@ already closed and published run, with no backup.
   the test fails when a new writer appears unclassified or a listed module goes stale.
 - These rules are repository-operational. Changing the Vault's canonical notes
   still requires explicit write-back authorization.
+
+### Editorial redlines: stance, depth, sensory anchors, L2 checklist (repo-operational, 2026-09-23)
+
+Landed from the `taboo-topics-001` rework (two drafts rejected as "没感觉" / "不知所云",
+one L2 blocker for a 古装角色 "中枪身亡", one blocker for a self-invented netizen quote).
+Full write-up: `docs/codex/editorial-redlines-2026-09-23.md`.
+
+- **A submitted draft must take a side.** `style_gate` flags unresolvable balance as
+  `error` (`stance:*`: 谁也说服不了谁 / 两边都有道理 / 见仁见智 / 情有可原 / 是角色需要 …).
+  A defence sentence is exempt **only** when it is attributed to others *and* rebutted
+  afterwards (report-then-rebut); attribution alone is not enough, and the writer's own
+  framing sentences are never exempt. Known limit, not hidden: a skilfully vague draft can
+  still slip the regex — the real defence is the selection-stage stance below.
+- **Length floor is 1500 CJK, not 900** (2026-09-23 controller ruling, superseding the
+  2026-09-16 lower-bound ruling; upper bound stays 2800). Elasticity remains on the upper
+  side only. The anti-padding rule is unchanged: expand along real dimensions (historical
+  contrast, peer contrast, industry mechanism, first-hand material) — never 同义反复凑字.
+  Genuinely thin material must be released explicitly via `RunProfile.min_cjk_chars` or a
+  controller decision, not by letting the gate pass silently. `style_gate.depth_floor_check`
+  surfaces the same floor at draft self-check time.
+- **Selection must carry a `killer_stance`.** Candidate pools require it (≥12 CJK chars,
+  locked into `_CANONICAL_SLOT_FIELDS`), and equivocal stances are rejected at selection
+  time (`candidate_<id>_killer_stance_equivocal_*`). Self-check: 靶子是谁 / 反差是什么 /
+  给读者什么结论.
+- **Sensory anchors are a ledger, not a mood.** An evidence pack may declare
+  `sensory_anchors` (屏风暗室/解开衣带/雨夜寺庙 …); every declared anchor must appear in the
+  delivered body (`article_<id>_sensory_anchor_<i>_not_in_body`), and fewer than 3 is an
+  error. `style_gate.sensory_anchor_check` separately warns when abstract criticism nouns
+  dominate with too few physical anchors.
+- **Every L2 prompt carries five content redlines** (`dsh_review.L2_CONTENT_REDLINES`),
+  because these were real accidents, not style preferences: (1) a quoted long sentence is a
+  first-hand speech act — no readable original means blocker; (2) period settings must not
+  acquire anachronistic props; (3) no asserting inner motives without first-hand material;
+  (4) balancing-only pieces are `needs_changes`; (5) declared anchors/numbers must be visible
+  in the body, and an abstract-only treatment is `needs_changes`.
 
 ### Content gates and incremental review (repo-operational, 2026-09-18)
 

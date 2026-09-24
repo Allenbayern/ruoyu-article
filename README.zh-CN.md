@@ -299,27 +299,27 @@ uv run python scripts/codex_viral_distill.py finalize \
 
 `runs/` 被 Git 忽略，因此**契约进版本库**（模块、schema、CLI、测试），**数据不进**（package、cards、review 产物）。
 
-## Codex 旁路审查
+## 独立复核证据记录（dsh_review）
 
-Codex 审查是证据旁路，不替换本仓库的确定性门禁、`final_review` 或人工发布授权。
+独立审查与证据记录是证据旁路，不替换本仓库的确定性门禁、`final_review` 或人工发布授权。
 
 ```bash
-# 普通审查：Codex 原生 review，走 Luna 路由
-uv run python -m article_group.codex_review \
+# 普通审查：代码与产物核对证据
+uv run python -m article_group.dsh_review \
   --mode normal \
   --repo . \
   --run-root runs/<date>/<run-id> \
-  --output runs/<date>/<run-id>/review/codex-normal.json \
+  --output runs/<date>/<run-id>/review/dsh-normal.json \
   --request '说明本次变更和验收目标' \
   --acceptance '逐条列出必须满足的验收条件' \
   --risk L1
 
-# L2 对抗审查：只读、Sol high、结构化 review contract
-uv run python -m article_group.codex_review \
+# L2 对抗审查：结构化 review contract
+uv run python -m article_group.dsh_review \
   --mode l2 \
   --repo . \
   --run-root runs/<date>/<run-id> \
-  --output runs/<date>/<run-id>/review/codex-l2.json \
+  --output runs/<date>/<run-id>/review/dsh-l2.json \
   --request '原始任务请求' \
   --acceptance '逐条列出验收条件' \
   --focus '指定需要独立挑战的边界和负向路径' \

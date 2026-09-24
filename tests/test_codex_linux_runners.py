@@ -719,7 +719,7 @@ def test_daily_article_runner_keeps_corrupt_library_unavailable_without_mutation
 
 
 def test_review_audit_is_read_only_and_reports_schema_and_run_structure(tmp_path: Path) -> None:
-    module = _load("scripts.codex_review_audit")
+    module = _load("scripts.dsh_review_audit")
     home_agents = tmp_path / "home-AGENTS.md"
     project_agents = tmp_path / "project" / "AGENTS.md"
     skills = tmp_path / "skills"
@@ -771,7 +771,7 @@ def test_review_audit_is_read_only_and_reports_schema_and_run_structure(tmp_path
 
 
 def test_review_audit_cli_emits_json_without_writing_an_output_file(capsys: pytest.CaptureFixture[str]) -> None:
-    module = _load("scripts.codex_review_audit")
+    module = _load("scripts.dsh_review_audit")
 
     result = module.main([])
 
@@ -784,7 +784,7 @@ def test_review_audit_cli_emits_json_without_writing_an_output_file(capsys: pyte
 
 
 def test_review_audit_can_write_an_immutable_monthly_snapshot(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    module = _load("scripts.codex_review_audit")
+    module = _load("scripts.dsh_review_audit")
     home_agents = tmp_path / "home-AGENTS.md"
     project_agents = tmp_path / "project" / "AGENTS.md"
     skills = tmp_path / "skills"

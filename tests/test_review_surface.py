@@ -48,8 +48,9 @@ def test_review_surface_rejects_unknown_values_and_html_preview_mixing():
 
 
 def test_markdown_review_evidence_binds_current_bytes_and_cjk_count(tmp_path: Path):
-    first = _write_markdown(tmp_path, "drafts/art-001.md", "# 第一篇\n\n" + "黄金" * 600 + "\n")
-    second = _write_markdown(tmp_path, "drafts/art-002.md", "# 第二篇\n\n" + "命案" * 600 + "\n")
+    # 2026-09-23 controller ruling：字数硬下限 900→1500（1200 → 1500 CJK）。
+    first = _write_markdown(tmp_path, "drafts/art-001.md", "# 第一篇\n\n" + "黄金" * 750 + "\n")
+    second = _write_markdown(tmp_path, "drafts/art-002.md", "# 第二篇\n\n" + "命案" * 750 + "\n")
     articles = [_article("art-001", "drafts/art-001.md"), _article("art-002", "drafts/art-002.md")]
 
     payload = build_markdown_review_evidence(
@@ -118,8 +119,9 @@ def test_markdown_review_evidence_rejects_one_draft_bound_to_two_articles(tmp_pa
 def test_markdown_review_audit_cli_writes_only_json_evidence(tmp_path: Path):
     from scripts.markdown_review_audit import main
 
-    _write_markdown(tmp_path, "drafts/art-001.md", "# 标题\n\n" + "事实" * 500 + "\n")
-    _write_markdown(tmp_path, "drafts/art-002.md", "# 标题\n\n" + "事实" * 500 + "\n")
+    # 2026-09-23 controller ruling：字数硬下限 900→1500，夹具同步抬到 1500 CJK。
+    _write_markdown(tmp_path, "drafts/art-001.md", "# 标题\n\n" + "事实" * 750 + "\n")
+    _write_markdown(tmp_path, "drafts/art-002.md", "# 标题\n\n" + "事实" * 750 + "\n")
     batch = {
         "run_id": "2026-08-26/daily-002",
         "review_surface": "markdown_codex",

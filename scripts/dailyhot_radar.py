@@ -20,7 +20,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-DEFAULT_ROUTES = ("douban-group", "tieba", "hupu", "ngabbs", "zhihu", "toutiao")
+DEFAULT_ROUTES = ("douban-group", "tieba", "hupu", "ngabbs", "zhihu", "toutiao", "bilibili", "douyin")
 
 ROUTE_LABELS = {
     "douban-group": "豆瓣小组讨论精选",
@@ -29,6 +29,8 @@ ROUTE_LABELS = {
     "ngabbs": "NGA热帖",
     "zhihu": "知乎热榜",
     "toutiao": "今日头条热榜",
+    "bilibili": "B站热搜",
+    "douyin": "抖音热搜",
 }
 
 

@@ -11,9 +11,9 @@ def test_run_profile_module_exists_and_validates_two_article_daily_contract():
     profile = get_run_profile("two_article_daily")
     assert profile.article_count == 2
     assert profile.slot_labels == ("A", "B")
-    # 2026-09-16 controller ruling：字数要求允许 ±100 误差，下限 1000→900，
-    # 上限 2700→2800；篇幅以素材为准。
-    assert profile.min_cjk_chars == 900
+    # 2026-09-23 controller ruling（取代 2026-09-16 的下限口径）：1000 字出头的
+    # 成稿被判单薄，下限 900→1500（= 编辑目标下限），上限维持 2800。
+    assert profile.min_cjk_chars == 1500
     assert profile.max_cjk_chars == 2800
     batch = {
         "run_profile": "two_article_daily",
@@ -58,7 +58,7 @@ def test_three_article_daily_profile_matches_daily_gates():
     profile = get_run_profile("three_article_daily")
     assert profile.article_count == 3
     assert profile.slot_labels == ("A", "B", "C")
-    assert profile.min_cjk_chars == 900
+    assert profile.min_cjk_chars == 1500
     assert profile.max_cjk_chars == 2800
 
     batch = {

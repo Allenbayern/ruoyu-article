@@ -43,6 +43,11 @@ scripts/*
 !scripts/codex_newrank_watch.py
 !scripts/codex_daily_article_runner.py
 !scripts/codex_review_audit.py
+# 2026-09-23：codex_review_audit → dsh_review_audit 改名后，实现搬到 dsh_ 名下，
+# codex_ 只剩兼容薄壳。tests/test_codex_linux_runners.py 里被跟踪的三个审计测试
+# 导入的是 scripts.dsh_review_audit；这个新名字不进白名单时，干净检出会因
+# ModuleNotFoundError 直接失败（实测：干净克隆多出 3 个回归）。与 codex_ 条目对称。
+!scripts/dsh_review_audit.py
 !scripts/codex_skill_inventory.py
 !scripts/codex_viral_library_index.py
 !scripts/run_real_daily_005.py

@@ -32,6 +32,34 @@ class PrewriteValidationError(ValueError):
     """Raised when pre-write constraints are not satisfied."""
 
 
+# ---------------------------------------------------------------------------
+# killer_stance / sensory_anchors（2026-09-23 controller 指令落地）
+#
+# 两条都是"把复盘结论变成门禁"的落地件，不是新流程：
+# 1. killer_stance：选题卡必须写明可被否证的立场；"两边都有道理"直接退回，
+#    不让写作者拿着作品名自由发挥（周也篇"不知所云"的根因）。
+# 2. sensory_anchors：禁忌/人物题材的 evidence pack 必须声明具象物理锚点，
+#    且每个锚点都要在正文里真的出现 —— 与项目既有的"账本↔正文同步"纪律
+#    同源（declared but not written = ledger-body divergence）。
+# ---------------------------------------------------------------------------
+
+KILLER_STANCE_MIN_CJK = 12
+
+_EQUIVOCAL_STANCE_PATTERNS: tuple[tuple[str, str, str], ...] = (
+    (r"两边(?:都)?有(?:各自的)?道理|双方都有道理", "both_sides", "和稀泥：两边都有道理"),
+    (r"见仁见智|仁者见仁", "subjective", "和稀泥：见仁见智"),
+    (r"各有各的", "each_own", "和稀泥：各有各的…"),
+    (r"两面性|双刃剑", "two_sided", "和稀泥：两面性/双刃剑"),
+    (r"既[^。]{1,20}又[^。]{1,20}", "both_and", "和稀泥：既…又…式并列"),
+    (r"探讨|讨论(?:一下)?(?:其|这)?(?:背后)?的", "explore_only", "只有探讨没有结论：'探讨…背后的'"),
+    (r"情有可原|不能全怪|不可全盘否定", "excuse", "和稀泥：免责式措辞"),
+)
+
+# 证据包声明的感官锚点下限：低于此数视为"只有抽象评述，没有可感知画面"。
+SENSORY_ANCHOR_MIN_DECLARED = 3
+SENSORY_ANCHOR_MAX_TEXT_CJK = 40
+
+
 def _now_utc() -> datetime:
     return datetime.now(UTC)
 
@@ -72,7 +100,7 @@ def validate_candidate_pool(pool: dict[str, Any]) -> list[str]:
 
     required_candidate_fields = (
         "candidate_id", "work", "core_person_or_event", "primary_atom",
-        "reader_intent", "angle", "ending_destination",
+        "reader_intent", "angle", "killer_stance", "ending_destination",
         "content_map", "event_cluster_id", "reader_question",
         "event_time", "observed_at", "freshness_window", "current_trigger",
         "content_value_scores", "source_roles", "evidence_atom_ids",
@@ -118,6 +146,24 @@ def validate_candidate_pool(pool: dict[str, Any]) -> list[str]:
                 errors.append(f"candidate_{cid}_invalid_{field}")
             elif isinstance(value, str) and not value.strip():
                 errors.append(f"candidate_{cid}_missing_{field}")
+
+        # killer_stance（2026-09-23 controller 指令落地）：选题必须携带一个
+        # 可被否证的锋利立场 —— 靶子是谁、反差是什么、给读者什么结论。
+        # 只有"写某某"的作品名不构成立场，和稀泥式并列一票否决（周也篇
+        # 前两版"不知所云"的根因就是立项时没定立场，写作者只好两边讨好）。
+        stance = candidate.get("killer_stance")
+        if not isinstance(stance, str) or not stance.strip():
+            errors.append(f"candidate_{cid}_missing_killer_stance")
+        else:
+            stance_text = stance.strip()
+            stance_cjk = len(re.findall(r"[\u4e00-\u9fff]", stance_text))
+            if stance_cjk < KILLER_STANCE_MIN_CJK:
+                errors.append(
+                    f"candidate_{cid}_killer_stance_too_thin_{stance_cjk}"
+                )
+            for pattern, label, _reason in _EQUIVOCAL_STANCE_PATTERNS:
+                if re.search(pattern, stance_text):
+                    errors.append(f"candidate_{cid}_killer_stance_equivocal_{label}")
 
         # title_skeleton is a discovery-only signal.  It is deliberately not
         # required and is never copied into the canonical slot contract or a
@@ -278,7 +324,7 @@ def validate_slot_decisions(
 
 _CANONICAL_SLOT_FIELDS = (
     "candidate_id", "work", "primary_atom", "reader_intent", "angle",
-    "content_map", "event_cluster_id", "reader_question",
+    "killer_stance", "content_map", "event_cluster_id", "reader_question",
 )
 def _normalized_slot_text(value: object) -> str | None:
     """Normalize only string values; never coerce untrusted structured input."""
@@ -742,6 +788,55 @@ def validate_claim_locators(
 # --- material sufficiency ---
 
 
+def validate_sensory_anchors(
+    evidence_pack: object,
+    markdown_text: str,
+    *,
+    article_id: str = "unknown",
+    minimum: int = SENSORY_ANCHOR_MIN_DECLARED,
+) -> list[str]:
+    """Verify declared sensory anchors actually appear in the drafted body.
+
+    2026-09-23 controller 指令落地（禁忌/人物题材）：evidence pack 用
+    ``sensory_anchors`` 声明本篇要写进正文的具象物理动作/物件（例：屏风暗室、
+    解开衣带、雨夜寺庙）。声明而不写＝账本与正文脱节，这里逐条在正文里找，
+    找不到就报错；声明数量低于 ``minimum`` 也报错，避免"只有抽象道德评述"。
+
+    ``requested`` 字段为兼容旧证据包：未声明 sensory_anchors 时不报错（历史
+    批次不追溯），但声明了就必须兑现。
+    """
+    if not isinstance(evidence_pack, dict):
+        return [f"article_{article_id}_evidence_pack_must_be_an_object"]
+
+    declared = evidence_pack.get("sensory_anchors")
+    if declared is None:
+        return []
+    if not isinstance(declared, list):
+        return [f"article_{article_id}_sensory_anchors_must_be_a_list"]
+
+    errors: list[str] = []
+    body = re.sub(r"\s+", "", markdown_text)
+    usable: list[str] = []
+    for index, anchor in enumerate(declared):
+        if not isinstance(anchor, str) or not anchor.strip():
+            errors.append(f"article_{article_id}_sensory_anchor_{index}_empty")
+            continue
+        text = anchor.strip()
+        if len(re.findall(r"[\u4e00-\u9fff]", text)) > SENSORY_ANCHOR_MAX_TEXT_CJK:
+            errors.append(f"article_{article_id}_sensory_anchor_{index}_too_long")
+            continue
+        usable.append(text)
+        if text not in body:
+            errors.append(
+                f"article_{article_id}_sensory_anchor_{index}_not_in_body"
+            )
+    if len(usable) < minimum:
+        errors.append(
+            f"article_{article_id}_sensory_anchors_below_minimum_{len(usable)}_{minimum}"
+        )
+    return errors
+
+
 def assess_material_sufficiency(
     *,
     evidence_atom_ids: list[str],
@@ -835,6 +930,17 @@ def validate_article_stage(
     markdown_text = md_path.read_text(encoding="utf-8")
     inventory_errors = validate_claim_inventory(article, markdown_text)
     errors.extend(f"article_{aid}_{error}" for error in inventory_errors)
+
+    # 感官锚点账本↔正文同步（2026-09-23）：证据包声明了就必须在正文出现。
+    pack_path = (run_root / article["evidence_pack_path"]).resolve()
+    try:
+        evidence_pack = json.loads(pack_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        evidence_pack = None
+    if evidence_pack is not None:
+        errors.extend(
+            validate_sensory_anchors(evidence_pack, markdown_text, article_id=aid)
+        )
     claim_ids = {
         cm.get("claim_id", "")
         for cm in (article.get("claim_mappings") or [])

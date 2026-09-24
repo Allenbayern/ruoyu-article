@@ -76,6 +76,37 @@ def test_codex_review_refuses_sealed_run_then_force_writes_with_ledger(tmp_path:
     assert all(entry["forced"] is True for entry in read_changelog(root))
 
 
+def _dsh_review_cli(root: Path, review_json: Path, output: Path, *extra: str):
+    return subprocess.run(
+        [sys.executable, "-m", "article_group.dsh_review",
+         "--mode", "l2", "--run-root", str(root), "--output", str(output),
+         "--request", "unit-test", "--review-json", str(review_json), *extra],
+        cwd=REPO_ROOT, capture_output=True, text=True, timeout=120,
+    )
+
+
+def test_dsh_review_refuses_sealed_run_then_force_writes_with_ledger(tmp_path: Path):
+    root = _sealed_run(tmp_path)
+    review_json = _l2_review_json(tmp_path)
+    output = root / "review" / "art-001" / "independent-review.json"
+
+    refused = _dsh_review_cli(root, review_json, output)
+    assert refused.returncode == 2
+    assert "封存" in refused.stderr and "force" in refused.stderr
+    assert "Traceback" not in refused.stderr
+    assert not output.exists() and not output.with_suffix(".log").exists()
+    assert read_changelog(root) == []
+
+    forced = _dsh_review_cli(root, review_json, output, "--force")
+    assert forced.returncode == 0, forced.stderr
+    record = json.loads(output.read_text(encoding="utf-8"))
+    assert record["review_source"] == "external_review_json" and record["decision"] == "approve"
+    assert output.with_suffix(".log").exists()
+    reasons = {entry["reason"] for entry in read_changelog(root)}
+    assert {"dsh_review:l2", "dsh_review:log"} <= reasons
+    assert all(entry["forced"] is True for entry in read_changelog(root))
+
+
 # ---- ② delivery：纯文本交付副本 ----
 
 

@@ -22,6 +22,8 @@ def valid_candidate_pool() -> dict:
                 "primary_atom": f"原子{index}",
                 "reader_intent": "好奇",
                 "angle": f"切口{index}",
+                # killer_stance（2026-09-23）：可被否证的锋利立场，不是作品名。
+                "killer_stance": f"靶子是行业行活第{index}种，反差是顶配阵容换来平庸成片，结论是观众不必再为情怀买单",
                 "content_map": f"内容地图{index}",
                 "event_cluster_id": f"event-{index:02d}",
                 "reader_question": f"读者问题{index}",
@@ -230,7 +232,7 @@ def test_two_article_daily_slot_contract_accepts_only_a_and_b():
 # --- Slice 3: canonical slot contract and deterministic semantic deduplication ---
 
 
-@pytest.mark.parametrize("field", ["content_map", "event_cluster_id", "reader_question"])
+@pytest.mark.parametrize("field", ["killer_stance", "content_map", "event_cluster_id", "reader_question"])
 def test_candidate_requires_new_canonical_slot_fields(field: str):
     from article_group.prewrite import validate_candidate_pool
 
@@ -315,6 +317,7 @@ def test_build_slot_contract_copies_locked_primary_candidate_fields():
     assert contract["slots"][0] == {
         "slot": "A", "candidate_id": "cand-01", "work": "作品1",
         "primary_atom": "原子1", "reader_intent": "好奇", "angle": "切口1",
+        "killer_stance": "靶子是行业行活第1种，反差是顶配阵容换来平庸成片，结论是观众不必再为情怀买单",
         "content_map": "内容地图1", "event_cluster_id": "event-01",
         "reader_question": "读者问题1",
     }
@@ -328,6 +331,7 @@ def test_build_slot_contract_copies_locked_primary_candidate_fields():
         "primary_atom",
         "reader_intent",
         "angle",
+        "killer_stance",
         "content_map",
         "event_cluster_id",
         "reader_question",
@@ -361,7 +365,7 @@ def test_slot_contract_duplicate_label_still_reports_earlier_lock_drift():
     assert "slot_A_candidate_mismatch_work" in errors
 
 
-@pytest.mark.parametrize("field", ["candidate_id", "work", "primary_atom", "reader_intent", "angle", "content_map", "event_cluster_id", "reader_question"])
+@pytest.mark.parametrize("field", ["candidate_id", "work", "primary_atom", "reader_intent", "angle", "killer_stance", "content_map", "event_cluster_id", "reader_question"])
 def test_slot_contract_rejects_artifact_record_drift(field: str):
     from article_group.prewrite import build_slot_contract, validate_slot_contract
 
@@ -425,3 +429,82 @@ def test_canonical_slot_validation_handles_non_string_fields_deterministically(f
 
     errors = validate_slot_contract(build_slot_contract(pool, valid_slot_decisions()))
     assert f"slot_A_invalid_{field}" in errors
+
+
+# --- killer_stance 与感官锚点（2026-09-23 controller 指令落地） -------------
+
+
+def test_killer_stance_must_be_a_falsifiable_stance_not_a_work_name():
+    from article_group.prewrite import validate_candidate_pool
+
+    pool = valid_candidate_pool()
+    pool["candidates"][0]["killer_stance"] = "写周也"
+
+    errors = validate_candidate_pool(pool)
+    assert "candidate_cand-01_killer_stance_too_thin_3" in errors
+
+
+@pytest.mark.parametrize(
+    "stance",
+    [
+        "这件事两边都有道理，观众自有判断",
+        "对于这部剧的评价见仁见智，各有各的立场",
+        "这是一把双刃剑，需要辩证看待",
+        "既要肯定演员的努力，又要指出剧作的不足",
+        "本篇探讨这场争议背后的行业逻辑",
+    ],
+)
+def test_equivocal_killer_stance_is_rejected_at_selection_time(stance: str):
+    """和稀泥式立场一票否决：立项阶段就退回，不让写作者两头讨好。"""
+    from article_group.prewrite import validate_candidate_pool
+
+    pool = valid_candidate_pool()
+    pool["candidates"][0]["killer_stance"] = stance
+
+    errors = validate_candidate_pool(pool)
+    assert any(
+        error.startswith("candidate_cand-01_killer_stance_equivocal_")
+        for error in errors
+    ), errors
+
+
+def test_killer_stance_flows_into_the_locked_slot_contract():
+    from article_group.prewrite import build_slot_contract, validate_slot_contract
+
+    pool = valid_candidate_pool()
+    decisions = valid_slot_decisions()
+    contract = build_slot_contract(pool, decisions)
+
+    assert contract["slots"][0]["killer_stance"] == pool["candidates"][0]["killer_stance"]
+    contract["slots"][0]["killer_stance"] = "改成和稀泥"
+    assert "slot_A_candidate_mismatch_killer_stance" in validate_slot_contract(
+        contract, pool, decisions
+    )
+
+
+def test_sensory_anchors_declared_in_the_evidence_pack_must_reach_the_body():
+    from article_group.prewrite import validate_sensory_anchors
+
+    pack = {"sensory_anchors": ["屏风暗室", "解开衣带", "雨夜寺庙"]}
+    body = "在屏风暗室里达成了赌约，寺庙的偶遇之后，她终于解开衣带。"
+
+    assert validate_sensory_anchors(pack, body, article_id="art-001") == [
+        "article_art-001_sensory_anchor_2_not_in_body"
+    ]
+
+
+def test_evidence_pack_without_declared_anchors_stays_backward_compatible():
+    from article_group.prewrite import validate_sensory_anchors
+
+    assert validate_sensory_anchors({}, "任何正文", article_id="art-001") == []
+    assert validate_sensory_anchors(None, "任何正文", article_id="art-001") == [
+        "article_art-001_evidence_pack_must_be_an_object"
+    ]
+
+
+def test_declaring_too_few_sensory_anchors_is_an_error():
+    from article_group.prewrite import validate_sensory_anchors
+
+    pack = {"sensory_anchors": ["屏风暗室"]}
+    errors = validate_sensory_anchors(pack, "屏风暗室", article_id="art-002")
+    assert "article_art-002_sensory_anchors_below_minimum_1_3" in errors

@@ -6,15 +6,25 @@ from dataclasses import dataclass
 from typing import Any
 
 
-# The editorial target remains 1500–2200 Chinese characters.  The production
-# policy allows elasticity on either side so a complete article is not padded
-# merely to hit the target band.  2026-09-16 controller ruling: 字数要求允许
-# ±100 误差（下限 1000→900，上限 2700→2800），篇幅以素材为准。
+# The editorial target remains 1500–2200 Chinese characters.
+#
+# 2026-09-16 controller ruling（历史）：字数要求允许 ±100 误差（下限 1000→900，
+# 上限 2700→2800），篇幅以素材为准。
+#
+# 2026-09-23 controller ruling（现行，取代上一条的下限口径）：1000 字出头的
+# 成稿在 taboo-topics-001 被连续判为"单薄、不够阅读性"，controller 明确要求
+# "增加些字数和阅读性"。下限由 900 提升到 1500（= 编辑目标下限），上限维持
+# 2800。反灌水原则不变：扩写必须来自横向维度（历史对照、同侪反差、行业机制、
+# 一手材料），不是同义反复凑字；素材确实撑不到 1500 字时，由 run profile 或
+# controller 显式放宽，而不是让门禁沉默放行（`RunProfile` 的两个字段即可覆盖）。
 TARGET_MIN_CJK_CHARS = 1500
 TARGET_MAX_CJK_CHARS = 2200
-CHAR_COUNT_FLEX_MARGIN = 600
-MIN_CJK_CHARS = TARGET_MIN_CJK_CHARS - CHAR_COUNT_FLEX_MARGIN
-MAX_CJK_CHARS = TARGET_MAX_CJK_CHARS + CHAR_COUNT_FLEX_MARGIN
+# 弹性只保留在上限侧：下限弹性会让"薄稿"重新溜过门禁。
+LOW_FLEX_MARGIN = 0
+HIGH_FLEX_MARGIN = 600
+CHAR_COUNT_FLEX_MARGIN = HIGH_FLEX_MARGIN  # 兼容既有引用（历史上是双侧弹性）
+MIN_CJK_CHARS = TARGET_MIN_CJK_CHARS + LOW_FLEX_MARGIN
+MAX_CJK_CHARS = TARGET_MAX_CJK_CHARS + HIGH_FLEX_MARGIN
 
 
 @dataclass(frozen=True)

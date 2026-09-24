@@ -194,6 +194,91 @@ _UNSOURCED_CLAIM: list[tuple[str, str, str]] = [
      "claim:zero-modifier", "警告：'零…'修饰断言（'零大规模路演'类）——单源不支撑的修饰性断言宁可删"),
 ]
 
+# 5c) 公关和稀泥腔 — equivocal "both sides have a point" prose.
+#     2026-09-23 controller verdict on the 周也 draft: "不知所云" —— 两版初稿
+#     都在替剧粉解释前情、替剧方找补配音，把影评写成了剧方公关通稿。
+#     Redline is NOT balance itself (a piece may report both camps), it is the
+#     UNRESOLVED non-stance: the writer adopts the defender's framing as their
+#     own conclusion. Severity: error — a piece with no side has no reader.
+_EQUIVOCAL_PR_TONE: list[tuple[str, str, str]] = [
+    (r"(?:两边|双方|两种说法)(?:都)?(?:有道理|有各自的道理|不无道理)", "stance:两边都有道理", "和稀泥：'两边都有道理'等于没有立场（读者站不了队）"),
+    (r"谁也说服不了谁", "stance:谁也说服不了谁", "和稀泥：'谁也说服不了谁'把结论让给了争论本身"),
+    (r"情有可原", "stance:情有可原", "和稀泥：'情有可原'式免责，须给出可证伪的判断"),
+    (r"(?:也|或许|也许)不能(?:全|都)?怪", "stance:不能全怪", "和稀泥：'也不能全怪…'式卸责，须落到具体责任与证据"),
+    (r"各有各的(?:道理|立场|难处)", "stance:各有各的", "和稀泥：'各有各的…'式并列，须选边并给依据"),
+    (r"不可全盘否定", "stance:不可全盘否定", "和稀泥：'不可全盘否定'式平衡句，信息量为零"),
+    (r"仁者见仁|见仁见智", "stance:见仁见智", "和稀泥：'见仁见智'放弃判断"),
+    # 纯辩护换挡：把批评改写成"其实是在忍/其实符合人设"，却无一手证据支撑
+    (r"其实(?:并)?不(?:是|能)(?:演得)?(?:差|难看|不好)", "stance:其实不差", "和稀泥：'其实不差'式辩护换挡，须有可回读证据"),
+    (r"(?:是|属于)角色的(?:特定)?(?:需要|处境|设定)", "stance:角色需要辩护", "和稀泥：'是角色需要'式万能辩护句，须证明剧本确实如此要求"),
+]
+
+# 5d) 代言心理 — the writer narrates an unverified inner motive as fact.
+#     2026-09-23 L2 caught "周也试图通过咬牙切齿…拼命够到对方的气场" and
+#     "她最不想被人看到的那一面": motive claims with no first-hand quote.
+#     Severity: warning in the gate (machine cannot decide whether a ledger
+#     backs it), but the L2 checklist treats an unbacked motive as blocking.
+_MIND_READING: list[tuple[str, str, str]] = [
+    (r"(?:试图|想要|打算|企图)通过[^。！？]{0,24}?(?:来|去|以)[^。！？]{0,10}?"
+     r"(?:证明|够到|压过|挽回|掩饰|掩盖|讨好|说服)",
+     "motive:试图通过…来…", "代言心理：'试图通过…来…'是未经证实的动机推断，须有一手信源或改为外部动作描述"),
+    (r"(?:内心|心里|心底)(?:其实)?(?:想|渴望|害怕|明白|清楚|知道)的是",
+     "motive:心里想的是", "代言心理：'心里想的是…'替当事人陈述内心"),
+    (r"(?:她|他|他们|她们)(?:最|其实)?(?:不想|不愿|害怕)被人(?:看到|知道|发现)的",
+     "motive:不想被人看到的", "代言心理：'最不想被人看到的那一面'式动机揣测（daily-012 周也篇 minor 原句）"),
+    (r"(?:导演|编剧|主创)(?:心里|其实)?(?:想|要|希望)(?:表达|说|传达)的是",
+     "motive:主创想表达的是", "代言心理：替主创陈述创作意图，须有一手专访"),
+    (r"(?:故意|刻意)(?:演|做|安排|设计)成", "motive:故意演成", "代言心理：'故意演成…'须有一手证据（本人或主创说明）"),
+]
+
+# 5e) 引语风险 — long verbatim quotes attributed to netizens insiders.
+#     2026-09-23 L2 blocked a fabricated 网友 quote in double quotes. A quoted
+#     sentence is a first-hand speech act: without a ledger entry it is
+#     manufacturing evidence. Severity: warning (the ledger check is manual),
+#     but a quote with no readable source is a blocker at L2.
+_QUOTED_SPEECH_RISK: list[tuple[str, str, str]] = [
+    (r"(?:网友|观众|粉丝|路人|博主|业内人士|知情人士|工作人员)"
+     r"(?:们)?[^。！？]{0,20}?"
+     r"(?:直言不讳|直言|调侃|吐槽|评论|表示|写道|感叹|怒斥|说|称)"
+     r"[^。！？]{0,4}?[：:]\s*[“\"][^”\"]{12,}[”\"]",
+     "quote:长引语需账本", "引语风险：长句直接引语按一手发言对待，须有可回读原文；否则改为间接转述"),
+]
+
+# 5f) 时代道具穿越 — props/weapons from the wrong era.
+#     2026-09-23 L2 blocker: 古装武侠剧角色被写成"中枪身亡". Only fires when
+#     the text carries a period-drama marker, so modern-setting articles that
+#     legitimately discuss firearms are not flagged.
+#
+#     范围刻意收窄（同日晚些时候的实测）：先前还包含"手机/微信/微博热搜/
+#     短视频平台"，但任何一部讲古装剧的文章都会在戏外讨论里提到热搜与切片，
+#     实测对已成稿文章连报两次假警。火器那条是真实事故（古装武侠角色中枪），
+#     保留；现代媒介那条证据价值低、噪声高，删除。
+_ANACHRONISM_MARKER = re.compile(
+    r"古装|武侠|朝代|唐朝|唐代|宋朝|宋代|明朝|明代|清朝|清代|朝鲜时代|"
+    r"后宫|朝堂|江湖|民国|戏说|架空"
+)
+_ANACHRONISM: list[tuple[str, str, str]] = [
+    (r"中枪|枪击|开枪|枪毙|子弹|手枪|步枪", "era:火器穿越", "时代道具风险：古装/年代题材出现现代火器（'中枪身亡'类），须核对原剧设定"),
+]
+
+# 5g) 抽象腔 — abstract moralizing with no concrete physical anchor.
+#     2026-09-23 lesson: writing 禁忌 with "婚姻契约/权力让渡/名分界定" reads
+#     like a sociology paper; the pieces that travel carry 磨平尖牙/撕画卷/
+#     回房才哭 level physical detail. Warning only: the machine cannot judge
+#     whether an abstract paragraph is doing real work.
+_ABSTRACT_NOUN = re.compile(
+    r"契约|让渡|界定|规制|机制|结构|逻辑|内核|范式|语义|主体性|权力关系|"
+    r"秩序|伦理|命题|维度|意识形态|话语|症候|结构性"
+)
+_SENSORY_ANCHOR = re.compile(
+    r"手(?:指|心|掌|腕)|眼睛|眼神|牙|唇|脖|肩|后背|膝盖|哭|喊|笑|"
+    r"撕|剪|砸|摔|掐|咬|推开|抱住|跪下|奔跑|翻墙|悬梁|"
+    r"血|伤口|泪|刀|剑|剪刀|画卷|屏风|灵位|衣带|和服|雪|雨夜|火|镜子|铃"
+)
+SENSORY_ANCHOR_MIN = 3
+ABSTRACT_NOUN_MAX = 6
+
+
 # 6) 中文数字锚点 — fact density / opening hook anchors in Chinese numerals
 #    (controlled-016 教训 A4: "三千六百五十万"/"八月六日"/"二〇二二年" 不锚定,
 #    初稿被迫改写阿拉伯数字，写作风格受工具限制).
@@ -219,6 +304,38 @@ _PIPELINE_RULES = _compile(_PIPELINE_MARKERS)
 _BOUNDARY_RULES = _compile(_COMMENT_AS_FACT)
 _UNSOURCED_RULES = _compile(_UNSOURCED_CLAIM)
 _SOURCE_CONTEXT_WARNING_RULES = _compile(_SOURCE_CONTEXT_WARNING)
+# 2026-09-23 落地：立场与代言心理红线（详见各表注释）
+_STANCE_RULES = _compile(_EQUIVOCAL_PR_TONE)
+_MOTIVE_RULES = _compile(_MIND_READING)
+_QUOTE_RULES = _compile(_QUOTED_SPEECH_RISK)
+_ANACHRONISM_RULES = _compile(_ANACHRONISM)
+
+# 归因豁免（2026-09-23 实测修正）：辩护/免责类句子如果是被明确归因给他人的
+# （"辩护的核心逻辑是…"/"剧粉认为…"/"支持者据此认为…"），那是报道对立面，
+# 不是作者自己的和稀泥——成稿的周也篇正是这样写的，先前会被误判为 error。
+#
+# 但"归因"本身不足以豁免（否则"替她说话的人理由也硬，她情有可原"这种把辩护
+# 当结论的句子会溜过去）：必须同时满足"归因在前 + 转折/反驳在后"，即
+# 报道对立面之后作者给出了自己的判断。这才是成稿的真实形态：
+#   "……辩护的核心逻辑是'这是角色的特定处境'。但这套辩词完全无法平息……"
+# 仅对"免责/辩护"一组生效；"谁也说服不了谁"这类作者自己的框架句不做豁免。
+_ATTRIBUTION_WINDOW = 40
+_ATTRIBUTION_MARKERS = re.compile(
+    r"辩护|辩解|自辩|剧粉|粉丝|支持者|拥护|有人|网友|观众|批评者|"
+    r"理由|说法|认为|声称|宣称|据称|反驳|回应"
+)
+_REBUTTAL_WINDOW = 40
+_REBUTTAL_MARKERS = re.compile(
+    r"但|然而|只是|不过|可这|却|其实不然|无法平息|并不|救不了|站不住|"
+    r"说不过去|经不起|仍然|依旧|反倒|恰恰"
+)
+_ATTRIBUTABLE_STANCE_LABELS = frozenset({
+    "stance:情有可原",
+    "stance:不能全怪",
+    "stance:不可全盘否定",
+    "stance:其实不差",
+    "stance:角色需要辩护",
+})
 
 
 class _TextParser(HTMLParser):
@@ -267,6 +384,44 @@ def _scan_rules(text: str, rules: list[tuple[re.Pattern, str, str]],
     return hits
 
 
+def _attributable_filter(
+    hits: list[dict[str, str]], text: str
+) -> list[dict[str, str]]:
+    """Drop defence-flavoured stance hits that are reported-then-rebutted.
+
+    A sentence like "辩护的核心逻辑是…是角色的特定处境。但这套辩词完全无法
+    平息普通观众的不满" reports the other camp's argument and then takes a
+    side; that is exactly the shape the approved draft uses, and it must not be
+    blocked. The exemption therefore requires BOTH an attribution marker before
+    the phrase AND a rebuttal marker after it. Hard equivocation ("谁也说服不了
+    谁", "两边都有道理") is never exempted: that is the writer's own framing
+    regardless of who is named nearby.
+    """
+    kept: list[dict[str, str]] = []
+    for hit in hits:
+        if hit["rule"] not in _ATTRIBUTABLE_STANCE_LABELS:
+            kept.append(hit)
+            continue
+        match_text = hit["match"]
+        # 同一短语可能先出现在别处，因此检查所有出现位置：任意一处"归因在前 +
+        # 反驳在后"即豁免。
+        start = 0
+        exempt = False
+        while True:
+            index = text.find(match_text, start)
+            if index < 0:
+                break
+            before = text[max(0, index - _ATTRIBUTION_WINDOW):index]
+            after = text[index + len(match_text):index + len(match_text) + _REBUTTAL_WINDOW]
+            if _ATTRIBUTION_MARKERS.search(before) and _REBUTTAL_MARKERS.search(after):
+                exempt = True
+                break
+            start = index + 1
+        if not exempt:
+            kept.append(hit)
+    return kept
+
+
 def scan_style(text: str) -> list[dict[str, str]]:
     """Scan visible article text; return all redline hits (triage signal).
 
@@ -280,9 +435,18 @@ def scan_style(text: str) -> list[dict[str, str]]:
     hits.extend(_scan_rules(text, _SOURCE_RULES, "error"))
     hits.extend(_scan_rules(text, _TONE_RULES, "error"))
     hits.extend(_scan_rules(text, _PIPELINE_RULES, "error"))
+    # 立场红线（2026-09-23）：和稀泥/公关辩护腔是 error —— 没有立场的稿子不进
+    # 复核，直接在本地打回（周也篇"不知所云"复盘）。免责/辩护类命中若被明确
+    # 归因给他人（报道对立面），则豁免：见 _ATTRIBUTABLE_STANCE_LABELS。
+    hits.extend(_attributable_filter(_scan_rules(text, _STANCE_RULES, "error"), text))
     hits.extend(_scan_rules(text, _BOUNDARY_RULES, "warning"))
     hits.extend(_scan_rules(text, _UNSOURCED_RULES, "warning"))
     hits.extend(_scan_rules(text, _SOURCE_CONTEXT_WARNING_RULES, "warning"))
+    # 代言心理 / 引语 / 时代道具（2026-09-23）：warning 级三查，L2 侧升级为阻断。
+    hits.extend(_scan_rules(text, _MOTIVE_RULES, "warning"))
+    hits.extend(_scan_rules(text, _QUOTE_RULES, "warning"))
+    if _ANACHRONISM_MARKER.search(text):
+        hits.extend(_scan_rules(text, _ANACHRONISM_RULES, "warning"))
     date_match = _DATE_CLAIM.search(text)
     if date_match:
         hits.append({
@@ -513,6 +677,64 @@ _CLOSING_ACCEPTABLE = re.compile(
 )
 
 
+# 字数深度底线（2026-09-23 controller 指令落地）：1000 字出头的稿子撑不起
+# 横向对比与多维论据，读起来单薄。硬下限由 run_profile 统一持有（1500），
+# 这里在稿件自测阶段就把低于底线的稿子标出来，让写作者在本地看到。
+DEPTH_FLOOR_CJK_CHARS = 1500
+
+
+def depth_floor_check(char_count: int) -> dict[str, Any]:
+    """Report whether an article reaches the depth floor (1500 CJK chars)."""
+    if char_count >= DEPTH_FLOOR_CJK_CHARS:
+        return {
+            "status": "ok",
+            "reason": f"{char_count} CJK 字（≥{DEPTH_FLOOR_CJK_CHARS} 深度底线）",
+            "char_count": char_count,
+            "floor": DEPTH_FLOOR_CJK_CHARS,
+        }
+    return {
+        "status": "warning",
+        "reason": (f"{char_count} CJK 字，低于 {DEPTH_FLOOR_CJK_CHARS} 字深度底线"
+                   "——需补横向维度（历史对照/同侪反差/行业机制），不得灌水凑字"),
+        "char_count": char_count,
+        "floor": DEPTH_FLOOR_CJK_CHARS,
+    }
+
+
+def sensory_anchor_check(paragraphs: list[str]) -> dict[str, Any]:
+    """Check for abstract moralizing with too few concrete physical anchors.
+
+    2026-09-23 lesson (taboo-topic rework): the first drafts of both articles
+    were written as "关于禁忌的道德哲学论文" — 婚姻契约/权力让渡/名分界定 —
+    and read as flat. The pieces that travelled carried physical detail
+    (磨平尖牙、剪碎画卷、回房才哭). This check counts distinct abstract
+    criticism nouns against distinct concrete physical anchors and warns when
+    abstraction dominates. Severity: warning — the machine cannot decide
+    whether an abstract paragraph is doing real work, so this is a triage
+    signal for the writer and the L2 reviewer, never a blocker.
+    """
+    if not paragraphs:
+        return {"status": "no_paragraphs"}
+    text = "".join(paragraphs)
+    abstract = sorted(set(_ABSTRACT_NOUN.findall(text)))
+    sensory = sorted(set(_SENSORY_ANCHOR.findall(text)))
+    if len(abstract) >= ABSTRACT_NOUN_MAX and len(sensory) < SENSORY_ANCHOR_MIN:
+        return {
+            "status": "warning",
+            "reason": (f"抽象评述词 {len(abstract)} 个、具象物理锚点仅 {len(sensory)} 个"
+                       f"(<{SENSORY_ANCHOR_MIN})——全篇偏道德/结构评述，缺可感知的动作与物件，"
+                       "读者抓不到画面"),
+            "abstract_nouns": abstract,
+            "sensory_anchors": sensory,
+        }
+    return {
+        "status": "ok",
+        "reason": f"具象物理锚点 {len(sensory)} 个，抽象评述词 {len(abstract)} 个",
+        "abstract_nouns": abstract,
+        "sensory_anchors": sensory,
+    }
+
+
 def closing_interaction_check(paragraphs: list[str]) -> dict[str, Any]:
     """Check the final paragraph for a reader-facing interaction question (⑦).
 
@@ -600,6 +822,9 @@ def validate_batch_style(html_text: str) -> dict[str, Any]:
             "opening_hook": hook,
             "title_gap": title_gap_check(title),
             "fact_density": fact_density_check(paras),
+            "sensory_anchor": sensory_anchor_check(paras),
+            "depth_floor": depth_floor_check(
+                len(re.findall(r"[\u3400-\u4dbf\u4e00-\u9fff]", full))),
             "closing_interaction": closing_interaction_check(paras),
             "hook_declaration": hook_declaration_check(
                 hook_match.group(1) if hook_match else "", full),
@@ -707,16 +932,19 @@ def validate_markdown_text(markdown_text: str, *, hook: str = "") -> dict[str, A
     thin = thin_section_check(_markdown_sections(markdown_text))
     closing = closing_interaction_check(paragraphs)
     hook_result = hook_declaration_check(declared_hook, full)
+    char_count = len(re.findall(r"[\u3400-\u4dbf\u4e00-\u9fff]", full))
     article = {
         "index": 1,
         "title": title,
-        "char_count": len(re.findall(r"[\u3400-\u4dbf\u4e00-\u9fff]", full)),
+        "char_count": char_count,
         "hits": hits,
         "hit_count": len(hits),
         "error_count": sum(1 for hit in hits if hit["severity"] == "error"),
         "opening_hook": hook,
         "title_gap": title_result,
         "fact_density": density,
+        "sensory_anchor": sensory_anchor_check(paragraphs),
+        "depth_floor": depth_floor_check(char_count),
         "thin_section": thin,
         "closing_interaction": closing,
         "hook_declaration": hook_result,

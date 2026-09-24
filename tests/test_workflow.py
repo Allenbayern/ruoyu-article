@@ -423,7 +423,8 @@ def test_markdown_character_count_accepts_the_flexible_target_band(tmp_path: Pat
     batch = valid_batch()
     materialize_artifacts(batch, tmp_path)
     markdown = tmp_path / batch["articles"][0]["markdown_path"]
-    markdown.write_text("正文中的可验证主张" + "文" * 1490, encoding="utf-8")
+    # 2026-09-23 controller ruling：下限 900→1500；这里取 1500 边界首个合法值。
+    markdown.write_text("正文中的可验证主张" + "文" * 1491, encoding="utf-8")
 
     assert validate_batch(batch, tmp_path) == []
 
