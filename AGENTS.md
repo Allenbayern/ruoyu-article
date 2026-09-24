@@ -133,6 +133,31 @@ Full write-up: `docs/codex/editorial-redlines-2026-09-23.md`.
   (4) balancing-only pieces are `needs_changes`; (5) declared anchors/numbers must be visible
   in the body, and an abstract-only treatment is `needs_changes`.
 
+### Where the suite may be run (repo-operational, 2026-09-23)
+
+- **The full suite is an in-place (working-tree) suite, not a clean-clone suite.** Measured on
+  the 2026-09-23 commit: in-place `1938 passed / 15 skipped`; the same commit checked out fresh
+  via `git worktree` gives `74 failed / 1719 passed` — and its parent commit gives the same 74,
+  so the gap predates that commit.
+- Root cause is one systemic one, not a bug: this repo *deliberately* keeps a lot of working
+  material out of Git (`.gitignore`: `runs/`, `reviews/`, `briefs/`, most of `scripts/`,
+  `docs/*` except allowlisted files). Tests that read real historical run artifacts
+  (`runs/2026-08-08/controlled-016`, `runs/2026-09-07/controlled-002`, `runs/2026-08-16/controlled-0*`),
+  the v2 plan documents (`docs/plans/ruoyu-production-v2/…`), or untracked scripts therefore
+  cannot pass in a clone. Affected modules: `test_v2_contract`, `test_run_preflight`,
+  `test_controller_context`, `test_article_group_v4_cli`, `test_v4_evidence_graph`,
+  `test_final_review`, `test_editorial_review`, `test_runs_write_coverage`.
+- **Judge test results by the in-place tree.** A red clone is expected and is not a regression
+  signal; use the parent-commit A/B (same failure set ⇒ no new regression) before blaming a change.
+- The repo's existing convention for new tests that need such assets is a local
+  `pytest.mark.skipif(not <asset>.exists(), reason="runs/ 是本地审计目录（gitignore）…")`
+  — see `tests/test_run_gates.py` (`needs_daily_005`). Prefer that over a central auto-skip:
+  a collection-wide skip keyed on directory existence would turn a genuinely deleted asset into
+  a silent green run.
+- **Not fixed on purpose** (2026-09-23): making clones green means either committing assets the
+  user chose to keep untracked, or adding skips that can mask real breakage. Both are policy
+  decisions for the controller, not agent calls.
+
 ### Content gates and incremental review (repo-operational, 2026-09-18)
 
 - **Reader-facing assertions must be backed by the ledger, and this now blocks.**
@@ -237,6 +262,11 @@ not a guaranteed result.
 - **跨批次唯一合法继承（仅限元数据与系统层，绝不渗透至内容）**：
   1. **经验总结与流程优化**：每次跑完，仅在 `RUN-RECORD.md`、`STEP-LOG.md` 或经验手册中沉淀工程与写作经验（门禁排布、断言覆盖、反 AI 腔调优、写作节奏等），用于优化下一次跑批的 pipeline 和模型提示词。
   2. **选题与人物去重台账**：每次跑完，记录已写过的作品名、核心人物/实体、事件簇（`event_cluster_id`），纳入跨批查重历史库（`portfolio_gate` 跨批查重）。后续批次严格去重，坚决防止人物重复与选题撞车。
+
+### 文章预览与交付规范（controller 2026-09-24 定）
+
+- **无外部桌面约束**：执行主机为 headless Linux，无可用桌面环境，无法通过外部程序打开文件或文件夹。
+- **侧边栏预览交付**：所有文章交付物与预览页，交付时一律在回复中提供可直接点击的 Markdown 链接（例如 `[文章标题](runs/.../delivery/article.md)`），在 DSH 侧边栏中直接点击预览，不再依赖或提示外部桌面程序。
 
 ## Daily topic selection (controller decision 2026-09-21)
 
