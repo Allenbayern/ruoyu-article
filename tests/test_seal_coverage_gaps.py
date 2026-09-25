@@ -1070,3 +1070,109 @@ def test_consecutive_anchors_replicate_even_when_the_ledger_default_branch_is_no
     listed = subprocess.run(["git", "-C", str(remote), "ls-tree", "-r", "--name-only", "main"],
                             capture_output=True, text=True, check=True).stdout
     assert listed.count(".anchor.json") == 2, listed
+
+
+# ── ⑯ 第六轮复核的 3 条 minor：远端 URL、分叉不丢提交、以及那条已知一步滞后 ──────
+
+
+def test_a_stale_work_tree_remote_follows_the_configured_ledger(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """换了配置里的离机账本后，必须真的推**新**账本——清单的 `remote` 不许谎报。
+
+    第六轮复核 minor 3（pre-existing，`940a121` 上同样复现）：复用工作副本时从不校验
+    `origin` 指向。改 `RUOYU_SEAL_ANCHOR_PUSH` 后仍 fetch/push **旧**账本，而清单的
+    `anchor.remote` 一律写新 URL —— 新账本一个 ref 都没有，信清单去新账本报案的人找不到锚点。
+    这条钉住"实际推送目标 == 清单记录的 remote"。
+    """
+    ledger_a = tmp_path / "ledger-a.git"
+    ledger_b = tmp_path / "ledger-b.git"
+    for path in (ledger_a, ledger_b):
+        subprocess.run(["git", "init", "--bare", "-b", "main", str(path)],
+                       check=True, capture_output=True)
+
+    monkeypatch.setenv(run_seal.ANCHOR_PUSH_ENV, str(ledger_a))
+    first = _sealed_run(tmp_path, name="daily-961")
+    assert run_seal.load_manifest(first)["anchor"]["replication"] == "pushed"
+
+    # 换账本，但**不删**工作副本（这正是操作者最容易漏的一步）
+    monkeypatch.setenv(run_seal.ANCHOR_PUSH_ENV, str(ledger_b))
+    second = _sealed_run(tmp_path, name="daily-962")
+    block = run_seal.load_manifest(second)["anchor"]
+    assert block["replication"] == "pushed", block
+    assert block["remote"] == str(ledger_b), block
+
+    def anchors_in(ledger: Path) -> set[str]:
+        listed = subprocess.run(["git", "-C", str(ledger), "ls-tree", "-r", "--name-only", "main"],
+                                capture_output=True, text=True)
+        if listed.returncode != 0:
+            return set()
+        return {line.split("/")[-1] for line in listed.stdout.split() if line.endswith(".anchor.json")}
+
+    # 事实与清单一致：**新**账本上有两条（换账本会把旧历史一并带过去），旧账本仍是它那一条
+    assert anchors_in(ledger_b) == {
+        run_seal.anchor_file_for(first).name, run_seal.anchor_file_for(second).name}
+    assert anchors_in(ledger_a) == {run_seal.anchor_file_for(first).name}
+
+
+def test_a_divergent_ledger_still_replicates_the_local_only_anchor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """账本被别处推进过（分叉）时，上一次推送失败的锚点必须**补推上去**、不许静默丢掉。
+
+    第六轮复核 minor 1：原 `else` 分支 `checkout -B main origin/main` 会把本地那条已 commit
+    未推送的锚点硬重置掉，git 还连带删掉工作副本里待推送的锚点文件——那条锚点永不再推，
+    只有本机锚点目录里还留一份。现在改成 rebase 到远端之上再一起推。
+
+    同时钉住第六轮复核 minor 2 记的**已知一步滞后**（已写进 `write_anchor` 的 docstring）：
+    补推成功后，那条**历史 run** 的清单仍写 `replication=failed`（低报，不是假 intact），
+    它的离机副本内容是"推送当时态"。
+    """
+    remote = _bare_ledger(tmp_path)
+    monkeypatch.setenv(run_seal.ANCHOR_PUSH_ENV, str(remote))
+    first = _sealed_run(tmp_path, name="daily-963")
+    assert run_seal.load_manifest(first)["anchor"]["replication"] == "pushed"
+
+    # 让推送失败（远端 pre-receive 拒绝）：fetch/对齐都成功，于是本地留下已 commit 的锚点
+    hook = remote / "hooks" / "pre-receive"
+    hook.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    hook.chmod(0o755)
+    failed = _sealed_run(tmp_path, name="daily-964")
+    failed_block = run_seal.load_manifest(failed)["anchor"]
+    assert failed_block["replication"] == "failed", failed_block
+
+    work = run_seal._anchor_dir() / ".seal-ledger-work"
+    local_before = subprocess.run(["git", "-C", str(work), "log", "--format=%s", "main"],
+                                  capture_output=True, text=True, check=True).stdout.splitlines()
+    assert any("daily-964" in line for line in local_before), local_before
+
+    # 外部写手推进账本（模拟"另一个 writer"或人工 push）：与本地 main 分叉
+    hook.unlink()
+    other = tmp_path / "other-writer"
+    subprocess.run(["git", "clone", str(remote), str(other)], check=True, capture_output=True)
+    (other / "anchors" / "external.anchor.json").write_text("{}\n", encoding="utf-8")
+    for args in (["add", "--", "anchors/external.anchor.json"],
+                 ["-c", "user.name=other", "-c", "user.email=other@x", "commit", "-m", "external writer"]):
+        subprocess.run(["git", "-C", str(other), *args], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(other), "push", "origin", "main:main"], check=True, capture_output=True)
+
+    third = _sealed_run(tmp_path, name="daily-965")
+    third_block = run_seal.load_manifest(third)["anchor"]
+    assert third_block["replication"] == "pushed", third_block
+
+    listed = subprocess.run(["git", "-C", str(remote), "ls-tree", "-r", "--name-only", "main"],
+                            capture_output=True, text=True, check=True).stdout
+    assert run_seal.anchor_file_for(failed).name in listed, listed   # 补推成功，没被丢掉
+    assert run_seal.anchor_file_for(third).name in listed, listed
+    assert "anchors/external.anchor.json" in listed, listed          # 外部写手的提交也还在
+    remote_log = subprocess.run(["git", "-C", str(remote), "log", "--format=%s", "main"],
+                                capture_output=True, text=True, check=True).stdout
+    assert "external writer" in remote_log
+    assert "daily-964" in remote_log, remote_log                     # 本地提交 rebase 后推上去了
+
+    # minor 2 的已知一步滞后：那条历史 run 的**清单**仍写 failed（低报），账本里却已经有它
+    assert run_seal.load_manifest(failed)["anchor"]["replication"] == "failed"
+    shown = subprocess.run(["git", "-C", str(remote), "show",
+                            f"main:anchors/{run_seal.anchor_file_for(failed).name}"],
+                           capture_output=True, text=True, check=True).stdout
+    assert json.loads(shown)["manifest_digest"] == failed_block["manifest_digest"]

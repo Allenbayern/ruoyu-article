@@ -385,7 +385,7 @@ def _anchor_remote() -> str:
     return ""
 
 
-def _align_ledger_worktree(work: Path, *, env: Mapping[str, str]) -> tuple[bool, str]:
+def _align_ledger_worktree(work: Path, *, remote: str, env: Mapping[str, str]) -> tuple[bool, str]:
     """把工作副本显式对齐到离机账本的 `main` 分支；返回 `(ok, detail)`。
 
     **为什么不能靠 `git pull --ff-only`**（2026-09-25 实跑击中，见 RUN-RECORD §25.3）：
@@ -397,13 +397,25 @@ def _align_ledger_worktree(work: Path, *, env: Mapping[str, str]) -> tuple[bool,
     but no such ref was fetched.` → `replication=failed`。
     后果不是安全假象（如实记了 failed），但**第一条之后的所有锚点都会退化成仅本机快照**。
 
-    所以这里不用 pull，改成三步确定性动作：`fetch` → 判断远端有没有账本分支 → 显式
-    `checkout -B main <ref>`。分支名再也不是"clone 那一刻远端碰巧指向谁"的函数。
+    所以这里不用 pull，改成确定性动作：`set-url` → `fetch` → 判断远端有没有账本分支 →
+    显式 `checkout -B main <ref>`。分支名再也不是"clone 那一刻远端碰巧指向谁"的函数。
 
     **fetch 必须带显式 refspec**：`git clone` 一个**空**仓库时，git 不会配置
-    `remote.origin.fetch`（实测为空），于是裸 `git fetch origin` 退化成"取 HEAD"，在远端
+    `remote.origin.fetch`（实测为空），于是裸 `git fetch origin` 会退化成"取 HEAD"，在远端
     HEAD 指向不存在分支时报 `fatal: couldn't find remote ref HEAD`。写成
     `+refs/heads/*:refs/remotes/origin/*` 就与 clone 时仓库是不是空的无关。
+
+    **还校验并改写 origin**（第六轮复核 minor 3，pre-existing）：此前只对齐分支，不校验工作
+    副本的远端指向——操作者改了 `RUOYU_SEAL_ANCHOR_PUSH`/配置文件后，后续封存仍推**旧**账本，
+    而清单的 `anchor.remote` 一律写新 URL，新账本一个 ref 都没有（机器可读层谎报推送目标）。
+    现在 fetch 与 push 两个 URL 都按**当前配置**改指，让"实际推送目标"与清单记录必然一致；
+    代价是**换账本时会把旧账本的历史一并带过去**——账本是 append-only 的锚点副本，带过去
+    比丢一条锚点好，这一点是刻意选择。
+
+    **分叉不丢本地提交**（第六轮复核 minor 1）：本地与远端分叉时**不再** `checkout -B origin/main`
+    硬重置（那会连工作副本里待推送的锚点文件一起被 git 删掉，那条锚点永不再推）；改成先把
+    本地独有的提交 `rebase` 到远端之上、再一起推。rebase 也不行（冲突）时**不**硬重置，如实
+    返回 failed，本地提交原样留着下次再试。
     """
     def git(*args: str) -> subprocess.CompletedProcess:
         return subprocess.run(
@@ -411,6 +423,15 @@ def _align_ledger_worktree(work: Path, *, env: Mapping[str, str]) -> tuple[bool,
             capture_output=True, text=True, timeout=30, env=dict(env),
         )
 
+    # ① 远端跟随配置（fetch 与 push 两个 URL 都改指，避免残留 pushurl 让推送目标与清单不一致）
+    for args in (("remote", "set-url", "origin", remote),
+                 ("remote", "set-url", "--push", "origin", remote)):
+        result = git(*args)
+        if result.returncode != 0:
+            # 工作副本可能根本没有 origin（缓存被手工破坏）：补一个再继续
+            added = git("remote", "add", "origin", remote)
+            if added.returncode != 0 and "already exists" not in (added.stderr + added.stdout):
+                return False, (result.stderr or result.stdout or "remote set-url failed")[-400:]
     fetch = git("fetch", "--prune", "origin", "+refs/heads/*:refs/remotes/origin/*")
     if fetch.returncode != 0:
         return False, (fetch.stderr or fetch.stdout or "fetch failed")[-400:]
@@ -429,8 +450,14 @@ def _align_ledger_worktree(work: Path, *, env: Mapping[str, str]) -> tuple[bool,
         # 还能跟着这次一起推上去，不必白白丢掉。
         aligned = git("checkout", "-B", LEDGER_BRANCH, "HEAD")
     else:
-        # 分叉（只可能来自账本被外部改写）：以远端为准，不把历史拧在一起
-        aligned = git("checkout", "-B", LEDGER_BRANCH, remote_ref)
+        # 分叉（远端被别处推进过，或换了账本）：把本地独有的提交 rebase 到远端之上，
+        # **不静默丢弃**。rebase 失败就如实 failed，本地提交原样保留。
+        rebased = git("rebase", remote_ref)
+        if rebased.returncode != 0:
+            git("rebase", "--abort")
+            return False, ("本地与账本分叉且 rebase 失败（本地待推送的提交未被丢弃，仍留在 "
+                           f"工作副本里）：" + (rebased.stderr or rebased.stdout)[-300:])
+        aligned = git("checkout", "-B", LEDGER_BRANCH, "HEAD")
     if aligned.returncode != 0:
         return False, (aligned.stderr or aligned.stdout or "checkout failed")[-400:]
     return True, ""
@@ -458,7 +485,7 @@ def _replicate_anchor(path: Path, *, ident: str) -> tuple[str, str]:
                 return "failed", (clone.stderr or clone.stdout or "clone failed")[-400:]
         # 复用工作副本时**不再** `git pull --ff-only`：那依赖 clone 时按远端 HEAD 定下的
         # upstream，远端默认分支不是 main 时第二条锚点必失败（见 `_align_ledger_worktree`）。
-        aligned, detail = _align_ledger_worktree(work, env=env)
+        aligned, detail = _align_ledger_worktree(work, remote=remote, env=env)
         if not aligned:
             return "failed", detail
         dest = work / "anchors" / path.name
@@ -494,6 +521,14 @@ def write_anchor(run_dir: str | Path, payload: Mapping[str, Any]) -> dict[str, A
       `replication=failed`（此前这里也返回 `anchor_unavailable`，于是清单说"锚点不可用"、
       而 `verify` 走"锚点文件在"的分支报 `intact`，机器可读层自相矛盾，人读行也丢掉了
       「仅本机快照」的警告——第三轮复核 major）。
+
+    **已知的一步滞后（第六轮复核 minor 2，如实写在文档里）**：`_replicate_anchor()` 在
+    "本地领先远端"那一支会把**上一次推送失败留下的锚点**跟着这次一起推上去。此时**那条历史
+    run 的清单与本机锚点文件不会被重算**——它仍写 `replication=failed` / `kind=local-snapshot`，
+    还会打出"只有本机快照、可被同 uid 改写掩盖"的警告与"unseal 重封"的 remedy；而离机账本里
+    其实已经有它的副本了（内容是**推送当时态**，即 `replication=pending`）。
+    这是**低报**（不比实际更安全，不会造成假 `intact`），但机器可读记录与账本事实不一致：
+    按清单办事的人会以为要重封。**要拿账本那份的权威状态，用 `--check-remote`，别只看清单。**
     """
     digest = _manifest_digest(payload)
     path = anchor_file_for(run_dir)
