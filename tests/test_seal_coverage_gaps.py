@@ -444,3 +444,69 @@ def test_every_non_pushed_replication_gets_the_local_snapshot_warning() -> None:
         "replication": "pushed", "remote": "ssh://x/y.git",
     })
     assert "已离机复制" in pushed and "仅本机快照" not in pushed, pushed
+
+
+# ── ⑨ `--unseal` CLI 及其护栏（第三轮复核 F9） ────────────────────────────────
+
+
+def test_unseal_cli_refuses_without_a_reason(tmp_path: Path) -> None:
+    root = _sealed_run(tmp_path, name="daily-984")
+    with pytest.raises(SystemExit) as exc:
+        run_seal.main(["--run-root", str(root), "--unseal", "--author", "owner"])
+    assert "必须给 --reason" in str(exc.value)
+    assert (root / run_seal.SEALED_NAME).is_file(), "被拒绝时不许动 SEALED"
+
+
+def test_unseal_cli_refuses_the_default_agent_identity(tmp_path: Path) -> None:
+    root = _sealed_run(tmp_path, name="daily-985")
+    with pytest.raises(SystemExit) as exc:
+        run_seal.main(["--run-root", str(root), "--unseal", "--reason", "要重封"])
+    assert "必须显式给 --author" in str(exc.value)
+    assert (root / run_seal.SEALED_NAME).is_file()
+
+
+def test_unseal_cli_refuses_an_unsealed_run(tmp_path: Path) -> None:
+    root = tmp_path / "daily-986"
+    (root / "delivery" / "art-001").mkdir(parents=True)
+    with pytest.raises(SystemExit) as exc:
+        run_seal.main(["--run-root", str(root), "--unseal",
+                       "--reason", "要重封", "--author", "owner"])
+    assert "不是已封存状态" in str(exc.value)
+
+
+def test_unseal_cli_leaves_a_trace_and_reopens_the_run(tmp_path: Path) -> None:
+    """成功路径：留痕文件在、变更日志有账、run 恢复可写。"""
+    from article_group.evidence_write import read_changelog
+    from article_group.run_state import is_sealed
+
+    root = _sealed_run(tmp_path, name="daily-987")
+    assert is_sealed(root)
+
+    code = run_seal.main(["--run-root", str(root), "--unseal",
+                          "--reason", "锚点写坏了，要重封", "--author", "owner"])
+
+    assert code == run_seal.EXIT_INTACT
+    assert not (root / run_seal.SEALED_NAME).exists(), "SEALED 应已改名"
+    revoked = list(root.glob(f"{run_seal.SEALED_NAME}.revoked.*"))
+    assert revoked, "必须留下改名后的留痕文件（不是删除）"
+    assert not is_sealed(root), "撤销后该 run 应恢复可写"
+
+    entries = [item for item in read_changelog(root) if "unseal" in str(item.get("reason", ""))]
+    assert entries, read_changelog(root)
+    assert entries[-1]["author"] == "owner"
+
+
+def test_the_remedy_prints_a_copy_pasteable_unseal_command(tmp_path: Path, monkeypatch) -> None:
+    """remedy 不能只说"unseal 再 reseal"——要给出能直接抄的命令（F9 的本意）。
+
+    要走到未锚定态：让锚点**写不进去**（封存时记 `anchor_unavailable`、磁盘上也没有锚点）。
+    """
+    monkeypatch.setattr(run_seal, "write_anchor",
+                        lambda *_a, **_k: {"status": "anchor_unavailable", "reason": "模拟写不进去"})
+    root = _sealed_run(tmp_path, name="daily-988")
+
+    report = run_seal.verify(root)
+    assert report["status"] == run_seal.STATUS_UNANCHORED, report
+    remedy = report["anchor"]["remedy"]
+    assert "--unseal" in remedy and "--reason" in remedy and "--author" in remedy, remedy
+    assert "python -m article_group.run_seal" in remedy, remedy

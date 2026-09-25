@@ -441,8 +441,10 @@ def write_anchor(run_dir: str | Path, payload: Mapping[str, Any]) -> dict[str, A
             # 不说"修好后重跑封存"：`seal()` 幂等（已有 SEALED 就 already_sealed），
             # 重跑既不重试复制、这条路在 verify 里也走不到（复核 minor）。
             "remedy": f"本机锚点已生效（清单已绑定到 run 之外）；离机副本没成。"
-                      f"修好 {ANCHOR_PUSH_ENV} 指向的仓库后，要补推只能 unseal 再 reseal"
-                      f"——重新封存不会重试这一步。",
+                      f"修好 {ANCHOR_PUSH_ENV} 指向的仓库后，要补推只能撤销封存再重封"
+                      f"——重新封存不会重试这一步。\n"
+                      f"    可执行命令：python -m article_group.run_seal --run-root <run> "
+                      f"--unseal --reason \"<为什么要重封>\" --author <你的身份>",
             "note": "只有本机快照：同 uid 的写手可以同时改写本机锚点与清单来掩盖篡改。",
         }
     note = "清单自身已锚到 run 之外"
@@ -1014,8 +1016,11 @@ def _unanchored_remedy(run_dir: str | Path) -> str:
     """
     return (f"本 run 的清单已存在但未锚定（锚点预期位置：{anchor_file_for(run_dir)}）。"
             "--backfill 不会重写已有清单（它只给\"封存时还没有清单\"的 run 补录，"
-            "这里会返回 already_present）；要拿到锚点必须 unseal 后重新 seal——"
-            "代价是失去封存的当时性。也可接受本状态：退出码 3 表示"
+            "这里会返回 already_present）；要拿到锚点必须撤销封存后重新 seal——"
+            "代价是失去封存的当时性。\n"
+            f"    可执行命令：python -m article_group.run_seal --run-root {run_dir} "
+            f"--unseal --reason \"<为什么要重封>\" --author <你的身份>\n"
+            "    改完用收尾流程重新 seal。也可接受本状态：退出码 3 表示"
             "\"文件与清单一致，但清单自身没被证明没被改写\"，交付时如实注明。")
 
 
@@ -1115,6 +1120,36 @@ def _describe_anchor(anchor: Mapping[str, Any]) -> str:
     return f"锚点：{status}"
 
 
+def _cli_unseal(args: argparse.Namespace) -> int:
+    """`--unseal` 的**护栏**（2026-09-25 第三轮复核 F9）。
+
+    背景：`verify` 打印的 remedy 说"要拿到锚点必须 unseal 再 reseal"，但 `unseal` 只有
+    Python 函数、没有 CLI——操作者照做会卡住，只能自己写 `python -c`（那样护栏全绕过）。
+
+    撤销封存是**削弱证据**的动作，所以这里不静默执行：必须给理由与身份、未封存时明确拒绝，
+    改名与记账交给 `run_state.unseal`（它已把 SEALED 改成留痕文件并写变更日志）。
+    """
+    from article_group.run_state import is_sealed, unseal
+
+    root = args.run_root
+    if not str(args.reason).strip():
+        raise SystemExit(
+            "拒绝撤销封存：必须给 --reason。撤销会留下 SEALED.revoked.* 与变更日志，"
+            "但**封存的当时性会失去**——理由要能被人读懂。")
+    if str(args.author).strip() in {"", "agent"}:
+        raise SystemExit(
+            "拒绝撤销封存：必须显式给 --author <身份>（不能用默认的 agent）——"
+            "撤销是一件要有人担责的动作。")
+    if not is_sealed(root):
+        raise SystemExit(f"拒绝撤销封存：{root} 当前不是已封存状态，无需撤销。")
+
+    result = unseal(root, reason=str(args.reason), identity=str(args.author))
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    print("已撤销封存：SEALED 改名留痕、变更日志已记账；该 run 现在可写。"
+          "改完请用收尾流程重新 seal（重封会写新的锚点）。", file=sys.stderr)
+    return EXIT_INTACT
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m article_group.run_seal",
@@ -1123,12 +1158,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--run-root", required=True, type=Path)
     parser.add_argument("--backfill", action="store_true",
                         help="给封存时还没有清单的老 run 补录（留痕；不假装能证明历史）")
+    parser.add_argument("--unseal", action="store_true",
+                        help="撤销封存以便修改（SEALED 改名留痕 + 写变更日志）。"
+                             "护栏：必须给 --reason 与显式的 --author <身份>，未封存时拒绝。"
+                             "改完用 close_out 重新收尾（会重新 seal）。")
     parser.add_argument("--author", default="agent")
     parser.add_argument("--reason", default="")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--check-remote", action="store_true",
                         help="额外对照离机锚点（会联网；verify 本身不联网）")
     args = parser.parse_args(argv)
+
+    if args.unseal:
+        return _cli_unseal(args)
 
     if args.check_remote:
         remote_report = check_remote_anchor(args.run_root)
