@@ -606,6 +606,19 @@ def _apply_l2_contract(
 
 
 def run_review(args: argparse.Namespace) -> int:
+    """记录一次复核（`--review-json`），或调用外部 CLI 去跑复核。
+
+    **该分支自 2026-09-16 起不可达，保留是为了失败时给出准确指引**
+    （2026-09-25 controller 裁决 = 保持现状，选项 A）。
+
+    下面"找不到 `codex` 可执行文件就失败"那一段，自 Codex CLI 归档停用（不在 `PATH`）
+    之后就走不到了。保留它的**唯一理由**是：操作者若忘了 `--review-json`，会看到
+    "pass --review-json to record a review produced by another agent harness" 这句
+    **准确的指引**，而不是一个无从下手的报错。
+
+    现行流程是「独立只读子代理产出复核 JSON → `--review-json` 记录」，不依赖任何外部 CLI。
+    这里明确写出"不可达"，是为了避免下一个人把它当活代码去维护或去"修"。
+    """
     external_review = getattr(args, "review_json", None)
     codex = None if external_review is not None else shutil.which("codex")
     if external_review is None and codex is None:

@@ -1,10 +1,11 @@
 # 决策备忘：遗留命名（原 codex 字样）的两件待裁决事项
 
-> 状态：**provisional（待 controller 裁决）**——这是提案，不是规则，也不是 Canonical。
-> 日期：2026-09-25
+> 状态：**已裁决（2026-09-25）**——controller 裁定如下，见 §六；§七 是据此**待排期**的执行清单。
+> 本文不再是"待裁决的提案"，但也不是 Canonical 规则：它记录的是一次裁决与其后续动作。
+> 日期：2026-09-25（裁决日）
 > 背景：`codex→dsh` 标识层改名已落地（提交 `7c9cc21`），边界与逐行分类见
 > `runs/2026-09-25/seal-anchor-bypass/RUN-RECORD.md` §11.5。剩下两件事**改的是行为或契约**，
-> 按纪律不擅自动，故列此备忘等你裁定。
+> 按纪律不擅自动，故列此备忘等裁定——现已裁定。
 
 ## 一、现状（已改什么、保留什么）
 
@@ -72,3 +73,48 @@ if external_review is None and codex is None:
 1. 待裁决 1：**A 保持现状 / B 删分支 / C 接会话模型**（建议 A）
 2. 待裁决 2：**C 只做零成本项 / B 立项排期迁移 / A 全保留**（建议 C 现在做 + B 排期）
 3. 若选 B：迁移期间是否需要**先冻结并行写作**（我建议需要，否则失配与并发改动难以区分）
+
+## 六、裁决（2026-09-25，controller）
+
+1. **待裁决 1 → A（保持现状）**，并要求在 docstring 注明：
+   「该分支自 2026-09-16 起不可达，保留是为了失败时给出准确指引」。
+   → 已落地：`article_group/dsh_review.py::run_review` 的 docstring。
+2. **待裁决 2 → C（现在只做零成本项）+ B 立项排期**
+   → 零成本项已落地（见下）；B 的执行清单见 §七，**尚未开始**。
+
+**本次实际改动的零成本项**：`.config/systemd/user/ruoyu-film-daily-dsh-article@.service`
+
+- `--output-root .../runs/codex-daily-article/%i` → `.../runs/dsh-daily-article/%i`
+  （全仓校验：该路径**只**出现在这个模板里，无任何代码按该名读写；`runs/codex-daily-article/`
+  目录**不存在、无内容**，所以没有任何历史产物会被落下）
+- 顺带把该 unit 自己的 `Description` 里的 `Codex` 改成 `dsh`（同一文件、同类零成本；已向
+  controller 明示）。
+
+## 七、待排期：B 迁移的执行清单（尚未开始）
+
+> 立此清单是为了**不忘记**，不是为了现在做。执行时**独占一轮**，按下列顺序（读端先兼容，
+> 写端后改），并且**迁移窗口内建议先冻结并行写作**（否则失配与并发改动难以区分）。
+
+范围（实测规模，详见 §三的表）：
+
+| 目标值 | 现状 | 落点规模 |
+|---|---|---|
+| `review_surface` | `"markdown_codex"` | 72 个既有 `batch.json` + 30 个代码/模板/夹具文件 |
+| `preview_mode` | `"local_codex"` | 同量级 |
+| L2 复核产物名 | `review/<aid>/codex-l2-review*.json` | **200 个文件、10 个 run** |
+| 各 `schema_version` | `codex-*-v1` 族 | 5 类（viral-library context/index/reader、skill-inventory、daily-article-consumer、review-audit-manifest） |
+| 复核契约版本 | `codex-review-contract-1.0` | 13 处断言/引用；AGENTS.md 拿它当"兼容形状"判据 |
+| 账本原因前缀 | `codex_review:l2` | 既有 `evidence-changelog.jsonl` 历史行 |
+| 消费者 manifest 名 | `codex-daily-article-run.json` | `scripts/dsh_daily_article_runner.py:40`（写端）+ `tests/test_dsh_linux_runners.py`（读端，5 处） |
+
+执行步骤（顺序不可颠倒）：
+
+1. **读端先兼容**：每处读端接受**新旧两个值**（新值为 `dsh-*`），并加测试钉住"旧值仍可读"。
+2. **写端改新值**：改 `CONSUMER_MANIFEST_NAME`、`schema_version` 写出值、`review_surface` 等。
+3. **历史产物**：**不重写**（改写历史产物会破坏"当时写的是什么"这一事实）。读端靠第 1 步的兼容
+   同时服务新旧。若确要重写，必须走 `evidence_write` 留底通道并逐 run 记账。
+4. **文档**：`docs/dsh/` 与项目 `AGENTS.md` 里的相关引用同步；本文档标记"已完成"。
+5. **独立复核一轮**（按本仓纪律：修复本身也要复核），对象仅限本次迁移 diff。
+
+**明确不做**：不改 `CODEX_HOME`/`CODEX_SKILLS_ROOT`/`--codex-skills-root`——它们指的是**已退役
+运行时**的目录，属历史专名，改了会指向不存在的东西并抹掉"这段为什么是死的"。
