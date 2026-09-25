@@ -1036,3 +1036,37 @@ def test_the_repro_script_never_pushes_to_the_configured_ledger(tmp_path: Path) 
     refs = subprocess.run(["git", "-C", str(remote), "for-each-ref"],
                           capture_output=True, text=True, check=True).stdout.strip()
     assert refs == "", f"复现脚本往配置里的离机账本推了东西：{refs}"
+
+
+# ── ⑮ 离机推送的分支对齐（2026-09-25 mac-backup scratch 账本上实跑击中） ─────────
+
+
+def test_consecutive_anchors_replicate_even_when_the_ledger_default_branch_is_not_main(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """同一远端**连续**封存两次都必须 `pushed` —— 账本默认分支不是 main 时也要成立。
+
+    2026-09-25 在 mac-backup 的 scratch 账本上实跑击中（RUN-RECORD §25.3）：
+    `_replicate_anchor()` 推 `HEAD:main`，而工作副本的 upstream 是 `git clone` 时按
+    **远端 HEAD** 定下的。scratch 仓库是 `git init --bare`（默认 `master`）建的，空仓库 clone
+    出的工作副本把 `master` 记成 merge ref；于是**第二条**锚点 `git pull --ff-only` 去找
+    `refs/heads/master`，逐字报
+    `Your configuration specifies to merge with the ref 'refs/heads/master' from the remote,
+    but no such ref was fetched.` → `replication=failed`。
+
+    危害不是安全假象（如实记 failed），而是**第一条之后的所有锚点都退化成仅本机快照**。
+    这条用例把"分支名不再取决于 clone 那一刻远端碰巧指向谁"钉住。
+    """
+    remote = tmp_path / "ledger.git"
+    subprocess.run(["git", "init", "--bare", "-b", "master", str(remote)],
+                   check=True, capture_output=True)
+    monkeypatch.setenv(run_seal.ANCHOR_PUSH_ENV, str(remote))
+
+    for index in (1, 2):
+        root = _sealed_run(tmp_path, name=f"daily-98{index}")
+        block = run_seal.load_manifest(root)["anchor"]
+        assert (block["status"], block["replication"]) == ("anchored", "pushed"), (index, block)
+
+    listed = subprocess.run(["git", "-C", str(remote), "ls-tree", "-r", "--name-only", "main"],
+                            capture_output=True, text=True, check=True).stdout
+    assert listed.count(".anchor.json") == 2, listed

@@ -98,6 +98,10 @@ DEFAULT_ANCHOR_DIR = "/home/allen/seal-anchors"
 ANCHOR_DIR_ENV = "RUOYU_SEAL_ANCHOR_DIR"
 ANCHOR_PUSH_ENV = "RUOYU_SEAL_ANCHOR_PUSH"
 DEFAULT_ANCHOR_REMOTE = "ssh://mac-backup/Users/Allen/Backups/seal-ledger.git"
+#: 离机账本的分支名。**写死**是为了不依赖 `git clone` 当时远端 HEAD 指向谁：
+#: 老 `git init --bare` 建出来的远端默认分支是 `master`，工作副本的 upstream 就会跟错，
+#: 第二条锚点的 `git pull` 直接失败（2026-09-25 实跑击中，见 `_align_ledger_worktree`）。
+LEDGER_BRANCH = "main"
 #: 离机推送的**持久化配置**（环境变量优先，见 `_anchor_remote()`）。默认路径可被
 #: `RUOYU_SEAL_ANCHOR_PUSH_CONFIG` 覆盖——测试与演练用得上，生产不需要。
 ANCHOR_PUSH_CONFIG_ENV = "RUOYU_SEAL_ANCHOR_PUSH_CONFIG"
@@ -381,6 +385,57 @@ def _anchor_remote() -> str:
     return ""
 
 
+def _align_ledger_worktree(work: Path, *, env: Mapping[str, str]) -> tuple[bool, str]:
+    """把工作副本显式对齐到离机账本的 `main` 分支；返回 `(ok, detail)`。
+
+    **为什么不能靠 `git pull --ff-only`**（2026-09-25 实跑击中，见 RUN-RECORD §25.3）：
+    `pull` 走的是**本地分支的 upstream**，而那是 `git clone` 时按**远端 HEAD** 定下的。
+    远端默认分支不是 `main` 时（例如老 `git init --bare` 出来的 `master`），upstream 就指向
+    `refs/heads/master`；我们推的是 `main`，于是**第二条**锚点执行 pull 时去找
+    `refs/heads/master`，找不到 → 逐字报
+    `Your configuration specifies to merge with the ref 'refs/heads/master' from the remote,
+    but no such ref was fetched.` → `replication=failed`。
+    后果不是安全假象（如实记了 failed），但**第一条之后的所有锚点都会退化成仅本机快照**。
+
+    所以这里不用 pull，改成三步确定性动作：`fetch` → 判断远端有没有账本分支 → 显式
+    `checkout -B main <ref>`。分支名再也不是"clone 那一刻远端碰巧指向谁"的函数。
+
+    **fetch 必须带显式 refspec**：`git clone` 一个**空**仓库时，git 不会配置
+    `remote.origin.fetch`（实测为空），于是裸 `git fetch origin` 退化成"取 HEAD"，在远端
+    HEAD 指向不存在分支时报 `fatal: couldn't find remote ref HEAD`。写成
+    `+refs/heads/*:refs/remotes/origin/*` 就与 clone 时仓库是不是空的无关。
+    """
+    def git(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["git", "-C", str(work), *args],
+            capture_output=True, text=True, timeout=30, env=dict(env),
+        )
+
+    fetch = git("fetch", "--prune", "origin", "+refs/heads/*:refs/remotes/origin/*")
+    if fetch.returncode != 0:
+        return False, (fetch.stderr or fetch.stdout or "fetch failed")[-400:]
+
+    remote_ref = f"refs/remotes/origin/{LEDGER_BRANCH}"
+    has_remote = git("rev-parse", "--verify", "--quiet", remote_ref).returncode == 0
+    has_local = git("rev-parse", "--verify", "--quiet", "HEAD").returncode == 0
+
+    if not has_remote:
+        # 账本还是空的（第一条锚点）：建一条**未出生**的分支，别去 checkout 一个不存在的 ref
+        aligned = git("checkout", "-B", LEDGER_BRANCH)
+    elif not has_local:
+        aligned = git("checkout", "-B", LEDGER_BRANCH, remote_ref)
+    elif git("merge-base", "--is-ancestor", remote_ref, "HEAD").returncode == 0:
+        # 本地是远端的后继（领先或持平）：保留本地提交 —— 上一次推送失败留下的那条锚点
+        # 还能跟着这次一起推上去，不必白白丢掉。
+        aligned = git("checkout", "-B", LEDGER_BRANCH, "HEAD")
+    else:
+        # 分叉（只可能来自账本被外部改写）：以远端为准，不把历史拧在一起
+        aligned = git("checkout", "-B", LEDGER_BRANCH, remote_ref)
+    if aligned.returncode != 0:
+        return False, (aligned.stderr or aligned.stdout or "checkout failed")[-400:]
+    return True, ""
+
+
 def _replicate_anchor(path: Path, *, ident: str) -> tuple[str, str]:
     """把本机锚点文件提交并推到离机仓库。失败不抛——调用方按 `replication=failed` 如实记录
     （本机锚点仍然有效，只是没有离机副本）。"""
@@ -401,13 +456,11 @@ def _replicate_anchor(path: Path, *, ident: str) -> tuple[str, str]:
             )
             if clone.returncode != 0:
                 return "failed", (clone.stderr or clone.stdout or "clone failed")[-400:]
-        else:
-            pull = subprocess.run(
-                ["git", "-C", str(work), "pull", "--ff-only"],
-                capture_output=True, text=True, timeout=30, env=env,
-            )
-            if pull.returncode != 0:
-                return "failed", (pull.stderr or pull.stdout or "pull failed")[-400:]
+        # 复用工作副本时**不再** `git pull --ff-only`：那依赖 clone 时按远端 HEAD 定下的
+        # upstream，远端默认分支不是 main 时第二条锚点必失败（见 `_align_ledger_worktree`）。
+        aligned, detail = _align_ledger_worktree(work, env=env)
+        if not aligned:
+            return "failed", detail
         dest = work / "anchors" / path.name
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(path.read_bytes())
@@ -420,7 +473,7 @@ def _replicate_anchor(path: Path, *, ident: str) -> tuple[str, str]:
         if commit.returncode != 0 and "nothing to commit" not in (commit.stdout + commit.stderr):
             return "failed", (commit.stderr or commit.stdout)[-400:]
         push = subprocess.run(
-            ["git", "-C", str(work), "push", "origin", "HEAD:main"],
+            ["git", "-C", str(work), "push", "origin", f"{LEDGER_BRANCH}:{LEDGER_BRANCH}"],
             capture_output=True, text=True, timeout=30, env=env,
         )
         if push.returncode != 0:
@@ -1596,6 +1649,7 @@ __all__ = [
     "anchor_file_for",
     "DEFAULT_ANCHOR_DIR",
     "DEFAULT_ANCHOR_REMOTE",
+    "LEDGER_BRANCH",
     "ANCHOR_PUSH_ENV",
     "scan_error_report",
     "is_run_root",
