@@ -29,12 +29,19 @@
 可以删掉某条记录、改写某个 sha256、或删掉 `dirs`/`others` 块，让 `verify` 给出 `intact`——
 实测：删掉成稿后同时删掉它那条记录 → `intact`；改文件内容后同时改记录的 sha256 → `intact`。
 要真正锚定，需要 run 之外的锚点。本模块现在会把清单正文摘要写到 run 之外
-（`RUOYU_SEAL_ANCHOR_DIR`，默认 `/home/allen/seal-anchors`），并在设置了
-`RUOYU_SEAL_ANCHOR_PUSH=ssh://mac-backup/Users/Allen/Backups/seal-ledger.git` 时复制到离机仓库。
+（`RUOYU_SEAL_ANCHOR_DIR`，默认 `/home/allen/seal-anchors`），并在配了离机推送时复制到
+离机账本——解析顺序是 **环境变量 `RUOYU_SEAL_ANCHOR_PUSH` → 持久化配置
+`~/.dsh/seal-anchor-push.conf`（600）→ 空（只留本机快照）**。用配置文件而不是只认环境变量，
+是为了让"这台机器推离机"成为**可审计的环境事实**，而不是依赖谁记得 export。
 离机复制失败不阻断封存：此时**本机锚点确实写成了**，所以清单如实记
 `anchored` / `kind=local-snapshot` / `replication=failed`（只有**写不进去**才记
 `anchor_unavailable`），`verify` 也会打「仅本机快照」的警告。
 **只改本机锚点仍能掩盖**；`verify=intact` 不能挡住「本机锚点和清单一起被改」的写手。
+
+对**封存时还没有锚点机制**的老 run，可以 `--reanchor` **事后补锚**（`reanchor()`）：只写
+run 之外的锚点文件、**不碰 run 内任何字节、不推离机**，并在记录里打 `retroactive` 标记。
+`verify` 对它报 `anchored_retroactive`（**退出 3**）——事后锚点只证明「从补锚那一刻起」
+清单未被改写，**绝不报 `intact`**；否则它会与"封存当时就锚好"的 run 在机器可读层长得一样。
 """
 from __future__ import annotations
 
