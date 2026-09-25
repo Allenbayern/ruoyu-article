@@ -1754,3 +1754,111 @@ def test_a_true_first_build_failure_still_leaves_no_preview_dir(tmp_path):
         build(run)
 
     assert not (run / "preview").exists(), "首轮失败不该留下 preview/ 目录"
+
+
+def test_a_live_lock_holder_is_not_preempted_after_the_ttl(tmp_path, monkeypatch):
+    """活着的长构建不再因为"跑得久"被接管（2026-09-25 收口既有残余）。
+
+    改前：TTL 只看 mtime，而 mtime 是**建锁那一刻**的时间——构建一旦超过 TTL，
+    第二个构建就合法接管，于是两个构建并行写同一个 run。那正是"清单说 complete、
+    页面却是别人的字节"的成因。
+
+    改后：持有者按心跳定期 touch，mtime 记的是"最后一次证明我还活着"。这里把 TTL
+    压到 0.15s、心跳压到 0.05s，在锁内睡 0.4s（> TTL）后再来拿锁——必须被拒。
+    没有心跳时这段睡眠会让 age 超过 TTL，于是**不该**抛异常——所以本用例是能红的。
+    """
+    import time as _time
+
+    from article_group import preview_site
+
+    monkeypatch.setattr(preview_site, "LOCK_TTL_SECONDS", 0.15)
+    monkeypatch.setattr(preview_site, "LOCK_HEARTBEAT_SECONDS", 0.05)
+    lock_root = tmp_path / "run"
+    lock_root.mkdir()
+
+    with preview_site._links_build_lock(lock_root):
+        age = _time.time() - (lock_root / preview_site.LOCK_PATH).stat().st_mtime
+        _time.sleep(0.4)
+        fresh_age = _time.time() - (lock_root / preview_site.LOCK_PATH).stat().st_mtime
+        assert fresh_age < age + 0.3, (
+            "睡过 TTL 之后锁文件的 mtime 没有更新 —— 心跳没在跑"
+            f"（进去时 age={age:.3f}，出来时 age={fresh_age:.3f}）")
+        with pytest.raises(preview_site.LinksBuildInProgress):
+            with preview_site._links_build_lock(lock_root):
+                pass
+
+
+def test_a_dead_holders_lock_is_still_preemptible(tmp_path, monkeypatch):
+    """心跳不能把接管路径堵死：持有者进程**已死**时照旧可接管（SIGKILL 场景）。"""
+    import json as _json
+
+    from article_group import preview_site
+
+    lock_root = tmp_path / "run"
+    lock_root.mkdir()
+    lock = lock_root / preview_site.LOCK_PATH
+    # 一个不可能存在的 pid：RLIMIT 上限之上
+    lock.write_text(_json.dumps({"pid": 2 ** 22}), encoding="utf-8")
+
+    with preview_site._links_build_lock(lock_root):
+        assert lock.is_file(), "接管后应重新建锁"
+
+
+def test_publish_refuses_when_the_manifest_does_not_match_disk(tmp_path):
+    """publish 必须核对清单哈希与磁盘（2026-09-25 收口既有残余）。
+
+    此前它只看 `state`/`schema_version`：页面在 build 之后被改过（或构建半途被打断、
+    清单还是上一轮的 complete）时，照样把与清单不符的字节发出去。
+    """
+    run = _make_run(tmp_path)
+    build(run)
+    static = tmp_path / "outbox"
+    static.mkdir()
+
+    # 构建后改掉一篇阅读页：清单说它是 A，磁盘上是 B
+    page = run / "preview" / "art-001.html"
+    page.write_text(page.read_text(encoding="utf-8") + "<!-- 构建后被改过 -->\n", encoding="utf-8")
+
+    with pytest.raises(ValueError) as exc:
+        publish(run, static)
+    assert "preview_file_sha256_mismatch" in str(exc.value), exc.value
+    assert not (static / "2026-09-17-daily-999").exists(), "拒绝时不该留下任何已发布字节"
+
+
+def test_publish_refuses_when_a_page_is_missing_but_listed(tmp_path):
+    """清单列了、磁盘上却没了 → 同样拒绝（那是"清单比磁盘旧"的另一种形态）。"""
+    run = _make_run(tmp_path)
+    build(run)
+    static = tmp_path / "outbox"
+    static.mkdir()
+    (run / "preview" / "art-002.html").unlink()
+
+    with pytest.raises(ValueError) as exc:
+        publish(run, static)
+    assert "preview_file_unreadable" in str(exc.value), exc.value
+
+
+def test_publish_participates_in_the_build_lock(tmp_path):
+    """publish 与 build 互斥（2026-09-25 收口既有残余）。
+
+    发布只复制 preview/，但 build 会**就地**改写 preview/ 下的页面与清单；
+    不加锁时二者可以交错，产出"清单说 complete、页面是别人的字节"。
+    """
+    import json as _json
+
+    from article_group.preview_site import LOCK_PATH as _LOCK_PATH
+
+    run = _make_run(tmp_path)
+    build(run)
+    static = tmp_path / "outbox"
+    static.mkdir()
+
+    lock = run / _LOCK_PATH
+    lock.write_text(_json.dumps({"pid": os.getpid()}), encoding="utf-8")   # 活持有者、mtime 很新
+
+    with pytest.raises(Exception) as exc:
+        publish(run, static)
+    assert type(exc.value).__name__ == "LinksBuildInProgress", exc.value
+    lock.unlink()
+    # 锁释放后照常可发布
+    assert publish(run, static)["index_url"]

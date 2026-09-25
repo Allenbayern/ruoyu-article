@@ -49,10 +49,25 @@ def isolated_seal_anchor_store(tmp_path_factory, monkeypatch):
     测试把真实 run 的锚点覆盖掉，那道防线就永久失效且不可恢复。
 
     同时清掉离机推送开关：否则测试会去连 mac-backup。
+
+    **2026-09-25 补**：`_anchor_remote()` 现在还会回退读持久化配置
+    （`~/.dsh/seal-anchor-push.conf`，controller 授权启用离机推送后这文件会**真的存在**）。
+    所以只 `delenv` 已经不够了——那会让测试绕过环境变量、直接读到生产配置，
+    于是**跑一次套件就往离机账本推一堆 pytest 残留锚点**。这里把配置路径也指到
+    tmp 里一个不存在的文件，并把两件事都钉在下面的断言里。
     """
     from article_group import run_seal
 
     store = tmp_path_factory.mktemp("seal-anchors")
     monkeypatch.setenv(run_seal.ANCHOR_DIR_ENV, str(store))
     monkeypatch.delenv(run_seal.ANCHOR_PUSH_ENV, raising=False)
+    # 生产配置路径**必须**在这个 fixture 之后也不可能被读到
+    monkeypatch.setenv(
+        run_seal.ANCHOR_PUSH_CONFIG_ENV,
+        str(tmp_path_factory.mktemp("seal-anchor-conf") / "does-not-exist.conf"),
+    )
+    assert run_seal._anchor_remote() == "", (
+        "锚点隔离失效：测试环境里 _anchor_remote() 解析出了非空地址，"
+        "跑套件会往真实离机账本推东西"
+    )
     return store

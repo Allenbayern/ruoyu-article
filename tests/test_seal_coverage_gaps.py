@@ -673,3 +673,131 @@ def test_unseal_refuses_to_silently_swallow_other_flags(tmp_path: Path) -> None:
     assert (root / run_seal.SEALED_NAME).is_file(), "拒绝时不许动 SEALED"
     assert run_seal.verify(root)["status"] == "intact"
 
+
+
+# ── ⑪ 既有残余收口：`review/.before/**` 的"只写不记"通道（2026-09-25） ──────────
+
+
+def _sealed_run_with_review(tmp_path: Path, name: str) -> Path:
+    """封存时**已有** `review/` 的 run（真实 run 的形状）。
+
+    `_sealed_run` 是个最小夹具，连 `review/` 都没有；那样一来后面建 `review/` 会多出一个
+    "新增目录"，把本组用例的靶子（快照账目）淹掉。这里补齐成真实形状。
+    """
+    root = tmp_path / name
+    (root / "delivery" / "art-001").mkdir(parents=True)
+    (root / "delivery" / "art-001" / "delivery.md").write_text("# 正文\n", encoding="utf-8")
+    (root / "review").mkdir()
+    (root / "batch.json").write_text(json.dumps({"articles": [{"article_id": "art-001"}]}), encoding="utf-8")
+    seal(root, identity="owner")
+    return root
+
+
+def test_an_unrecorded_snapshot_file_is_reported_as_unauthorized(tmp_path: Path) -> None:
+    """留底快照整条不在清单里，所以必须**按账目**兜底。
+
+    此前 `review/.before/**` 完全排除：封存后往那儿写任何文件，verify 仍报 intact——
+    一条对 added/modified 完全不可见的写入面（第一轮复核就点名的既有残余）。
+    """
+    root = _sealed_run_with_review(tmp_path, "daily-994")
+    assert run_seal.verify(root)["status"] == "intact"
+
+    # 护栏在**本进程**里会挡下这次写入；而这条通道的威胁模型正是"进程外写手"
+    # （`sys.addaudithook` 只作用于装钩子的进程），所以用子进程来模拟它。
+    smuggled = root / "review" / ".before" / "20260925T000000" / "delivery" / "art-001" / "delivery.md"
+    subprocess.run([sys.executable, "-c",
+                    "import pathlib,sys;p=pathlib.Path(sys.argv[1]);p.parent.mkdir(parents=True,exist_ok=True);"
+                    "p.write_text('# 伪造的旧版本\\n',encoding='utf-8')",
+                    str(smuggled)], check=True)
+    assert smuggled.is_file()
+
+    report = run_seal.verify(root)
+    assert report["status"] == "drifted", report
+    offenders = [item for item in report["changes"] if item["kind"] == "snapshot_unrecorded"]
+    assert [item["path"] for item in offenders] == [
+        "review/.before/20260925T000000/delivery/art-001/delivery.md"], report["changes"]
+    assert offenders[0]["path"] in {item["path"] for item in report["unauthorized_changes"]}
+
+
+def test_a_recorded_snapshot_file_is_not_a_change(tmp_path: Path) -> None:
+    """**有账**的留底快照仍不算篡改——留底通道本来就是封存后唯一合法的写入面。
+
+    不给出这一条，"兜底"就会被读成"禁止封存后留底"，而那会把正常流程判成漂移。
+    """
+    from article_group.evidence_write import write_evidence
+
+    root = _sealed_run_with_review(tmp_path, "daily-995")
+    target = root / "delivery" / "art-001" / "delivery.md"
+    write_evidence(target, "# 改过的正文\n", run_dir=root, reason="test:force", force=True)
+
+    report = run_seal.verify(root)
+    snapshot_changes = [item for item in report["changes"] if item["kind"] == "snapshot_unrecorded"]
+    assert snapshot_changes == [], report["changes"]
+    # 被覆盖的那个文件本身当然是改动，但**有账**（force 记账），所以不是未授权
+    assert report["unauthorized_changes"] == [], report["unauthorized_changes"]
+
+
+# ── ⑫ 离机推送的持久化开关（2026-09-25 controller 授权"启用离机锚点推送"） ──────
+
+
+def test_anchor_remote_resolution_order(monkeypatch, tmp_path: Path) -> None:
+    """`_anchor_remote()`：环境变量优先 → 配置文件 → 空（只留本机快照）。"""
+    conf = tmp_path / "seal-anchor-push.conf"
+    monkeypatch.setenv(run_seal.ANCHOR_PUSH_CONFIG_ENV, str(conf))
+
+    # ① 都没有 → 空（安全默认：不推离机）
+    assert run_seal._anchor_remote() == ""
+
+    # ② 只有配置文件 → 读它（`remote=<url>` 形式）
+    conf.write_text("# 离机锚点账本\n\nremote=ssh://example/ledger.git\n", encoding="utf-8")
+    assert run_seal._anchor_remote() == "ssh://example/ledger.git"
+
+    # ③ 裸 URL 行也认
+    conf.write_text("ssh://bare/ledger.git\n", encoding="utf-8")
+    assert run_seal._anchor_remote() == "ssh://bare/ledger.git"
+
+    # ④ 环境变量优先于配置文件
+    monkeypatch.setenv(run_seal.ANCHOR_PUSH_ENV, "ssh://from-env/ledger.git")
+    assert run_seal._anchor_remote() == "ssh://from-env/ledger.git"
+
+    # ⑤ 没有有效行 → 空（注释/空行/别的键都不算）
+    monkeypatch.delenv(run_seal.ANCHOR_PUSH_ENV, raising=False)
+    conf.write_text("# 只有注释\n\nother_key=x\n", encoding="utf-8")
+    assert run_seal._anchor_remote() == ""
+
+
+def test_the_production_push_config_is_not_read_under_pytest() -> None:
+    """生产配置**必须**被测试隔离掉。
+
+    `~/.dsh/seal-anchor-push.conf` 一旦真的存在（启用离机推送之后它就会存在），
+    只 `delenv` 是不够的：`_anchor_remote()` 会回退去读它，于是**跑一次套件就
+    往真实离机账本推 pytest 残留锚点**。这条用例把隔离本身钉住。
+    """
+    assert run_seal._anchor_push_config_path() != run_seal.DEFAULT_ANCHOR_PUSH_CONFIG, \
+        "测试环境里配置文件路径仍指向生产路径——锚点隔离失效"
+    assert run_seal._anchor_remote() == "", \
+        "测试环境里解析出了非空离机地址——跑套件会去推真实账本"
+
+
+def test_the_durable_push_config_drives_real_replication(tmp_path: Path, monkeypatch) -> None:
+    """**持久化配置**（不是环境变量）也要能真的驱动 clone→commit→push。
+
+    这条是本项的重点：授权"启用离机锚点推送"落成的就是那个配置文件，
+    所以"读得到配置"与"配置真的让锚点离机"必须一起被证明。
+    """
+    remote = _bare_ledger(tmp_path)
+    config = tmp_path / "seal-anchor-push.conf"
+    config.write_text(f"# 测试用离机账本\nremote={remote}\n", encoding="utf-8")
+    # 关键：**不设** RUOYU_SEAL_ANCHOR_PUSH，只给配置文件路径
+    monkeypatch.delenv(run_seal.ANCHOR_PUSH_ENV, raising=False)
+    monkeypatch.setenv(run_seal.ANCHOR_PUSH_CONFIG_ENV, str(config))
+
+    root = _sealed_run(tmp_path, name="daily-996")
+    block = run_seal.load_manifest(root)["anchor"]
+    assert (block["status"], block["replication"], block["kind"]) == \
+        ("anchored", "pushed", "offhost-snapshot"), block
+
+    name = run_seal.anchor_file_for(root).name
+    shown = subprocess.run(["git", "-C", str(remote), "show", f"main:anchors/{name}"],
+                           capture_output=True, text=True, check=True)
+    assert json.loads(shown.stdout)["manifest_digest"] == block["manifest_digest"]

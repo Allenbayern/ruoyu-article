@@ -16,6 +16,10 @@
 
 排除项是显式的（见 `EXCLUDED_REASONS`）：封存生命周期标记、append-only 文件（另按前缀校验）、
 清单自身、以及 `review/.before/**`（force 写入的留底快照，只会在封存后新增）。
+最后这一条**另有兜底**：排除只让它们不进"与清单比对"，但每个快照文件都必须能在
+`evidence-changelog.jsonl` 里找到对应的 `snapshot_path` 账目，否则报
+`snapshot_unrecorded`（2026-09-25 收口既有残余：此前它是一条对 added/modified
+完全不可见的写入面）。
 
 退出码（CLI）：0 完好 / 2 有漂移 / 3 无法验证（缺清单，例如封存时还没有本模块的 run）。
 
@@ -68,7 +72,9 @@ EXCLUDED_REASONS: dict[str, str] = {
     "SEALED.*": "封存生命周期留下的标记（撤销封存 / 沙盘改名）",
     "evidence-changelog.jsonl": "契约 append-only：按前缀校验（追加放行、重写算改动）",
     "step-log.jsonl": "契约 append-only：同上（封存这一步自己的流水就在其后追加）",
-    BEFORE_DIR + "/**": "force 写入的留底快照：只会在封存后新增",
+    # 不进"与清单比对"（封存后才新增，进不了当时的清单），但**逐文件按账目兜底**，
+    # 见 `_unrecorded_snapshots()`：没有 snapshot_path 账目的快照算未授权变更。
+    BEFORE_DIR + "/**": "force 写入的留底快照：只会在封存后新增，另按账目兜底",
 }
 
 #: 授权"封存后可以不在"的路径：**存在时必须与清单一致**（大小/哈希/符号链接照查），
@@ -85,6 +91,10 @@ DEFAULT_ANCHOR_DIR = "/home/allen/seal-anchors"
 ANCHOR_DIR_ENV = "RUOYU_SEAL_ANCHOR_DIR"
 ANCHOR_PUSH_ENV = "RUOYU_SEAL_ANCHOR_PUSH"
 DEFAULT_ANCHOR_REMOTE = "ssh://mac-backup/Users/Allen/Backups/seal-ledger.git"
+#: 离机推送的**持久化配置**（环境变量优先，见 `_anchor_remote()`）。默认路径可被
+#: `RUOYU_SEAL_ANCHOR_PUSH_CONFIG` 覆盖——测试与演练用得上，生产不需要。
+ANCHOR_PUSH_CONFIG_ENV = "RUOYU_SEAL_ANCHOR_PUSH_CONFIG"
+DEFAULT_ANCHOR_PUSH_CONFIG = Path.home() / ".dsh" / "seal-anchor-push.conf"
 ANCHOR_FILE_SUFFIX = ".anchor.json"
 
 EXIT_INTACT = 0
@@ -320,8 +330,43 @@ def _manifest_digest(payload: Mapping[str, Any]) -> str:
     return _sha256_bytes(canonical.encode("utf-8", "surrogateescape"))
 
 
+def _anchor_push_config_path() -> Path:
+    """持久化配置文件的位置：`RUOYU_SEAL_ANCHOR_PUSH_CONFIG` 可覆盖（测试/演练用）。"""
+    override = os.environ.get(ANCHOR_PUSH_CONFIG_ENV, "").strip()
+    return Path(override).expanduser() if override else DEFAULT_ANCHOR_PUSH_CONFIG
+
+
 def _anchor_remote() -> str:
-    return os.environ.get(ANCHOR_PUSH_ENV, "").strip()
+    """离机锚点仓库地址：**环境变量优先 → 持久化配置文件 → 空（只留本机快照）**。
+
+    为什么要有配置文件（2026-09-25 controller 授权"启用离机锚点推送"）：
+    `RUOYU_SEAL_ANCHOR_PUSH` 只在"跑封存的那个进程恰好 export 了它"时有效。
+    实测它**在任何环境里都没被设过**，于是所有生产锚点都只是本机快照——
+    同 uid 的写手可以同时改写清单与本机锚点来掩盖篡改，而报告里只写 `anchored`。
+    把开关落成文件，才让"这台机器推离机"成为**可审计的环境事实**，而不是
+    依赖谁记得 export。
+
+    配置格式（`~/.dsh/seal-anchor-push.conf`，`#` 开头为注释）：一行 `remote=<url>`，
+    或者直接一行裸 URL。文件不在 / 读不出 / 没有有效行 → 退回本机快照（安全默认）。
+    """
+    from_env = os.environ.get(ANCHOR_PUSH_ENV, "").strip()
+    if from_env:
+        return from_env
+    try:
+        text = _anchor_push_config_path().read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return ""
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, separator, value = line.partition("=")
+        if separator:
+            if key.strip() == "remote":
+                return value.strip()
+            continue
+        return line
+    return ""
 
 
 def _replicate_anchor(path: Path, *, ident: str) -> tuple[str, str]:
@@ -627,6 +672,49 @@ def _revoked_marker_entry(ledger: Mapping[str, dict[str, Any]]) -> dict[str, Any
     return latest
 
 
+def _unrecorded_snapshots(
+    run_root: Path, ledger: Mapping[str, dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """`review/.before/**` 里**没有账**的留底快照（2026-09-25 收口既有残余）。
+
+    为什么单列这一项：`review/.before/**` 整条在 `EXCLUDED_REASONS` 里（留底快照只会
+    在封存**之后**新增，进不了封存当时的清单），于是它是一条对 added/modified
+    **完全不可见**的写入面——往那儿写任何东西，`verify` 都还报 intact。
+
+    但它并不是真的看不见：留底通道每写一个快照，就会在 `evidence-changelog.jsonl` 里
+    记下那个快照的路径（`snapshot_path`）。所以判据是"**每个快照文件都得有账**"，
+    而不是"把它整条放行"。这样既保住"封存后合法的留底写入不算篡改"，
+    又把**不记账**的写入暴露出来——后者才是这条通道真正的风险。
+    """
+    base = run_root / BEFORE_DIR
+    if not base.is_dir() and not base.is_symlink():
+        return []
+    recorded = {
+        str(entry.get("snapshot_path", "")).strip()
+        for entry in ledger.values()
+        if str(entry.get("snapshot_path", "")).strip()
+    }
+    out: list[dict[str, Any]] = []
+    try:
+        candidates = sorted(base.rglob("*"))
+    except OSError:
+        return out
+    for path in candidates:
+        try:
+            if not (path.is_file() or path.is_symlink()):
+                continue
+            relative = path.relative_to(run_root).as_posix()
+        except (OSError, ValueError):
+            continue
+        if relative not in recorded:
+            out.append({
+                "path": relative,
+                "kind": "snapshot_unrecorded",
+                "detail": "留底快照没有对应的变更日志账目：这是一条只写不记的通道",
+            })
+    return out
+
+
 def verify(run_dir: str | Path) -> dict[str, Any]:
     """逐项重算清单，返回 {status, changes, …}（只读）。
 
@@ -904,6 +992,9 @@ def verify(run_dir: str | Path) -> dict[str, Any]:
         }
 
     ledger = _changelog_index(root)
+    # review/.before/** 不进清单（留底快照只会在封存后新增），所以它必须**另按账目**兜住：
+    # 没有对应账目的快照文件就是一条只写不记的通道。
+    changes.extend(_unrecorded_snapshots(root, ledger))
     revoked_entry = _revoked_marker_entry(ledger)
     for change in changes:
         entry = ledger.get(change["path"])

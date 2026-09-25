@@ -32,6 +32,7 @@ import json
 import os
 import re
 import shutil
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -108,6 +109,14 @@ LOCK_PATH = ".preview-links.lock"
 #: 锁的陈旧阈值：超过它就接管，覆盖"SIGKILL 后 pid 被无关进程复用"（finding 3）。
 LOCK_TTL_SECONDS = 10 * 60
 
+#: 锁的**心跳间隔**（2026-09-25 收口既有残余）。持有者活着就定期 touch 锁文件，
+#: 让 mtime 记的是"最后一次证明我还活着"而不是"锁是什么时候建的"。
+#: 此前 TTL 对**活持有者**也生效：构建超过 10 分钟就会被合法接管，两个构建并行写
+#: 同一个 run——正是"清单说 complete、页面却是别人的字节"那条 finding 的成因。
+#: 有心跳之后，SIGKILL（心跳停止、mtime 变旧）照旧能被接管，而活着的长构建不会被抢。
+#: 取 TTL 的 1/4，给心跳偶发延迟留出余量。
+LOCK_HEARTBEAT_SECONDS = LOCK_TTL_SECONDS / 4
+
 #: mtime 落在未来的容忍度：超过它就当锁是陈旧的（时钟回拨 / 拷贝带 -t）。
 #: 否则 age 永远为负、TTL 永不触发，run 会被永久锁死（四轮复核 finding 3）。
 LOCK_CLOCK_SKEW_TOLERANCE_SECONDS = 60
@@ -150,6 +159,11 @@ def _lock_is_stale(lock: Path, payload: dict | None) -> bool:
     - 内容读不懂但**很新** → 不可接管：那正是持有者"已创建、pid 还没落盘"的窗口，
       抢走就是对一个活着的持有者动手（finding 2）；
     - 有 pid 且进程已死 → 可接管。
+
+    **"太旧"的含义在 2026-09-25 变了**：持有者现在会按 `LOCK_HEARTBEAT_SECONDS`
+    定期 touch（见 `_lock_heartbeat`），所以 mtime 记的是"最后一次证明我还活着"。
+    于是"超龄"实际上等于"**心跳停了**"——SIGKILL 之后仍然成立，而一个活着的长构建
+    不再因为跑得久就被抢走（此前 TTL 对活持有者生效，两个构建会并行写同一个 run）。
     """
     try:
         age = time.time() - lock.stat().st_mtime
@@ -161,9 +175,41 @@ def _lock_is_stale(lock: Path, payload: dict | None) -> bool:
         # 时钟偏斜不是抢锁的理由，否则第二轮的"清单说 complete、页面却是别人的字节"会回来）
         if not _pid_alive(pid):
             return True
-        return 0 <= age and age > LOCK_TTL_SECONDS   # 只有"确实超龄"才接管（pid 复用）
+        return 0 <= age and age > LOCK_TTL_SECONDS   # 心跳停了才接管（pid 复用 / 心跳中断）
     # 没有可用 pid（读不懂 / 畸形）：很新 → 占用中；超龄 或 mtime 在未来 → 接管
     return age > LOCK_TTL_SECONDS or age < -LOCK_CLOCK_SKEW_TOLERANCE_SECONDS
+
+
+@contextlib.contextmanager
+def _lock_heartbeat(lock: Path, handle: int | None):
+    """持有锁期间定期 touch，让 TTL 只对**心跳停了**的持有者生效。
+
+    没有句柄（封存 run 上建不出锁 / 锁路径不可写）时什么都不做——那种情况本来就没有锁，
+    更不该去动别人的锁文件。
+
+    已被接管时**停止续命**：归属不是自己就不再 touch，否则等于替接管者把锁"续新"，
+    原本该到期的接管会变得永远不到期。
+    """
+    if handle is None:
+        yield
+        return
+    stop = threading.Event()
+
+    def _beat() -> None:
+        while not stop.wait(LOCK_HEARTBEAT_SECONDS):
+            payload = _read_lock(lock)
+            if not isinstance(payload, dict) or payload.get("pid") != os.getpid():
+                return
+            with contextlib.suppress(OSError):
+                os.utime(lock, None)
+
+    thread = threading.Thread(target=_beat, name="preview-lock-heartbeat", daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join(timeout=1.0)
 
 
 def _release_lock(lock: Path, handle: int | None) -> None:
@@ -232,7 +278,10 @@ def _links_build_lock(run_root: Path):
             "拒绝在无锁状态下构建（先修好该路径权限，或确认没有别的构建在跑）。"
         ) from exc
     try:
-        yield
+        # 持有期间持续证明"我还活着"：这样 TTL 只对**心跳停了**的持有者生效
+        # （构建跑得久不再等于可以被抢走）。
+        with _lock_heartbeat(lock, handle):
+            yield
     finally:
         _release_lock(lock, handle)
 
@@ -696,6 +745,50 @@ run <code>{html.escape(slug(run_root))}</code></div>
     }
 
 
+def _manifest_disk_mismatches(source: Path, manifest: dict) -> list[str]:
+    """清单里记的哈希与磁盘上**要被发布的**页面不一致的条目。
+
+    publish 此前只核 `state`/`schema_version`，不核**哈希**：页面在 build 之后被改过
+    （或构建半途被打断、清单却还是上一轮的 complete），它照旧把与清单不符的字节发出去，
+    而读清单的人以为拿到的是清单描述的那一份。
+
+    只查 `preview/` 下的条目——发布只复制 `preview/`，run 内其它文件（如 `body_md`
+    指向的成稿）不属于这一步的一致性范围，混进来会把"成稿改了但没重建站点"也判成发布
+    错误；那是另一个问题，不该在这里顺手决定。
+    """
+    entries: list[dict] = []
+    index_entry = manifest.get("index")
+    if isinstance(index_entry, dict):
+        entries.append(index_entry)
+    articles = manifest.get("articles")
+    if isinstance(articles, list):
+        for article in articles:
+            if not isinstance(article, dict):
+                continue
+            for key in ("body_md", "reading", "wechat_copy", "wechat_fragment"):
+                value = article.get(key)
+                if isinstance(value, dict):
+                    entries.append(value)
+
+    mismatches: list[str] = []
+    run_root = source.parent
+    for entry in entries:
+        relative = entry.get("path")
+        recorded = entry.get("sha256")
+        if not isinstance(relative, str) or not isinstance(recorded, str):
+            continue
+        if not relative.startswith("preview/"):
+            continue
+        try:
+            actual = hashlib.sha256((run_root / relative).read_bytes()).hexdigest()
+        except OSError:
+            mismatches.append(f"{relative}:preview_file_unreadable")
+            continue
+        if actual != recorded:
+            mismatches.append(f"{relative}:preview_file_sha256_mismatch")
+    return mismatches
+
+
 def publish(
     run_root: str | Path,
     root: str | Path,
@@ -719,6 +812,7 @@ def publish(
     # 截断的 JSON 正是写一半被打断（SIGKILL / ENOSPC）留下的形态，而它恰好会绕过这道
     # 门（独立复核 finding 1）。读不出、不是对象、state 不对，一律拒绝。
     manifest_path = source / "links.json"
+    manifest: dict | None = None
     if manifest_path.is_file():
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -751,8 +845,6 @@ def publish(
     if destination_root != target and destination_root not in target.parents:
         raise ValueError(f"发布目标越界：{target} 不在 {destination_root} 之内")
 
-    if target.exists():
-        shutil.rmtree(target)
     # 发布记录本身不是交付物：它含绝对宿主路径与文件清单，而 8899 是内网可访问的
     # （2026-09-25 审计 finding R5：第二次发布会把上一次写的记录一起拷进静态根）。
     def _skip_publish_record(directory: str, names: list[str]) -> list[str]:
@@ -760,7 +852,21 @@ def publish(
             return [name for name in names if name == PUBLISH_RECORD_NAME]
         return []
 
-    shutil.copytree(source, target, ignore=_skip_publish_record)
+    # 2026-09-25 收口既有残余：publish 此前既**不参与构建锁**、也**不核对清单哈希与磁盘**。
+    # 两步都在锁内做才有意义——否则校验与拷贝之间正好能插进一次 build。
+    with _links_build_lock(run_root):
+        if manifest is not None:
+            mismatches = _manifest_disk_mismatches(source, manifest)
+            if mismatches:
+                raise ValueError(
+                    "preview/links.json 记的哈希与磁盘上的页面不一致：拒绝发布——"
+                    "发布出去的就是与清单不符的字节（清单被改写，或构建后被改过页面，"
+                    "或上一轮 build 半途被打断）。先重跑 preview_site 阶段。"
+                    f"不一致项（最多 5 条）：{mismatches[:5]}"
+                )
+        if target.exists():
+            shutil.rmtree(target)
+        shutil.copytree(source, target, ignore=_skip_publish_record)
     pages = sorted(p.relative_to(target).as_posix() for p in target.rglob("*") if p.is_file())
     base = (base_url or "").rstrip("/")
     # 路径里有非 UTF-8 字节时，落盘只能写有损形式；那就让**返回值与落盘值一致**并显式
