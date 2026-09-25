@@ -86,7 +86,7 @@ def test_check_detects_title_change_after_freeze(tmp_path: Path):
 def test_check_detects_l2_bound_to_other_freeze(tmp_path: Path):
     root = _run(tmp_path)
     freeze(root, "art-001")
-    (root / "review" / "art-001" / "codex-l2-review.json").write_text(
+    (root / "review" / "art-001" / "dsh-l2-review.json").write_text(
         json.dumps({"decision": "approve", "title_pack_sha256": "f" * 64}, ensure_ascii=False),
         encoding="utf-8",
     )
@@ -98,7 +98,7 @@ def test_check_detects_l2_bound_to_other_freeze(tmp_path: Path):
 def test_check_ok_when_l2_bound_to_same_freeze(tmp_path: Path):
     root = _run(tmp_path)
     frozen = freeze(root, "art-001")
-    (root / "review" / "art-001" / "codex-l2-review.json").write_text(
+    (root / "review" / "art-001" / "dsh-l2-review.json").write_text(
         json.dumps({"decision": "approve", "title_pack_sha256": frozen["title_pack_sha256"]},
                    ensure_ascii=False),
         encoding="utf-8",
@@ -106,6 +106,45 @@ def test_check_ok_when_l2_bound_to_same_freeze(tmp_path: Path):
     report = check(root, "art-001")
     assert report["status"] == "frozen_ok"
     assert report["frozen_at"]
+
+
+def test_check_still_reads_a_historical_l2_record_name(tmp_path: Path):
+    """读端回退：历史 run 里的 L2 记录叫 `codex-l2-review.json`（200 份，不重写）。
+
+    不认旧名，等于把这批 run 的 L2 绑定整体读丢——它们的标题包会被判成"没复核过"。
+    """
+    root = _run(tmp_path)
+    frozen = freeze(root, "art-001")
+    (root / "review" / "art-001" / "codex-l2-review.json").write_text(
+        json.dumps({"decision": "approve", "title_pack_sha256": frozen["title_pack_sha256"]},
+                   ensure_ascii=False),
+        encoding="utf-8",
+    )
+    report = check(root, "art-001")
+    assert report["status"] == "frozen_ok", report
+
+    # 绑定到**另一个**标题包的历史记录同样要被读到（否则这条检查会退化成恒真）
+    (root / "review" / "art-001" / "codex-l2-review.json").write_text(
+        json.dumps({"decision": "approve", "title_pack_sha256": "f" * 64}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    assert check(root, "art-001")["status"] == "l2_reviewed_other_freeze"
+
+
+def test_new_l2_record_name_wins_over_the_legacy_one(tmp_path: Path):
+    """两个名字都存在时以**新名**为准（新名是现行约定）。"""
+    root = _run(tmp_path)
+    frozen = freeze(root, "art-001")
+    (root / "review" / "art-001" / "codex-l2-review.json").write_text(
+        json.dumps({"decision": "approve", "title_pack_sha256": "f" * 64}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (root / "review" / "art-001" / "dsh-l2-review.json").write_text(
+        json.dumps({"decision": "approve", "title_pack_sha256": frozen["title_pack_sha256"]},
+                   ensure_ascii=False),
+        encoding="utf-8",
+    )
+    assert check(root, "art-001")["status"] == "frozen_ok"
 
 
 def test_cli_freeze_then_strict(tmp_path: Path, capsys: pytest.CaptureFixture[str]):

@@ -359,7 +359,7 @@ def test_l2_record_marks_diff_only_scope_with_base_review(
     run_root = tmp_path / "run"
     run_root.mkdir()
     output = run_root / "review.json"
-    base = run_root / "codex-l2-review-r1-needs-changes.json"
+    base = run_root / "dsh-l2-review-r1-needs-changes.json"
     base.write_text('{"decision": "needs_changes"}', encoding="utf-8")
 
     class Completed:
@@ -584,7 +584,7 @@ def test_contract_named_output_keeps_the_contract_shape(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     run_root = _canonical_run_root(tmp_path)
-    output = run_root / "review" / "art-001" / "codex-l2-review.json"
+    output = run_root / "review" / "art-001" / "dsh-l2-review.json"
     external = run_root / "review" / "art-001" / "l2-input.json"
     external.write_text(
         json.dumps(
@@ -638,7 +638,7 @@ def test_contract_record_reports_the_state_of_the_gate_record(
     """结论只落在契约记录里时，"门禁那份还是占位符"必须可见。"""
 
     run_root = _canonical_run_root(tmp_path)
-    output = run_root / "review" / "art-001" / "codex-l2-review.json"
+    output = run_root / "review" / "art-001" / "dsh-l2-review.json"
     external = run_root / "review" / "art-001" / "l2-input.json"
     external.write_text(
         json.dumps(
@@ -979,7 +979,7 @@ def _base_review_setup(tmp_path: Path) -> tuple[Path, Path, Path]:
         title_pack_path="review/art-001/title-pack.json",
         created_from_run="2026-09-18/daily-900",
     )
-    base_record = run_root / "review" / "art-001" / "codex-l2-review-r1.json"
+    base_record = run_root / "review" / "art-001" / "dsh-l2-review-r1.json"
     base_record.write_text(
         json.dumps(
             {
@@ -1005,7 +1005,7 @@ def _base_review_setup(tmp_path: Path) -> tuple[Path, Path, Path]:
 def test_base_review_diff_shows_what_changed_since_the_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     run_root, base_record, delivery = _base_review_setup(tmp_path)
     delivery.write_text("# 标题\n\n正文改过了，加了一句话。\n", encoding="utf-8")
-    output = run_root / "review" / "art-001" / "codex-l2-review-r2.json"
+    output = run_root / "review" / "art-001" / "dsh-l2-review-r2.json"
     external = run_root / "review" / "art-001" / "l2-input.json"
     external.write_text(
         json.dumps(
@@ -1068,7 +1068,7 @@ def test_base_review_diff_reports_a_missing_snapshot(tmp_path: Path, monkeypatch
     for snapshot in (run_root / "review" / ".before").rglob("delivery.md"):
         snapshot.unlink()
     delivery.write_text("# 标题\n\n又改了一版。\n", encoding="utf-8")
-    output = run_root / "review" / "art-001" / "codex-l2-review-r2.json"
+    output = run_root / "review" / "art-001" / "dsh-l2-review-r2.json"
     external = run_root / "review" / "art-001" / "l2-input.json"
     external.write_text(
         json.dumps(
@@ -1109,7 +1109,7 @@ def test_base_review_diff_reports_a_missing_snapshot(tmp_path: Path, monkeypatch
 
 def test_base_review_diff_marks_an_unchanged_artifact(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     run_root, base_record, _ = _base_review_setup(tmp_path)
-    output = run_root / "review" / "art-001" / "codex-l2-review-r2.json"
+    output = run_root / "review" / "art-001" / "dsh-l2-review-r2.json"
     external = run_root / "review" / "art-001" / "l2-input.json"
     external.write_text(
         json.dumps(
@@ -1197,7 +1197,7 @@ def test_base_review_diff_does_not_compare_against_a_rejected_review(
 
     run_root, base_record, delivery = _base_review_setup(tmp_path)
     delivery.write_text("# 标题\n\n正文改过了。\n", encoding="utf-8")
-    output = run_root / "review" / "art-001" / "codex-l2-review-r2.json"
+    output = run_root / "review" / "art-001" / "dsh-l2-review-r2.json"
     external = run_root / "review" / "art-001" / "l2-input.json"
     external.write_text(
         json.dumps(
@@ -1247,7 +1247,7 @@ def test_base_review_without_a_binding_says_so(tmp_path: Path, monkeypatch: pyte
         encoding="utf-8",
     )
     delivery.write_text("# 标题\n\n又改了一版。\n", encoding="utf-8")
-    output = run_root / "review" / "art-001" / "codex-l2-review-r2.json"
+    output = run_root / "review" / "art-001" / "dsh-l2-review-r2.json"
     external = run_root / "review" / "art-001" / "l2-input.json"
     external.write_text(
         json.dumps(

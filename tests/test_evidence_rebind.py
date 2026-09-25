@@ -89,7 +89,7 @@ def test_dry_run_does_not_write(tmp_path: Path):
 def test_title_pack_change_invalidates_independent_and_l2(tmp_path: Path):
     root = _run(tmp_path)
     _approve_independent(root)
-    l2 = root / "review" / "art-001" / "codex-l2-review.json"
+    l2 = root / "review" / "art-001" / "dsh-l2-review.json"
     l2.write_text(json.dumps({
         "decision": "approve", "status": "PASS",
         "title_pack_sha256": sha256_file(root / "review" / "art-001" / "title-pack.json"),
@@ -102,7 +102,7 @@ def test_title_pack_change_invalidates_independent_and_l2(tmp_path: Path):
     report = reconcile(root, apply=True)
     assert set(report["stale_records"]) == {
         "review/art-001/independent-review.json",
-        "review/art-001/codex-l2-review.json",
+        "review/art-001/dsh-l2-review.json",
     }
     assert json.loads(l2.read_text(encoding="utf-8"))["stale_reason"].endswith("title_pack_sha256")
 
@@ -149,10 +149,33 @@ def test_report_file_written_on_apply(tmp_path: Path):
     assert report["publication_authorization"] == "not_authorized"
 
 
-def test_dependent_records_cover_the_four_evidence_files(tmp_path: Path):
+def test_dependent_records_cover_the_evidence_files_under_both_l2_names(tmp_path: Path):
+    """L2 记录**两个名字都列**：历史 run 是旧名、新 run 是新名。
+
+    只列一个，另一种命名的 run 的 approve 就不会被判失效——那正是这张清单要防的事。
+    """
     names = {path.name for path in dependent_records(tmp_path, "art-001")}
-    assert names == {"independent-review.json", "codex-l2-review.json",
+    assert names == {"independent-review.json", "dsh-l2-review.json",
+                     "codex-l2-review.json",
                      "source-stripped-readability.json", "art-001.human.json"}
+
+
+def test_a_historical_l2_record_is_still_invalidated(tmp_path: Path):
+    """历史 run 里那份**旧名**的 L2 approve 同样必须被判失效（读端回退）。"""
+    root = _run(tmp_path)
+    _approve_independent(root)
+    l2 = root / "review" / "art-001" / "codex-l2-review.json"   # 历史产物名
+    l2.write_text(json.dumps({
+        "decision": "approve", "status": "PASS",
+        "title_pack_sha256": sha256_file(root / "review" / "art-001" / "title-pack.json"),
+    }, ensure_ascii=False), encoding="utf-8")
+    (root / "review" / "art-001" / "title-pack.json").write_text(
+        json.dumps({"directions": [{"title": "标题乙（后换）"}]}, ensure_ascii=False),
+        encoding="utf-8")
+
+    report = reconcile(root, apply=True)
+    assert "review/art-001/codex-l2-review.json" in set(report["stale_records"])
+    assert json.loads(l2.read_text(encoding="utf-8"))["stale_reason"].endswith("title_pack_sha256")
 
 
 def test_cli_strict_and_dry_run(tmp_path: Path, capsys: pytest.CaptureFixture[str]):

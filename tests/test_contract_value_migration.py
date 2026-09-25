@@ -177,3 +177,41 @@ def test_the_two_surfaces_of_the_migration_agree_on_being_legacy_tolerant() -> N
 
     assert LEGACY_REVIEW_SURFACES == {"markdown_codex": "markdown_dsh"}
     assert LEGACY_PREVIEW_MODES == {"local_codex": "local_dsh"}
+
+
+def test_l2_review_record_name_moves_but_the_old_name_still_resolves(tmp_path: Path) -> None:
+    """L2 复核产物名：**新名写、旧名读**（旧名有 200 份真实产物，不重写）。"""
+    from article_group.evidence_paths import (
+        L2_REVIEW_RECORD_NAME,
+        LEGACY_L2_REVIEW_RECORD_NAMES,
+        resolve_l2_review_record,
+    )
+
+    assert L2_REVIEW_RECORD_NAME == "dsh-l2-review.json"
+    assert LEGACY_L2_REVIEW_RECORD_NAMES == ("codex-l2-review.json",)
+
+    base = tmp_path / "review" / "art-001"
+    base.mkdir(parents=True)
+    # 两个都不在 → 返回新名（调用方照旧用 .is_file() 判断，语义不变）
+    assert resolve_l2_review_record(tmp_path, "art-001").name == "dsh-l2-review.json"
+    # 只有历史名 → 回退到它
+    legacy = base / "codex-l2-review.json"
+    legacy.write_text("{}", encoding="utf-8")
+    assert resolve_l2_review_record(tmp_path, "art-001") == legacy
+    # 两个都在 → 新名优先
+    new = base / "dsh-l2-review.json"
+    new.write_text("{}", encoding="utf-8")
+    assert resolve_l2_review_record(tmp_path, "art-001") == new
+
+
+def test_ledger_reason_prefix_writes_the_new_one_and_keeps_the_alias() -> None:
+    """账本原因前缀：新写的行是 `dsh_review:*`；`codex_review` 是**有意的兼容别名**。
+
+    历史 `evidence-changelog.jsonl` 里的 `codex_review:l2` 行不重写（改写历史账目会破坏
+    "当时记的是什么"）。`article_group.codex_review` 会显式把前缀改回旧值——那是给旧入口
+    留的路，不是漏改。
+    """
+    from article_group import codex_review, dsh_review
+
+    assert dsh_review.REASON_PREFIX == "dsh_review"
+    assert codex_review.REASON_PREFIX == "codex_review"

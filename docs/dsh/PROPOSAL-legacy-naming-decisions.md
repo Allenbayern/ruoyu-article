@@ -90,31 +90,46 @@ if external_review is None and codex is None:
 - 顺带把该 unit 自己的 `Description` 里的 `Codex` 改成 `dsh`（同一文件、同类零成本；已向
   controller 明示）。
 
-## 七、待排期：B 迁移的执行清单（尚未开始）
+## 七、B 迁移：执行清单与**执行记录**（2026-09-25 已执行）
 
-> 立此清单是为了**不忘记**，不是为了现在做。执行时**独占一轮**，按下列顺序（读端先兼容，
-> 写端后改），并且**迁移窗口内建议先冻结并行写作**（否则失配与并发改动难以区分）。
+> 立此清单是为了**不忘记**。执行时**独占一轮**，按下列顺序（读端先兼容，写端后改）。
+> **本轮不冻结并行写作**：执行前实测工作树干净、无活跃写手（controller 已确认）。
+> **状态：已执行完毕**，四波提交 `ff7dfc2` / `da98b39` / `0546a0d` / `f6b1e0e`（见 §八）。
 
-范围（实测规模，详见 §三的表）：
+范围（**执行时按真实产物重新实测**，与立项时的估算有出入，以下为实测值）：
 
-| 目标值 | 现状 | 落点规模 |
-|---|---|---|
-| `review_surface` | `"markdown_codex"` | 72 个既有 `batch.json` + 30 个代码/模板/夹具文件 |
-| `preview_mode` | `"local_codex"` | 同量级 |
-| L2 复核产物名 | `review/<aid>/codex-l2-review*.json` | **200 个文件、10 个 run** |
-| 各 `schema_version` | `codex-*-v1` 族 | 5 类（viral-library context/index/reader、skill-inventory、daily-article-consumer、review-audit-manifest） |
-| 复核契约版本 | `codex-review-contract-1.0` | 13 处断言/引用；AGENTS.md 拿它当"兼容形状"判据 |
-| 账本原因前缀 | `codex_review:l2` | 既有 `evidence-changelog.jsonl` 历史行 |
-| 消费者 manifest 名 | `codex-daily-article-run.json` | `scripts/dsh_daily_article_runner.py:40`（写端）+ `tests/test_dsh_linux_runners.py`（读端，5 处） |
+| 目标值 | 原现状 | 落点规模（实测） | 新值 |
+|---|---|---|---|
+| `review_surface` | `"markdown_codex"` | **73 个真实 `batch.json`**（72 个旧值 + 1 个 `html_delivery`）+ 17 个代码/模板/测试文件 | `markdown_dsh` |
+| `preview_mode` | `"local_codex"` | 1 个真实 `batch.json` + 6 个文件 | `local_dsh` |
+| L2 复核产物名 | `codex-l2-review*.json` | **86 个文件 / 10 个 run**（以 `codex-l2` 开头者实测；立项时写的"200 个文件"**偏大**） | `dsh-l2-review.json`（新名写、旧名读） |
+| 各 `schema_version` | `codex-*-v1` 族 | 真实 `runs/` 里 **5 种**（复核契约 78 份、`codex-l2-review-timeout-v1` 3 份、viral-library index 2 份、context 1 份、daily-article-consumer 1 份） | `dsh-*` |
+| 复核契约版本 | `codex-review-contract-1.0` | 8 处测试断言 + AGENTS.md/模板/schemas 引用 | `dsh-review-contract-1.0` |
+| 账本原因前缀 | `codex_review:l2` | 历史 `evidence-changelog.jsonl` 行 | `dsh_review:*`（写端已是新值；`codex_review` 保留为**兼容别名**） |
+| 消费者 manifest 名 | `codex-daily-article-run.json` | 写端 1 处 + 测试 5 处 | `dsh-daily-article-run.json` |
 
-执行步骤（顺序不可颠倒）：
+**执行步骤（顺序未颠倒）**：
 
 1. **读端先兼容**：每处读端接受**新旧两个值**（新值为 `dsh-*`），并加测试钉住"旧值仍可读"。
-2. **写端改新值**：改 `CONSUMER_MANIFEST_NAME`、`schema_version` 写出值、`review_surface` 等。
-3. **历史产物**：**不重写**（改写历史产物会破坏"当时写的是什么"这一事实）。读端靠第 1 步的兼容
-   同时服务新旧。若确要重写，必须走 `evidence_write` 留底通道并逐 run 记账。
-4. **文档**：`docs/dsh/` 与项目 `AGENTS.md` 里的相关引用同步；本文档标记"已完成"。
-5. **独立复核一轮**（按本仓纪律：修复本身也要复核），对象仅限本次迁移 diff。
+   落成 `normalize_*` / `is_*` / `ACCEPTED_*` 三件套 + `tests/test_contract_value_migration.py`。
+2. **写端改新值**：`DEFAULT_REVIEW_SURFACE`、`DEFAULT_PREVIEW_MODE`、`CONSUMER_MANIFEST_NAME`、
+   `schema_version` 写出值、生产引擎 `scripts/daily_engine.py`。
+3. **历史产物**：**一份都没重写**。证据：73 个真实 `batch.json` 全部仍通过校验（72 个解析为新值）；
+   扫描 `runs/` 下 2534 个 json，历史 `schema_version` 全部落在某个 `ACCEPTED_*` 里。
+4. **文档**：`AGENTS.md`、`templates/*`、`schemas/dsh-review-contract.json` 同步；本文档标记已执行。
+5. **独立复核一轮**：对象仅限本次迁移 diff（见 §八）。
+
+**执行中发现的两处清单错误（已按实测修正，不是猜测）**：
+
+- `codex-l2-review-timeout-v1`（3 份，`runs/2026-09-04/daily-003/…`）**根本没有登记在册**——
+  是"扫描真实产物"那条用例抓出来的。已收进 `LEGACY_SCHEMA_VERSIONS`。
+- L2 产物规模"200 个文件"偏大：实测以 `codex-l2` 开头的产物是 **86 个文件 / 10 个 run**
+  （"10 个 run"是对的）。同族的 `review/**/*l2*.json` 有 158 个，但那包含 readiness packet 等
+  另一类产物，**不属于**本项（它们的名字里没有 `codex`，不需要迁移）。
 
 **明确不做**：不改 `CODEX_HOME`/`CODEX_SKILLS_ROOT`/`--codex-skills-root`——它们指的是**已退役
-运行时**的目录，属历史专名，改了会指向不存在的东西并抹掉"这段为什么是死的"。
+运行时**的目录，属历史专名，改了会指向不存在的东西并抹掉"这段为什么是死的"。同理保留：
+`scripts/dsh_skill_inventory.py` 里的来源标签 `"codex-user"`；`scripts/generate_daily_00{1,2}.py`
+与 `run_real_daily_00{3,4}.py` 这几个 **daily-001…004 的史实生成脚本**（它们写的就是当时的值，
+改脚本会让"重跑一遍却产出与磁盘不一致的东西"）；`docs/superpowers/**/2026-08-26-conditional-preview-mode*.md`
+（当年那次改动的设计/计划存档）。

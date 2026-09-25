@@ -29,6 +29,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from article_group.evidence_paths import resolve_l2_review_record
+
 SCHEMA_VERSION = "title-freeze-v1"
 FREEZE_NAME = "title-freeze.json"
 BLOCKING_STATUSES = ("no_title_pack", "not_frozen", "title_changed_after_freeze",
@@ -124,7 +126,8 @@ def check(run_dir: str | Path, aid: str) -> dict[str, Any]:
             "reason": "标题包在冻结后被改动：旧 L2 approve 失效，需重新复核",
             "publication_authorization": "not_authorized",
         }
-    l2 = _load(root / "review" / aid / "codex-l2-review.json")
+    # 新名优先、回退历史名（那 200 份旧记录不重写）
+    l2 = _load(resolve_l2_review_record(root, aid))
     l2_hash = l2.get("title_pack_sha256")
     if l2_hash and l2_hash != frozen_hash:
         return {

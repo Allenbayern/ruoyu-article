@@ -24,6 +24,11 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from article_group.evidence_paths import (
+    L2_REVIEW_RECORD_NAME,
+    LEGACY_L2_REVIEW_RECORD_NAMES,
+)
+
 SCHEMA_VERSION = "evidence-rebind-v1"
 REPORT_NAME = "evidence-rebind-report.json"
 
@@ -61,10 +66,17 @@ def _load(path: Path) -> dict[str, Any] | None:
 
 
 def dependent_records(run_dir: Path, aid: str) -> list[Path]:
-    """会被交付内容改写而失效的记录清单。"""
+    """会被交付内容改写而失效的记录清单。
+
+    L2 复核记录**两个名字都列**：历史 run 里是旧名（`codex-l2-review.json`），
+    新 run 是新名（`dsh-l2-review.json`）。只列一个，另一种命名的 run 的
+    approve 就不会被判失效——那正是这张清单要防的事。不存在的路径照旧被
+    reconcile 跳过，不影响既有语义。
+    """
     return [
         run_dir / "review" / aid / "independent-review.json",
-        run_dir / "review" / aid / "codex-l2-review.json",
+        run_dir / "review" / aid / L2_REVIEW_RECORD_NAME,
+        run_dir / "review" / aid / LEGACY_L2_REVIEW_RECORD_NAMES[0],
         run_dir / "review" / aid / "source-stripped-readability.json",
         run_dir / "review" / "attestation" / f"{aid}.human.json",
     ]

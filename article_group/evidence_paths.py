@@ -25,10 +25,35 @@ from pathlib import Path
 from typing import Any
 
 __all__ = [
+    "L2_REVIEW_RECORD_NAME",
+    "LEGACY_L2_REVIEW_RECORD_NAMES",
     "json_text",
     "rebase_moved_run_path",
+    "resolve_l2_review_record",
     "run_relative_reference",
 ]
+
+
+# L2 复核记录的**文件名约定**（2026-09-25 契约值迁移）。
+# 历史产物（200 个文件 / 10 个 run）叫 `codex-l2-review.json` 及 `codex-l2-review-r*.json`。
+# 文件已经有 200 份，**不重写**——"改文件名 = 那些 run 的复核证据在脚本里找不到"。
+# 所以规矩是：**新名写、旧名读**（读端回退），见 resolve_l2_review_record()。
+L2_REVIEW_RECORD_NAME = "dsh-l2-review.json"
+LEGACY_L2_REVIEW_RECORD_NAMES = ("codex-l2-review.json",)
+
+
+def resolve_l2_review_record(run_root: str | Path, article_id: str) -> Path:
+    """找一条 L2 复核记录：**新名优先，回退历史名**。
+
+    返回**存在**的那一个；两个都不在时返回新名路径（调用方照旧用 `.is_file()` 判断，
+    语义不变）。回退是必需的：历史 run 里躺的就是旧名，而它们不重写。
+    """
+    base = Path(run_root) / "review" / str(article_id)
+    for name in (L2_REVIEW_RECORD_NAME, *LEGACY_L2_REVIEW_RECORD_NAMES):
+        candidate = base / name
+        if candidate.is_file():
+            return candidate
+    return base / L2_REVIEW_RECORD_NAME
 
 
 _RUN_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
