@@ -52,6 +52,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 from collections.abc import Mapping, Sequence
@@ -408,14 +409,23 @@ def _align_ledger_worktree(work: Path, *, remote: str, env: Mapping[str, str]) -
     **还校验并改写 origin**（第六轮复核 minor 3，pre-existing）：此前只对齐分支，不校验工作
     副本的远端指向——操作者改了 `RUOYU_SEAL_ANCHOR_PUSH`/配置文件后，后续封存仍推**旧**账本，
     而清单的 `anchor.remote` 一律写新 URL，新账本一个 ref 都没有（机器可读层谎报推送目标）。
-    现在 fetch 与 push 两个 URL 都按**当前配置**改指，让"实际推送目标"与清单记录必然一致；
-    代价是**换账本时会把旧账本的历史一并带过去**——账本是 append-only 的锚点副本，带过去
-    比丢一条锚点好，这一点是刻意选择。
+    现在 fetch 与 push 两个 URL 都按**当前配置**改指，让实际推送目标回到配置的那一个。
+
+    注意**清单里的 `remote` 记的是 git 解析后的真实推送 URL**（`git remote get-url --push origin`），
+    不是配置串——全局 `url.*.insteadOf` / `pushInsteadOf` 这类重写发生在工作副本之外，只改
+    `set-url` 挡不住（第七轮复核 minor 2 实测：清单写 A、锚点实际落在重写后的 B）。读回解析结果
+    才能保证"清单写的 == 实际落点"。
 
     **分叉不丢本地提交**（第六轮复核 minor 1）：本地与远端分叉时**不再** `checkout -B origin/main`
     硬重置（那会连工作副本里待推送的锚点文件一起被 git 删掉，那条锚点永不再推）；改成先把
-    本地独有的提交 `rebase` 到远端之上、再一起推。rebase 也不行（冲突）时**不**硬重置，如实
-    返回 failed，本地提交原样留着下次再试。
+    本地独有的提交 `rebase` 到远端之上、再一起推。
+
+    **rebase 冲突时既不丢也不连坐**（第七轮复核 minor 1）：同名路径不同内容（锚点名只由
+    「日期-批次」派生）会 add/add 冲突，而且**重试是确定性失败**——所以这里不能"留着下次再试"：
+    把本地待推送提交挪到一个 `seal-rescue-*` 分支留档，然后照常在 `origin/main` 之上提交并推送
+    **本条 run** 的锚点，并把冲突路径与 rescue 分支名写进返回的 `note`。冲突那批不会被自动重推，
+    它们的锚点在**本机锚点库**里仍在、对应 run 的清单如实写 `replication=failed`，恢复路径是
+    先清账本上的同名冲突、再对该 run `--unseal` 重封。
     """
     def git(*args: str) -> subprocess.CompletedProcess:
         return subprocess.run(
@@ -423,6 +433,7 @@ def _align_ledger_worktree(work: Path, *, remote: str, env: Mapping[str, str]) -
             capture_output=True, text=True, timeout=30, env=dict(env),
         )
 
+    note = ""
     # ① 远端跟随配置（fetch 与 push 两个 URL 都改指，避免残留 pushurl 让推送目标与清单不一致）
     for args in (("remote", "set-url", "origin", remote),
                  ("remote", "set-url", "--push", "origin", remote)):
@@ -431,10 +442,10 @@ def _align_ledger_worktree(work: Path, *, remote: str, env: Mapping[str, str]) -
             # 工作副本可能根本没有 origin（缓存被手工破坏）：补一个再继续
             added = git("remote", "add", "origin", remote)
             if added.returncode != 0 and "already exists" not in (added.stderr + added.stdout):
-                return False, (result.stderr or result.stdout or "remote set-url failed")[-400:]
+                return False, (result.stderr or result.stdout or "remote set-url failed")[-400:], note
     fetch = git("fetch", "--prune", "origin", "+refs/heads/*:refs/remotes/origin/*")
     if fetch.returncode != 0:
-        return False, (fetch.stderr or fetch.stdout or "fetch failed")[-400:]
+        return False, (fetch.stderr or fetch.stdout or "fetch failed")[-400:], note
 
     remote_ref = f"refs/remotes/origin/{LEDGER_BRANCH}"
     has_remote = git("rev-parse", "--verify", "--quiet", remote_ref).returncode == 0
@@ -451,30 +462,101 @@ def _align_ledger_worktree(work: Path, *, remote: str, env: Mapping[str, str]) -
         aligned = git("checkout", "-B", LEDGER_BRANCH, "HEAD")
     else:
         # 分叉（远端被别处推进过，或换了账本）：把本地独有的提交 rebase 到远端之上，
-        # **不静默丢弃**。rebase 失败就如实 failed，本地提交原样保留。
+        # **不静默丢弃**。
         rebased = git("rebase", remote_ref)
         if rebased.returncode != 0:
+            # 冲突路径要从 index 里取（stderr 尾巴会被 hint 行挤掉，操作者看不到是哪个路径）
+            unmerged = [line.strip() for line in
+                        git("diff", "--name-only", "--diff-filter=U").stdout.splitlines() if line.strip()]
             git("rebase", "--abort")
-            return False, ("本地与账本分叉且 rebase 失败（本地待推送的提交未被丢弃，仍留在 "
-                           f"工作副本里）：" + (rebased.stderr or rebased.stdout)[-300:])
-        aligned = git("checkout", "-B", LEDGER_BRANCH, "HEAD")
+            # 留档本地待推送提交（别让它们消失），然后照常在 origin/main 之上推本条 run
+            rescue = "seal-rescue-" + _dt.datetime.now().strftime("%Y%m%dT%H%M%S")
+            git("branch", "-f", rescue, "HEAD")
+            aligned = git("checkout", "-B", LEDGER_BRANCH, remote_ref)
+            note = ("本地与账本分叉且 rebase 冲突"
+                    + (f"（未合并路径：{'; '.join(unmerged)}）" if unmerged else "（未取得未合并路径）")
+                    + f"；本地待推送提交已留档在分支 {rescue}（**未推送**）。"
+                      "同名路径冲突是**确定性失败**，重试不会自愈：冲突那条 run 的恢复路径是"
+                      "先清掉账本上的同名冲突、再对它 `--unseal` 重封（重封会重试离机复制）。"
+                      "本条 run 的锚点不受影响，照常推到账本。")
+        else:
+            aligned = git("checkout", "-B", LEDGER_BRANCH, "HEAD")
     if aligned.returncode != 0:
-        return False, (aligned.stderr or aligned.stdout or "checkout failed")[-400:]
-    return True, ""
+        return False, (aligned.stderr or aligned.stdout or "checkout failed")[-400:], note
+    return True, "", note
 
 
-def _replicate_anchor(path: Path, *, ident: str) -> tuple[str, str]:
+def _pending_commit_count(work: Path, *, old_remote: str, env: Mapping[str, str]) -> tuple[int, str]:
+    """工作副本里**尚未推送**的提交数（换账本时判断"能不能安全丢弃这份缓存"）。
+
+    先向**旧**账本 fetch 一次再数 `origin/main..HEAD`——不先取就数不准：clone 一个空仓库时
+    git 连 `refs/remotes/origin/*` 都不建，无从比较。返回 `(count, detail)`；`count < 0`
+    表示**无法判定**（旧账本取不到），此时调用方必须如实说明，不许当成 0。
+    """
+    def git(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", "-C", str(work), *args],
+                              capture_output=True, text=True, timeout=30, env=dict(env))
+
+    if git("rev-parse", "--verify", "--quiet", "HEAD").returncode != 0:
+        return 0, ""
+    fetched = subprocess.run(
+        ["git", "-C", str(work), "fetch", "--prune", old_remote, "+refs/heads/*:refs/remotes/origin/*"],
+        capture_output=True, text=True, timeout=30, env=dict(env),
+    )
+    if fetched.returncode != 0:
+        return -1, (fetched.stderr or fetched.stdout or "fetch old ledger failed")[-200:]
+    remote_ref = f"refs/remotes/origin/{LEDGER_BRANCH}"
+    if git("rev-parse", "--verify", "--quiet", remote_ref).returncode != 0:
+        return -1, "旧账本上取不到账本分支"
+    counted = git("rev-list", "--count", f"{remote_ref}..HEAD")
+    try:
+        return int(counted.stdout.strip() or "0"), ""
+    except ValueError:
+        return -1, (counted.stderr or "rev-list failed")[-200:]
+
+
+def _replicate_anchor(path: Path, *, ident: str) -> tuple[str, str, str]:
     """把本机锚点文件提交并推到离机仓库。失败不抛——调用方按 `replication=failed` 如实记录
-    （本机锚点仍然有效，只是没有离机副本）。"""
+    （本机锚点仍然有效，只是没有离机副本）。
+
+    返回 `(replication, detail, note)`：
+
+    - `detail`：成功时是 **git 解析后的真实推送 URL**（记进清单 `anchor.remote`；`insteadOf`
+      重写会体现在这里）；失败时是给操作者看的错误正文（记进 `reason`）。
+    - `note`：**不阻断**但必须如实留痕的异常（换账本时丢弃了未推送提交、分叉冲突挪到 rescue
+      分支…），由 `write_anchor` 记进清单 `anchor.replication_note`。空串 = 没有。
+    """
     remote = _anchor_remote()
     if not remote:
-        return "local-only", ""
+        return "local-only", "", ""
     work = path.parent / ".seal-ledger-work"
     env = {**os.environ, "GIT_AUTHOR_NAME": "ruoyu-seal-anchor",
            "GIT_AUTHOR_EMAIL": "seal-anchor@localhost",
            "GIT_COMMITTER_NAME": "ruoyu-seal-anchor",
            "GIT_COMMITTER_EMAIL": "seal-anchor@localhost"}
     try:
+        note = ""
+        # 换账本（工作副本的 origin 与**当前配置**不一致）时**不搬家**：
+        # 把旧账本的历史 rebase 到新账本之上，只要新账本已有**同名不同内容**的锚点就必然
+        # add/add 冲突 → 之后每条 run 都卡死（第七轮复核 minor 1 实测）。锚点文件名只由
+        # 「日期-批次」派生，同名是已知风险。所以改成：没有未推送提交就重新 clone（无冲突面），
+        # 有就照旧重新 clone 但**把"扔掉了哪几条"如实记进 note**（锚点内容在本机锚点库里仍在）。
+        stale_origin = ""
+        if (work / ".git").is_dir():
+            shown = subprocess.run(["git", "-C", str(work), "remote", "get-url", "origin"],
+                                   capture_output=True, text=True, timeout=15, env=env)
+            stale_origin = shown.stdout.strip() if shown.returncode == 0 else ""
+            if stale_origin and stale_origin != remote:
+                pending, why = _pending_commit_count(work, old_remote=stale_origin, env=env)
+                note = (f"离机账本已从 {stale_origin} 改指到 {remote}：工作副本按新账本重新 clone。"
+                        "**旧账本的历史不搬过去**——搬过去会在'新账本已有同名不同内容锚点'时必然冲突"
+                        "（第七轮复核 minor 1）。")
+                if pending > 0:
+                    note += (f" 本次丢弃了 {pending} 条未推送的本地提交（它们的锚点在本机锚点库仍保留，"
+                             "对应 run 的清单如实写 replication=failed，恢复可用 --unseal 重封）。")
+                elif pending < 0:
+                    note += f" 无法确认是否有未推送提交（旧账本取不到：{why}）。"
+                shutil.rmtree(work)
         if not (work / ".git").is_dir():
             work.mkdir(parents=True, exist_ok=True)
             clone = subprocess.run(
@@ -482,12 +564,13 @@ def _replicate_anchor(path: Path, *, ident: str) -> tuple[str, str]:
                 capture_output=True, text=True, timeout=30, env=env,
             )
             if clone.returncode != 0:
-                return "failed", (clone.stderr or clone.stdout or "clone failed")[-400:]
+                return "failed", (clone.stderr or clone.stdout or "clone failed")[-400:], note
         # 复用工作副本时**不再** `git pull --ff-only`：那依赖 clone 时按远端 HEAD 定下的
         # upstream，远端默认分支不是 main 时第二条锚点必失败（见 `_align_ledger_worktree`）。
-        aligned, detail = _align_ledger_worktree(work, remote=remote, env=env)
+        aligned, detail, align_note = _align_ledger_worktree(work, remote=remote, env=env)
+        note = "; ".join(part for part in (note, align_note) if part)
         if not aligned:
-            return "failed", detail
+            return "failed", detail, note
         dest = work / "anchors" / path.name
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(path.read_bytes())
@@ -498,16 +581,22 @@ def _replicate_anchor(path: Path, *, ident: str) -> tuple[str, str]:
             capture_output=True, text=True, timeout=15, env=env,
         )
         if commit.returncode != 0 and "nothing to commit" not in (commit.stdout + commit.stderr):
-            return "failed", (commit.stderr or commit.stdout)[-400:]
+            return "failed", (commit.stderr or commit.stdout)[-400:], note
         push = subprocess.run(
             ["git", "-C", str(work), "push", "origin", f"{LEDGER_BRANCH}:{LEDGER_BRANCH}"],
             capture_output=True, text=True, timeout=30, env=env,
         )
         if push.returncode != 0:
-            return "failed", (push.stderr or push.stdout or "push failed")[-400:]
+            return "failed", (push.stderr or push.stdout or "push failed")[-400:], note
+        # 清单里记 **git 解析后的真实推送 URL**，不是配置串：全局 `url.*.insteadOf` /
+        # `pushInsteadOf` 重写在 worktree 之外生效，只记配置串会写出与实际落点不符的 remote
+        # （第七轮复核 minor 2 实测）。
+        effective = subprocess.run(["git", "-C", str(work), "remote", "get-url", "--push", "origin"],
+                                   capture_output=True, text=True, timeout=15, env=env)
+        recorded = (effective.stdout or "").strip() or remote
     except (OSError, subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
-        return "failed", f"{type(exc).__name__}: {exc}"
-    return "pushed", remote
+        return "failed", f"{type(exc).__name__}: {exc}", ""
+    return "pushed", recorded, note
 
 
 def write_anchor(run_dir: str | Path, payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -561,8 +650,15 @@ def write_anchor(run_dir: str | Path, payload: Mapping[str, Any]) -> dict[str, A
             "remedy": f"检查 {ANCHOR_DIR_ENV} 指向的目录是否可写",
             "manifest_digest": digest,
         }
-    replication, detail = _replicate_anchor(path, ident=path.name)
-    if replication != record["replication"]:
+    # 容错解包：`_replicate_anchor` 现返回三元组 `(replication, detail, note)`，但历史/外部
+    # 桩（测试里 monkeypatch 的假实现）可能只给两元组——不许因此把封存打崩。
+    replication, detail, *rest = _replicate_anchor(path, ident=path.name)
+    replication_note = str(rest[0]) if rest and rest[0] else ""
+    if replication_note:
+        # 不阻断但必须留痕的异常（换账本丢缓存、分叉冲突挪 rescue）：记进锚点文件与清单，
+        # 否则这类事件在成功路径上会完全不可见。
+        record["replication_note"] = replication_note
+    if replication != record["replication"] or replication_note:
         # 回写本机锚点，让它记的是**真实**结果。
         # 注：配了离机推送时，离机仓库里那份是"推送当时"的内容（replication 仍写 pending），
         # 只有下一次推送同一锚点才会追上——这是已知的、仅影响离机账本显示的一步滞后。
@@ -591,6 +687,7 @@ def write_anchor(run_dir: str | Path, payload: Mapping[str, Any]) -> dict[str, A
                       f"——重新封存不会重试这一步。\n"
                       f"    可执行命令：{_unseal_command(run_dir)}",
             "note": "只有本机快照：同 uid 的写手可以同时改写本机锚点与清单来掩盖篡改。",
+            **({"replication_note": replication_note} if replication_note else {}),
         }
     note = "清单自身已锚到 run 之外"
     if replication == "local-only":
@@ -603,6 +700,8 @@ def write_anchor(run_dir: str | Path, payload: Mapping[str, Any]) -> dict[str, A
         "replication": replication,
         "remote": detail,
         "note": note,
+        # 成功路径上的异常也必须留痕（换账本丢缓存 / 分叉冲突挪 rescue），否则它们完全不可见
+        **({"replication_note": replication_note} if replication_note else {}),
     }
 
 

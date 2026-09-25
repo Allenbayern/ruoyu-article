@@ -1109,10 +1109,65 @@ def test_a_stale_work_tree_remote_follows_the_configured_ledger(
             return set()
         return {line.split("/")[-1] for line in listed.stdout.split() if line.endswith(".anchor.json")}
 
-    # 事实与清单一致：**新**账本上有两条（换账本会把旧历史一并带过去），旧账本仍是它那一条
-    assert anchors_in(ledger_b) == {
-        run_seal.anchor_file_for(first).name, run_seal.anchor_file_for(second).name}
+    # 事实与清单一致：锚点落在**新**账本。旧账本历史**不搬过来**（第七轮复核 minor 1：
+    # 搬家会在"新账本已有同名不同内容锚点"时必然冲突，把之后每条 run 都卡死），
+    # 所以旧账本仍只有它自己那一条，新账本只有换过来之后的这一条。
+    assert anchors_in(ledger_b) == {run_seal.anchor_file_for(second).name}
     assert anchors_in(ledger_a) == {run_seal.anchor_file_for(first).name}
+    # 换账本这件事必须在成功路径上留痕（否则完全不可见）
+    assert "改指到" in block.get("replication_note", ""), block
+
+
+def test_switching_to_a_ledger_that_already_has_a_same_named_anchor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """换账本 + 目标账本**已有同名不同内容**的锚点：新 run 仍必须 `pushed`、不许卡死。
+
+    第七轮复核 minor 1 的实测（探针 p9）：此前"把旧账本历史 rebase 到新账本之上"的设计，
+    只要新账本里存在同名锚点（锚点名只由「日期-批次」派生）就 add/add 冲突 → **之后每一条**
+    run 都 `failed`、账本一个 ref 都收不到，而且卡死那条连"下次随历史补推"的机会都没有。
+    """
+    ledger_a = tmp_path / "ledger-a.git"
+    ledger_b = tmp_path / "ledger-b.git"
+    for path in (ledger_a, ledger_b):
+        subprocess.run(["git", "init", "--bare", "-b", "main", str(path)],
+                       check=True, capture_output=True)
+
+    monkeypatch.setenv(run_seal.ANCHOR_PUSH_ENV, str(ledger_a))
+    first = _sealed_run(tmp_path, name="daily-971")
+    assert run_seal.load_manifest(first)["anchor"]["replication"] == "pushed"
+
+    # 目标账本上先塞一条**同名但内容不同**的锚点（模拟"另一台机器的账本"）。
+    # 锚点名只由「日期-批次」派生，所以这里能用 `anchor_file_for()` 在**封存之前**算出名字。
+    target_run = tmp_path / "daily-972"
+    same_name = run_seal.anchor_file_for(target_run).name
+    seed = tmp_path / "seed-b"
+    subprocess.run(["git", "clone", str(ledger_b), str(seed)], check=True, capture_output=True)
+    (seed / "anchors").mkdir(parents=True, exist_ok=True)
+    (seed / "anchors" / same_name).write_text('{"schema_version": "seal-anchor-v1", "note": "别的机器"}\n',
+                                              encoding="utf-8")
+    for args in (["add", "--", f"anchors/{same_name}"],
+                 ["-c", "user.name=other", "-c", "user.email=other@x", "commit", "-m", "seed other machine"]):
+        subprocess.run(["git", "-C", str(seed), *args], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(seed), "push", "origin", "main:main"], check=True, capture_output=True)
+
+    monkeypatch.setenv(run_seal.ANCHOR_PUSH_ENV, str(ledger_b))
+    switched = _sealed_run(tmp_path, name="daily-972")
+    block = run_seal.load_manifest(switched)["anchor"]
+    assert block["replication"] == "pushed", block
+    note = block.get("replication_note", "")
+    assert "改指到" in note, block
+    # 换账本走的是**重新 clone**，不该靠"搬家 → 冲突 → 救援"收场；旧账本的历史也不该被搬进来
+    assert "rebase 冲突" not in note, block
+
+    listed = subprocess.run(["git", "-C", str(ledger_b), "ls-tree", "-r", "--name-only", "main"],
+                            capture_output=True, text=True, check=True).stdout
+    assert run_seal.anchor_file_for(first).name not in listed, listed
+
+    shown = subprocess.run(["git", "-C", str(ledger_b), "show", f"main:anchors/{same_name}"],
+                           capture_output=True, text=True, check=True).stdout
+    # 同名那条已被本机（权威）版本覆盖：账本上留下的是我们这次封存的摘要
+    assert json.loads(shown)["manifest_digest"] == block["manifest_digest"]
 
 
 def test_a_divergent_ledger_still_replicates_the_local_only_anchor(
@@ -1176,3 +1231,91 @@ def test_a_divergent_ledger_still_replicates_the_local_only_anchor(
                             f"main:anchors/{run_seal.anchor_file_for(failed).name}"],
                            capture_output=True, text=True, check=True).stdout
     assert json.loads(shown)["manifest_digest"] == failed_block["manifest_digest"]
+
+
+def test_a_same_ledger_conflict_does_not_block_the_current_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """同名路径 add/add 冲突时：本条 run 照常推送、冲突那批留档、且**不静默**。
+
+    第七轮复核 minor 1 的另一半，也是它点名的 coverage gap：rebase 失败这条分支此前
+    **没有任何用例覆盖**——把实现换成恒失败，套件也不会红。这里把它钉住：
+    本条 run 仍 `pushed`（不连坐）、冲突路径与 rescue 分支名写进 `replication_note`、
+    本地待推送提交在 rescue 分支上完整保留、账本上那条同名锚点没被我们覆盖。
+    """
+    remote = _bare_ledger(tmp_path)
+    monkeypatch.setenv(run_seal.ANCHOR_PUSH_ENV, str(remote))
+    first = _sealed_run(tmp_path, name="daily-981")
+    assert run_seal.load_manifest(first)["anchor"]["replication"] == "pushed"
+
+    # 让 run2 的推送失败：本地留下已 commit 未推送的锚点
+    hook = remote / "hooks" / "pre-receive"
+    hook.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    hook.chmod(0o755)
+    failed = _sealed_run(tmp_path, name="daily-982")
+    assert run_seal.load_manifest(failed)["anchor"]["replication"] == "failed"
+    hook.unlink()
+
+    # 外部写手把**同名路径**用**不同内容**推上账本 → 真分叉 + 真冲突
+    clashing = run_seal.anchor_file_for(failed).name
+    other = tmp_path / "other-writer"
+    subprocess.run(["git", "clone", str(remote), str(other)], check=True, capture_output=True)
+    (other / "anchors").mkdir(exist_ok=True)
+    (other / "anchors" / clashing).write_text('{"note": "别的机器写的同名锚点"}\n', encoding="utf-8")
+    for args in (["add", "--", f"anchors/{clashing}"],
+                 ["-c", "user.name=other", "-c", "user.email=other@x", "commit", "-m", "external same-name"],
+                 ["push", "origin", "main:main"]):
+        subprocess.run(["git", "-C", str(other), *args], check=True, capture_output=True)
+
+    third = _sealed_run(tmp_path, name="daily-983")
+    block = run_seal.load_manifest(third)["anchor"]
+    assert block["replication"] == "pushed", block                 # 不连坐
+    note = block.get("replication_note", "")
+    assert "rebase 冲突" in note and "seal-rescue-" in note, note
+    assert clashing in note, note                                  # 冲突路径必须可见
+
+    work = run_seal._anchor_dir() / ".seal-ledger-work"
+    branches = subprocess.run(["git", "-C", str(work), "branch", "--format=%(refname:short)"],
+                              capture_output=True, text=True, check=True).stdout.split()
+    rescue = [name for name in branches if name.startswith("seal-rescue-")]
+    assert rescue, f"没有留下 rescue 分支：{branches}"
+    rescue_log = subprocess.run(["git", "-C", str(work), "log", "--format=%s", rescue[0]],
+                                capture_output=True, text=True, check=True).stdout
+    assert "daily-982" in rescue_log, rescue_log                   # 本地提交没丢
+
+    # 冲突那批没被推上去：账本上那条同名锚点仍是外部写手的版本
+    shown = subprocess.run(["git", "-C", str(remote), "show", f"main:anchors/{clashing}"],
+                           capture_output=True, text=True, check=True).stdout
+    assert "别的机器" in shown, shown
+    # 本条 run 的锚点确实进了账本
+    listed = subprocess.run(["git", "-C", str(remote), "ls-tree", "-r", "--name-only", "main"],
+                            capture_output=True, text=True, check=True).stdout
+    assert run_seal.anchor_file_for(third).name in listed, listed
+
+
+def test_the_recorded_remote_is_the_effective_push_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """清单里的 `remote` 必须是 git **解析后**的真实推送目标（第七轮复核 minor 2）。
+
+    全局 `url.<base>.insteadOf` 这类重写发生在工作副本之外：只把 `set-url` 改成配置串，
+    清单仍会写出与实际落点不符的 remote（实测：清单写 A、锚点落在 B、A 一个 ref 都没有）。
+    这里用一份**临时 global config** 造重写（不动本机真实的 git 配置）。
+    """
+    real = tmp_path / "real-target.git"
+    subprocess.run(["git", "init", "--bare", "-b", "main", str(real)], check=True, capture_output=True)
+    alias = "alias:seal-ledger"
+    config = tmp_path / "gitconfig"
+    config.write_text(f'[url "{real}"]\n\tinsteadOf = {alias}\n', encoding="utf-8")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", str(tmp_path / "no-system-config"))
+    monkeypatch.setenv(run_seal.ANCHOR_PUSH_ENV, alias)
+
+    root = _sealed_run(tmp_path, name="daily-991")
+    block = run_seal.load_manifest(root)["anchor"]
+    assert block["replication"] == "pushed", block
+    assert block["remote"] == str(real), block          # 解析后的真实落点，不是 alias 串
+
+    listed = subprocess.run(["git", "-C", str(real), "ls-tree", "-r", "--name-only", "main"],
+                            capture_output=True, text=True, check=True).stdout
+    assert run_seal.anchor_file_for(root).name in listed, listed
