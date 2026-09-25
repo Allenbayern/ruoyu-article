@@ -180,6 +180,22 @@ def close_out(
                           reason=f"run 已封存（{blocked}）：需 controller 明确指令后加 --force 或先 unseal")
             return report
 
+    # 预检：树扫不动就**什么都别改**——否则会改完两分钟才在封存那一步抛异常，
+    # 留下"已改动但未封存"的 run（七轮复核 minor 4）
+    from article_group.run_seal import preflight_scan
+
+    pre = preflight_scan(root)
+    if pre.get("bad_root"):
+        report.update(status="bad_run_root", reason=f"{pre['reason']}；{pre['remedy']}")
+        return report
+    if not pre["ok"]:
+        report.update(
+            status="unscannable_tree",
+            reason=f"有 {len(pre['scan_errors'])} 处扫不动，收尾会在封存时失败；{pre['remedy']}",
+            scan_errors=pre["scan_errors"],
+        )
+        return report
+
     rebound = _run_step(report, root, "evidence_rebind",
                         lambda: reconcile(root, apply=True, force=force))
     if rebound["stale_records"] and not allow_stale_evidence:
@@ -209,8 +225,27 @@ def close_out(
 
     from article_group.run_state import seal, seal_articles
 
-    report["seal"] = _run_step(report, root, "seal", lambda: seal(
-        root, identity=identity, ref=ref, articles=seal_articles(root)))
+    # 预检只是"静态快照下的快速失败"，**不保证**到封存那一刻树还可扫（八轮复核 H1 实测：
+    # 期间把某个目录 chmod 000，就会改完两分钟再在封存这步抛）。所以封存前**再验一次**，
+    # 失败就给出干净报告（保留已完成的 steps），而不是未捕获异常——收尾本身是可重入的：
+    # 修好路径后重跑即可，不会丢东西。
+    late = preflight_scan(root)
+    if not late["ok"]:
+        report.update(
+            status="unscannable_tree",
+            reason=f"封存前复检发现有 {len(late['scan_errors'])} 处扫不动（预检之后才变的）；"
+                   f"{late['remedy']}；收尾可重入，修好后重跑即可",
+            scan_errors=late["scan_errors"],
+        )
+        return report
+    try:
+        report["seal"] = _run_step(report, root, "seal", lambda: seal(
+            root, identity=identity, ref=ref, articles=seal_articles(root)))
+    except ValueError as exc:
+        # 复检与封存之间仍有极小窗口：同样转成干净报告，别甩 traceback
+        report.update(status="unscannable_tree",
+                      reason=f"封存未完成：{exc}；收尾可重入，修好后重跑即可")
+        return report
 
     report["finished_at"] = _now()
     report["final_review"] = dict(_load(root / "review" / "final-review.json"))
@@ -222,6 +257,10 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="python -m article_group.close_out",
         description="一条命令收尾：证据核对 → 人工验收（需 --confirm）→ 总复核 → "
                     "machine record → 公众号复制版 → RUN-RECORD §9 → 步骤日志",
+        epilog="退出码：0 收尾完成 / 2 参数或环境问题（如 --run-root 指向的不是 run 目录）"
+               " / 3 无法验证（有扫不动的子树，收尾已中止且未改动任何文件）"
+               " / 1 其它未完成状态（含 confirmation_required、run_sealed、"
+               "blocked_stale_evidence、failed）",
     )
     parser.add_argument("--run-root", required=True, type=Path)
     parser.add_argument("--identity", default="owner", help="人工签字署名（不得含 agent/model/ai）")
@@ -262,7 +301,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         if report.get("final_review"):
             fr = report["final_review"]
             print(f"  final_review: verdict={fr.get('verdict')} governance={fr.get('governance_result')}")
-    return 0 if report["status"] == "ok" else 1
+    # 扫不动按文档口径退 3（"无法验证"），与其他入口一致
+    # 退出码：0 完成 / 2 参数或环境问题（坏 --run-root）/ 3 无法验证（扫不动的树）/ 1 其它
+    return {"ok": 0, "bad_run_root": 2, "unscannable_tree": 3}.get(report["status"], 1)
 
 
 __all__ = [

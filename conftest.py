@@ -36,3 +36,23 @@ def guard_runs_dir() -> None:
               f"或显式设 {ALLOW_ENV}=1 放行。",
             pytrace=False,
         )
+
+
+@pytest.fixture(autouse=True)
+def isolated_seal_anchor_store(tmp_path_factory, monkeypatch):
+    """封存锚点存储必须隔离到 tmp —— 测试不许写 run 之外的生产证据库。
+
+    2026-09-25 实测：不隔离时跑一次套件会往 `/home/allen/seal-anchors` 写一批
+    pytest 残留（那里曾累积 58 个，全部来自测试；真实 run 的锚点一个都没有）。
+    危害不止"脏"：锚点文件名只按「日期-批次」派生，**同名 run 会互相覆盖摘要**，
+    而摘要正是 `run_seal.verify` 用来判「清单有没有被改写」的唯一依据——
+    测试把真实 run 的锚点覆盖掉，那道防线就永久失效且不可恢复。
+
+    同时清掉离机推送开关：否则测试会去连 mac-backup。
+    """
+    from article_group import run_seal
+
+    store = tmp_path_factory.mktemp("seal-anchors")
+    monkeypatch.setenv(run_seal.ANCHOR_DIR_ENV, str(store))
+    monkeypatch.delenv(run_seal.ANCHOR_PUSH_ENV, raising=False)
+    return store

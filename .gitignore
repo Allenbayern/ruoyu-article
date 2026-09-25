@@ -20,9 +20,16 @@ venv/
 .vscode/
 
 # Audit trail — never daily-commit material (Slice 6)
-runs/
-reviews/
-docs/
+#
+# 2026-09-24：这两条改成根锚定（前导 /）。原来的 `reviews/` 是**任意层级**匹配，
+# 把 tests/fixtures/v4/controlled-002/reviews/ 里的夹具一起吞掉了——那两个 json
+# 是被跟踪测试真正要读的夹具数据，干净克隆里缺它们会让 12 个用例直接失败
+# （test_controller_context 8 + test_article_group_v4_cli 4）。本意只是不提交
+# 仓库根部的审计目录，根锚定才表达这个意图；嵌套在 runs/ 下的 reviews/ 仍被
+# `runs/` 覆盖，行为不变。
+/runs/
+/reviews/
+/docs/
 !docs/
 docs/*
 !docs/codex/
@@ -48,6 +55,16 @@ scripts/*
 # 导入的是 scripts.dsh_review_audit；这个新名字不进白名单时，干净检出会因
 # ModuleNotFoundError 直接失败（实测：干净克隆多出 3 个回归）。与 codex_ 条目对称。
 !scripts/dsh_review_audit.py
+# 2026-09-25：选题侦察四件套（topic_scout / scout_calibration / topic_backlog /
+# scout_to_candidate_pool）的**测试**没有被忽略，而脚本本身命中上面的 `scripts/*`。
+# 于是 `git add -A` 会提交测试而不提交被它们 import 的模块——实测（git archive HEAD
+# + 工作树改动，无 .venv）：干净检出从「34 failed / 1790 passed」直接变成
+# **4 个 collection error、整套测试一条都跑不起来**。四者有 127 条绿测试、是真实的
+# 生产工具，所以正确做法是把脚本一并放行，而不是给测试加 skip。
+!scripts/topic_scout.py
+!scripts/scout_calibration.py
+!scripts/topic_backlog.py
+!scripts/scout_to_candidate_pool.py
 !scripts/codex_skill_inventory.py
 !scripts/codex_viral_library_index.py
 !scripts/run_real_daily_005.py
@@ -98,3 +115,16 @@ docs/superpowers/specs/*
 !scripts/markdown_style_audit.py
 !scripts/content_delivery_audit.py
 !scripts/preview_route_audit.py
+
+# 跨天选题储备池（项目级滚动状态，2026-09-25 由 run/ 改名而来）
+#
+# 改名原因：`run/`（单数）与封存判据依赖的 `runs/`（复数）只差一个字母，而仓库刚因为
+# 「runs 组件形状」踩过坑（run_seal.is_run_root 收紧）。名字太近就是地雷。
+#
+# 二进制库不进版本库（每次 ingest 都会变，churn 且无法 diff）；**表态进版本库**：
+# 导出的 JSONL / Markdown 是文本，可 diff、可复核——库是单副本，坏了就没了。
+/state/
+!/state/
+/state/*
+!state/topic-backlog.jsonl
+!state/topic-backlog.md

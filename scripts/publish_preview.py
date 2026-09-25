@@ -64,8 +64,11 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"error": "publish_failed", "reason": f"{type(exc).__name__}:{exc}"}, ensure_ascii=False))
         return 1
 
+    # 非 UTF-8 run 名（surrogateescape）直接进 print 会 UnicodeEncodeError；按有损显示打印
+    run_id_text = record["run_id"] if "run_id" in record else run_root.name
+    run_id_text = run_id_text.encode("utf-8", "replace").decode("utf-8")
     print(json.dumps({
-        "run_id": record["run_id"] if "run_id" in record else run_root.name,
+        "run_id": run_id_text,
         "built": built is not None,
         "content_status": (built or {}).get("content_status"),
         "index_url": record["index_url"],

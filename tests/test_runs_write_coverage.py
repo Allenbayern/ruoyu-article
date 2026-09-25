@@ -42,6 +42,8 @@ OUT_OF_SCOPE: dict[str, str] = {
     "scripts/markdown_review_audit.py": "只写显式 --output 审计报告",
     "scripts/markdown_style_audit.py": "只写显式 --output 报告目录",
     "scripts/codex_viral_library_index.py": "只写显式 --output 索引报告（读 run 卡，不写 run）",
+    "scripts/topic_scout.py": "只写显式 --out-dir 选题建议产物（读 research run，不写 run）；已 fail-closed 拒绝覆盖旧产物、拒绝写入含 SEALED 标记的 run",
+    "scripts/topic_backlog.py": "滚动储备池库落在 state/（项目级状态，非 run 目录；2026-09-25 由 run/ 改名，避免与 runs/ 只差一个字母的混淆）；run_dir/adopted_run_id 仅作为来源与去向元数据记录，不作为写入目标；已 fail-closed 拒绝把 --db 或 --out 指进含 SEALED 的 run",
     "scripts/article_group_controller.py": "只写显式 --output 控制面产物",
     "scripts/mp_fetch.py": "写 runs/<date>/ 抓取候选（日目录，非 run 目录）",
     "scripts/mp_search.py": "写 runs/<date>/ 抓取候选（日目录，非 run 目录）",
@@ -66,6 +68,8 @@ OUT_OF_SCOPE: dict[str, str] = {
     "scripts/run_real_daily_011.py": "spec 数据模块（daily-011，three_article_daily）：同 daily-010 的 §8 包装方式，"
                                      "包装内回写一律调 base.write_json（走留底通道），不直接落盘",
     "scripts/run_real_daily_012.py": "spec 数据模块（daily-012，three_article_daily）：同 daily-011 的 §8 包装方式，"
+                                     "包装内回写一律调 base.write_json（走留底通道），不直接落盘",
+    "scripts/run_real_daily_013.py": "spec 数据模块（daily-013，two_article_daily）：同 daily-012 的 §8 包装方式，"
                                      "包装内回写一律调 base.write_json（走留底通道），不直接落盘",
     # 引擎共用 helper：活动入口只有 build_run，bind_spec 已把它的写函数换成走通道的版本。
     "scripts/generate_daily_001.py": "引擎共用 helper（base）：bind_spec 把 base.write_json/write_text 换成走通道的版本；"

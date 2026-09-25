@@ -1205,6 +1205,7 @@ def preview_site_step() -> dict:
         "status": report["status"],
         "index_path": report["index_path"],
         "index_sha256": report["index_sha256"],
+        "links_path": report["links_path"],
         "content_status": report["content_status"],
         "articles": [item["article_id"] for item in report["articles"]],
         "publication_authorization": "not_authorized",

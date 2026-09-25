@@ -14,6 +14,14 @@ from v2_contract.validate_transition import validate_transition
 
 
 ROOT = Path(__file__).parents[1]
+
+# docs/plans/ 是本地工作材料（.gitignore），干净克隆里没有；缺素材时按仓库既有
+# 约定（见 tests/test_run_gates.py 的 needs_daily_005）跳过集成断言，而不是报错。
+needs_v2_plans = pytest.mark.skipif(
+    not (ROOT / "docs/plans/ruoyu-production-v2/2026-08-11-contract-v1.0").is_dir(),
+    reason="docs/plans/ruoyu-production-v2 不在当前工作树（gitignore），不跑 v2 契约集成断言",
+)
+
 SCHEMA_V1_0 = ROOT / "docs/plans/ruoyu-production-v2/2026-08-11-contract-v1.0/task-card-v1.0.schema.json"
 SCHEMA_V1_1 = ROOT / "docs/plans/ruoyu-production-v2/2026-08-11-contract-v1.1/task-card-v1.1.schema.json"
 VOCABULARY = ROOT / "docs/plans/ruoyu-production-v2/2026-08-11-contract-v1.0/state-vocabulary-v1.0.yaml"
@@ -95,6 +103,7 @@ def _run_task_card_cli(task_card: Path, *arguments: Path | str) -> subprocess.Co
     )
 
 
+@needs_v2_plans
 def test_explicit_v1_0_schema_keeps_existing_art_001_card_valid():
     result = _run_task_card_cli(ART_001_V1_0, "--schema", SCHEMA_V1_0)
 
@@ -102,6 +111,7 @@ def test_explicit_v1_0_schema_keeps_existing_art_001_card_valid():
     assert result.stdout == "VALID\n"
 
 
+@needs_v2_plans
 def test_default_schema_is_v1_1_and_accepts_upgraded_art_001(tmp_path: Path):
     task_card = _write_upgraded_art_001(tmp_path)
 
@@ -112,6 +122,7 @@ def test_default_schema_is_v1_1_and_accepts_upgraded_art_001(tmp_path: Path):
     assert result.stdout == "VALID\n"
 
 
+@needs_v2_plans
 def test_default_schema_rejects_missing_daily_output_policy(tmp_path: Path):
     task_card = _write_upgraded_art_001(tmp_path, include_daily_output_policy=False)
 
@@ -122,10 +133,12 @@ def test_default_schema_rejects_missing_daily_output_policy(tmp_path: Path):
     assert "schema.required:$:'daily_output_policy' is a required property" in result.stdout
 
 
+@needs_v2_plans
 def test_valid_task_card_passes_schema_and_cross_checks():
     assert validate_task_card(valid_task_card(), SCHEMA_V1_0, VOCABULARY) == []
 
 
+@needs_v2_plans
 def test_r8_requires_unauthorized_publication_and_approved_review():
     card = valid_task_card()
     card["state"] = "R8 review-ready"
@@ -146,6 +159,7 @@ def test_r8_requires_unauthorized_publication_and_approved_review():
     assert any("r8_independent_review" in error for error in validate_task_card(pending_review, SCHEMA_V1_0, VOCABULARY))
 
 
+@needs_v2_plans
 def test_publication_authorized_requires_granted_and_published():
     card = valid_task_card()
     card["state"] = "publication-authorized"
@@ -162,6 +176,7 @@ def test_publication_authorized_requires_granted_and_published():
     assert any("publication_authorized_authorization" in error for error in validate_task_card(ungranted, SCHEMA_V1_0, VOCABULARY))
 
 
+@needs_v2_plans
 def test_h4_requires_unauthorized_and_withheld_or_not_requested():
     card = valid_task_card()
     card["state"] = "H4 draft-only"
@@ -173,6 +188,7 @@ def test_h4_requires_unauthorized_and_withheld_or_not_requested():
     assert any("h4_publication_authorization" in error for error in validate_task_card(bad, SCHEMA_V1_0, VOCABULARY))
 
 
+@needs_v2_plans
 def test_missing_primary_atom_is_rejected():
     card = valid_task_card()
     del card["primary_atom"]
@@ -188,6 +204,7 @@ def test_missing_primary_atom_is_rejected():
         ("daily_output_policy", "dr_03_variant"),
     ],
 )
+@needs_v2_plans
 def test_pending_allen_variant_is_rejected_by_frozen_const(parent: str, field: str):
     card = valid_task_card()
     card[parent][field] = "pending_allen"
@@ -195,6 +212,7 @@ def test_pending_allen_variant_is_rejected_by_frozen_const(parent: str, field: s
     assert any(field in error for error in errors)
 
 
+@needs_v2_plans
 def test_unknown_state_is_rejected():
     card = valid_task_card()
     card["state"] = "R99 unknown"
@@ -202,6 +220,7 @@ def test_unknown_state_is_rejected():
     assert any("state" in error for error in errors)
 
 
+@needs_v2_plans
 def test_schema_state_enum_must_match_frozen_vocabulary(tmp_path: Path):
     schema = json.loads(SCHEMA_V1_0.read_text(encoding="utf-8"))
     schema["properties"]["state"]["enum"].remove("A archived")
@@ -213,6 +232,7 @@ def test_schema_state_enum_must_match_frozen_vocabulary(tmp_path: Path):
     assert errors == ["state_enum_missing_from_schema:A archived"]
 
 
+@needs_v2_plans
 def test_schema_variant_const_must_match_frozen_vocabulary(tmp_path: Path):
     schema = json.loads(SCHEMA_V1_0.read_text(encoding="utf-8"))
     schema["properties"]["review_policy"]["properties"]["dr_02_variant"]["const"] = "pending_allen"
@@ -229,6 +249,7 @@ def test_schema_variant_const_must_match_frozen_vocabulary(tmp_path: Path):
     ]
 
 
+@needs_v2_plans
 def test_schema_must_retain_all_frozen_variant_consts(tmp_path: Path):
     schema = json.loads(SCHEMA_V1_0.read_text(encoding="utf-8"))
     del schema["properties"]["daily_output_policy"]["properties"]["dr_03_variant"]["const"]
@@ -259,10 +280,12 @@ def test_schema_must_retain_all_frozen_variant_consts(tmp_path: Path):
         ("R8 review-ready", "H4 draft-only"),
     ],
 )
+@needs_v2_plans
 def test_frozen_state_exits_accept_valid_transition(current: str, target: str):
     assert validate_transition(current, target, VOCABULARY) == []
 
 
+@needs_v2_plans
 def test_every_frozen_state_exit_is_accepted():
     vocabulary = safe_load(VOCABULARY.read_text(encoding="utf-8"))
     expected = {
@@ -276,6 +299,7 @@ def test_every_frozen_state_exit_is_accepted():
         assert validate_transition(current, target, VOCABULARY) == []
 
 
+@needs_v2_plans
 def test_illegal_transition_is_rejected():
     errors = validate_transition("R3 slots-locked", "R6 drafting", VOCABULARY)
     assert errors == ["invalid_transition:R3 slots-locked->R6 drafting"]
@@ -288,10 +312,12 @@ def test_illegal_transition_is_rejected():
         ("R0 radar", "R3 slots-locked"),
     ],
 )
+@needs_v2_plans
 def test_non_exit_transition_is_rejected(current: str, target: str):
     assert validate_transition(current, target, VOCABULARY) == [f"invalid_transition:{current}->{target}"]
 
 
+@needs_v2_plans
 def test_unknown_transition_state_is_rejected():
     errors = validate_transition("R99 unknown", "R6 drafting", VOCABULARY)
     assert "unknown_source_state:R99 unknown" in errors
