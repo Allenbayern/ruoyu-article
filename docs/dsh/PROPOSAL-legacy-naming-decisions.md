@@ -122,7 +122,7 @@ if external_review is None and codex is None:
    |---|---|---|
    | `review_surface` | **有**（`final_review` 11 处、`content_delivery`、`v4/verification`、`human_attestation`、两个 audit 脚本，共 15 个生产调用点） | `is_markdown_surface()`，逐处接线。历史产物可读 = 实测（73 个真实 batch 全部通过校验）**加一条门禁层回归用例**（`test_the_markdown_audit_cli_still_reads_a_historical_surface`，把读端收紧回字面量比较即变红）——2026-09-25 第五轮重做复核指出此前只有**单元**用例在钉，这条是补上的门禁层网 |
    | `preview_mode` | **有**（`final_review`、`preview_contract.validate_preview_evidence`、`preview_route_audit`） | `is_local_preview()` / `normalize_preview_mode()` |
-   | L2 产物名 | **有**（`title_freeze`、`evidence_rebind`） | `resolve_l2_review_record()` 新名优先、回退旧名 |
+   | L2 产物名 | **有**（`title_freeze`、`evidence_rebind`） | **两处各不相同，别按一行去找**（第六轮复核 minor）：`title_freeze` 走 `resolve_l2_review_record()`（新名优先、回退旧名）；`evidence_rebind.dependent_records()` **自列新旧两个名字**——它要的是"两个候选路径都列上"（好让 reconcile 覆盖两种命名的 run），与"解析出实际存在的那个"不是同一件事，故不复用 helper |
    | `codex-review-contract-1.0` | **没有**（本仓无门禁按 `schema_version` 校验复核记录） | `is_review_contract_record()`：前瞻契约 |
    | viral-library reader/index/context、skill-inventory、review-audit | **没有** | `ACCEPTED_*` 常量：前瞻契约 |
    | 消费者 manifest 名 | **没有**（runner 拒绝往非空输出目录写 → `output_exists`） | `ACCEPTED_CONSUMER_MANIFEST_NAMES`：旧名只对**外部消费者**可见 |

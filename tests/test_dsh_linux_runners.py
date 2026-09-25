@@ -840,4 +840,3 @@ def test_review_audit_can_write_an_immutable_monthly_snapshot(tmp_path: Path, ca
     manifest = json.loads(first_manifest.read_text(encoding="utf-8"))
     assert manifest["month"] == "2026-08"
     assert manifest["report_sha256"]
-

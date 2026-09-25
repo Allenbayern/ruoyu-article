@@ -117,6 +117,17 @@ def test_every_measured_historical_schema_version_is_still_accepted() -> None:
     assert not missing, f"这些历史 schema_version 没有任何 ACCEPTED_* 收录：{sorted(missing)}"
     assert "dsh-review-contract-1.0" in accepted, "现值没进 ACCEPTED_* —— 集合自己就错了"
 
+    # 第六轮复核 minor：上面那条是**单向**子集检查（`FROZEN - accepted`），把冻结点删掉
+    # 只会让它更容易满足——"改测试文件即可悄悄缩小防线"。这里把集合**自身**钉成字面量，
+    # 删掉任何成员都直接红。要动这条断言，就必须在 diff 里显式解释为什么少了一个历史值。
+    assert FROZEN_HISTORICAL_SCHEMA_VERSIONS == {
+        "codex-review-contract-1.0",        # 78 份
+        "codex-l2-review-timeout-v1",       # 3 份（§七 清单漏登记，实测补出）
+        "codex-viral-library-index-v1",     # 2 份
+        "codex-viral-library-context-v1",   # 1 份
+        "codex-daily-article-consumer/v1",  # 1 份
+    }, "冻结集合被改动：历史 schema_version 的防线只允许在显式说明下收缩"
+
 
 def test_no_real_historical_schema_version_falls_outside_the_accepted_sets() -> None:
     """现场扫描 `runs/`：**有没有出现清单之外的新形态**。
@@ -158,8 +169,6 @@ def test_no_real_historical_schema_version_falls_outside_the_accepted_sets() -> 
         )
     assert scanned > 0
 
-    unreadable = {v: paths[:3] for v, paths in seen.items() if v not in accepted}
-    assert not unreadable, f"这些历史 schema_version 没有任何 ACCEPTED_* 集合收录：{unreadable}"
     unreadable = {v: paths[:3] for v, paths in seen.items() if v not in accepted}
     assert not unreadable, f"这些历史 schema_version 没有任何 ACCEPTED_* 集合收录：{unreadable}"
 
