@@ -773,6 +773,26 @@ def _ensure_editor_review_placeholder(aid: str) -> bool:
     return True
 
 
+def build_editorial_review_record(
+    aid: str, title: str, source_id: str, delivery_path: str
+) -> dict[str, Any]:
+    """本 run 的 editorial 复核记录：拿史实脚本的模板，**把契约值换成现值**再落盘。
+
+    为什么要在这里覆盖 `review_surface`（2026-09-25 第五轮重做复核 major 3）：
+    `generate_daily_001.editorial_record` 是 **daily-001 史实脚本**的共用 helper，它写的是
+    当年那个值（`markdown_codex`）——改它会让 daily-001 的重跑产出与磁盘不一致，所以 §七
+    把 `generate_daily_00{1,2}` 列进"明确不改"。但**本模块是每天跑的活引擎**：同一个 run 的
+    `batch.json` 写 `DEFAULT_REVIEW_SURFACE`，这里若跟着写旧值，同一个 run 的两类产物就会
+    自相矛盾（任何按契约值统计/审计的下游都会得到错误结论），而门禁认旧值，不会红。
+    所以覆盖放在**活调用点**：史实脚本一个字不动，活引擎写出的记录只有现值。
+    """
+    record = base.editorial_record(aid, title, source_id=source_id, delivery_path=delivery_path)
+    record["run_id"] = RUN_ID
+    record["article_task_id"] = f"at-{aid}"
+    record["review_surface"] = DEFAULT_REVIEW_SURFACE
+    return record
+
+
 def reviews_and_delivery(bodies_map: dict[str, str]) -> None:
     for aid, body in bodies_map.items():
         base.write_text(f"drafts/{aid}/body_draft.md", body)
@@ -865,9 +885,7 @@ def reviews_and_delivery(bodies_map: dict[str, str]) -> None:
                 ),
             ),
         )
-        record = base.editorial_record(aid, title, source_id=SOURCE_IDS[aid][0], delivery_path=delivery_path)
-        record["run_id"] = RUN_ID
-        record["article_task_id"] = f"at-{aid}"
+        record = build_editorial_review_record(aid, title, SOURCE_IDS[aid][0], delivery_path)
         write_json(f"review/{aid}/editorial-review-record.json", record)
         write_json(f"review/editorial-review-record-{aid}.json", record)
     write_json(

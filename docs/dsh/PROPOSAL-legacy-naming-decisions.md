@@ -1,7 +1,9 @@
 # 决策备忘：遗留命名（原 codex 字样）的两件待裁决事项
 
-> 状态：**已裁决（2026-09-25）**——controller 裁定如下，见 §六；§七 是据此**待排期**的执行清单。
+> 状态：**已裁决并已执行（2026-09-25）**——controller 裁定见 §六；§七 是据此执行并**已收口**的执行记录。
 > 本文不再是"待裁决的提案"，但也不是 Canonical 规则：它记录的是一次裁决与其后续动作。
+> 复核证据不写在本文里：见 `runs/2026-09-25/seal-anchor-bypass/RUN-RECORD.md` §24.4（第五轮）
+> 与 §25（针对第五轮收口的重做复核）。
 > 日期：2026-09-25（裁决日）
 > 背景：`codex→dsh` 标识层改名已落地（提交 `7c9cc21`），边界与逐行分类见
 > `runs/2026-09-25/seal-anchor-bypass/RUN-RECORD.md` §11.5。剩下两件事**改的是行为或契约**，
@@ -80,7 +82,8 @@ if external_review is None and codex is None:
    「该分支自 2026-09-16 起不可达，保留是为了失败时给出准确指引」。
    → 已落地：`article_group/dsh_review.py::run_review` 的 docstring。
 2. **待裁决 2 → C（现在只做零成本项）+ B 立项排期**
-   → 零成本项已落地（见下）；B 的执行清单见 §七，**尚未开始**。
+   → 零成本项已落地（见下）；B **已于 2026-09-25 执行完毕**（四波提交 + 第五轮复核收口），
+   实测规模与分族覆盖面见 §七。
 
 **本次实际改动的零成本项**：`.config/systemd/user/ruoyu-film-daily-dsh-article@.service`
 
@@ -94,7 +97,8 @@ if external_review is None and codex is None:
 
 > 立此清单是为了**不忘记**。执行时**独占一轮**，按下列顺序（读端先兼容，写端后改）。
 > **本轮不冻结并行写作**：执行前实测工作树干净、无活跃写手（controller 已确认）。
-> **状态：已执行完毕**，四波提交 `ff7dfc2` / `da98b39` / `0546a0d` / `9f9c01c`（见 §八）。
+> **状态：已执行完毕**，四波提交 `ff7dfc2` / `da98b39` / `0546a0d` / `9f9c01c`；第五轮复核收口 `0f75615`
+> （复核记录：`runs/2026-09-25/seal-anchor-bypass/RUN-RECORD.md` §24.4）。
 
 范围（**执行时按真实产物重新实测**，与立项时的估算有出入，以下为实测值）：
 
@@ -116,7 +120,7 @@ if external_review is None and codex is None:
 
    | 族 | 本仓内有真实读端吗 | 兼容落在哪 |
    |---|---|---|
-   | `review_surface` | **有**（`final_review` 11 处、`content_delivery`、`v4/verification`、`human_attestation`、两个 audit 脚本） | `is_markdown_surface()`，逐处接线并端到端验证（73 个真实 batch 全部仍可读） |
+   | `review_surface` | **有**（`final_review` 11 处、`content_delivery`、`v4/verification`、`human_attestation`、两个 audit 脚本，共 15 个生产调用点） | `is_markdown_surface()`，逐处接线。历史产物可读 = 实测（73 个真实 batch 全部通过校验）**加一条门禁层回归用例**（`test_the_markdown_audit_cli_still_reads_a_historical_surface`，把读端收紧回字面量比较即变红）——2026-09-25 第五轮重做复核指出此前只有**单元**用例在钉，这条是补上的门禁层网 |
    | `preview_mode` | **有**（`final_review`、`preview_contract.validate_preview_evidence`、`preview_route_audit`） | `is_local_preview()` / `normalize_preview_mode()` |
    | L2 产物名 | **有**（`title_freeze`、`evidence_rebind`） | `resolve_l2_review_record()` 新名优先、回退旧名 |
    | `codex-review-contract-1.0` | **没有**（本仓无门禁按 `schema_version` 校验复核记录） | `is_review_contract_record()`：前瞻契约 |
@@ -133,7 +137,7 @@ if external_review is None and codex is None:
    所以"扫 `runs/`"这条检查在干净检出里扫不到 `codex` 值——它显式跳过并说明原因，
    守卫改由**冻结集合**承担（`FROZEN_HISTORICAL_SCHEMA_VERSIONS`，字面量钉住实测的 5 个值）。
 4. **文档**：`AGENTS.md`、`templates/*`、`schemas/dsh-review-contract.json` 同步；本文档标记已执行。
-5. **独立复核一轮**：对象仅限本次迁移 diff（见 §八）。
+5. **独立复核一轮**：对象仅限本次迁移 diff（第五轮见 `RUN-RECORD.md` §24.4；针对其收口的重做复核见 §25）。
 
 **执行中发现的两处清单错误（已按实测修正，不是猜测）**：
 
@@ -149,3 +153,20 @@ if external_review is None and codex is None:
 与 `run_real_daily_00{3,4}.py` 这几个 **daily-001…004 的史实生成脚本**（它们写的就是当时的值，
 改脚本会让"重跑一遍却产出与磁盘不一致的东西"）；`docs/superpowers/**/2026-08-26-conditional-preview-mode*.md`
 （当年那次改动的设计/计划存档）。
+
+### 七之二、第五轮重做复核的追加登记（2026-09-25，见 `RUN-RECORD.md` §25）
+
+原清单只登记了**写进磁盘产物的契约值**，漏掉了同批被改名的**机器可读诊断串**。重做复核把它们
+挑了出来（minor）；这里补登记，处置**逐条判过**，不是"忘了所以没写"：
+
+| 串 / 键 | 原值 → 现值 | 处置与理由 |
+|---|---|---|
+| 内容交付 blocker 码 | `content_delivery_requires_markdown_codex` → `..._markdown_surface` | **不改回、不留别名**。它是**运行时诊断码**（门禁当场解释"为什么挡住"），不落进任何产物文件，不属于"历史产物不重写"那一类。两处硬编码（`content_delivery.py` / `v4/verification.py`）保持同源 |
+| `markdown_review_audit` 的 stderr 标记 | `INPUT_ERROR:markdown_review_audit_requires_markdown_codex` → `..._markdown_surface` | 同上。判据是"是否作为契约值落盘"；stderr 虽被自动化读，但它描述的是一次即时失败原因 |
+| `markdown_style_audit` 的 stderr 标记 | 同上 | 同上 |
+| `semantic_pass.mode` 值 | `explicit_codex_trigger_required` | **不改**：运行期诊断值（`viral_research_distill.py`），本仓内只有它自己的测试在读；仓外消费者不可见，登记在案 |
+| index / inventory 的键名 | `codex_skill` / `codex_user_skill_count` | **不改**：它们是**写进产物文件的键名**，改名会让既有 index/inventory 的读者读不出——那属于"历史产物不重写 + 读端兼容"的成本，而收益只是清掉一个键名里的字样。登记在案 |
+
+**L2 产物名的解析面**（重做复核 minor）：约定是**裸名 = 最终记录**、`-r*` = 过程留档，所以
+`resolve_l2_review_record()` 只让裸名参与"冻结绑定"判定。`evidence_paths.py` 里原来把它写成
+"整族"的注释已按实际收窄；让 `-r*` 参与回退反而会把「绑错冻结版本」降级成「绑了另一个版本」。

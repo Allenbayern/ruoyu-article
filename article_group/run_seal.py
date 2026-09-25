@@ -106,6 +106,11 @@ EXIT_NOT_APPLICABLE = 4
 # 名字刻意不以 intact 开头（2026-09-25 复核 F2）：叫 intact_unanchored 时，操作者会
 # 读成"文件没变、没事"，而这恰恰是一句没被证明的话。
 STATUS_UNANCHORED = "unanchored"
+# 事后补锚（`--reanchor`）：现在有锚点了，但锚点是**补的**，只证明"从补锚那一刻起"
+# 没被改写。名字刻意既不以 intact 开头、也不等于 "anchored"（2026-09-25 controller 裁决 b）：
+# 事后补的锚点若报成 intact/anchored，就与"封存当时就锚好"的 run 在机器可读层长得一模一样
+# ——那正是 F1/F2 花力气消除的安全假象。退出码沿用 EXIT_UNVERIFIABLE。
+STATUS_ANCHORED_RETROACTIVE = "anchored_retroactive"
 SANDBOX_MARKER = "SANDBOX.json"
 
 
@@ -506,6 +511,109 @@ def write_anchor(run_dir: str | Path, payload: Mapping[str, Any]) -> dict[str, A
     }
 
 
+RETROACTIVE_NOTE = (
+    "事后补锚（retroactive）：锚点记的是**写下锚点那一刻**的清单摘要，只证明「从这一刻起」"
+    "清单未被改写，**不能**证明封存当时到现在未被改写。verify 对它报 "
+    f"{STATUS_ANCHORED_RETROACTIVE}（退出 {EXIT_UNVERIFIABLE}），绝不报 intact。"
+)
+
+
+def reanchor(run_dir: str | Path, *, author: str, reason: str) -> dict[str, Any]:
+    """给**封存时还没有锚点机制**的老 run 事后补锚，并显式标记为 retroactive。
+
+    为什么需要（controller 2026-09-25 裁决 b）：daily-008/009/010 封存早于锚点机制，
+    文件与清单逐字节一致，却永远停在 `unanchored`——「清单有没有被改写」在任何时刻都
+    查不出来。补锚变不出当时性，但它把清单摘要钉到 run 之外，**从补锚那一刻起**的改写
+    可以被检出。
+
+    三条硬约束（都是安全语义，不是风格）：
+
+    1. **不碰 run 内任何一个字节**：只往 run 之外的锚点库写一个文件。改封存 run 的清单
+       （哪怕只是加一个 `anchor` 块）就是"为了取证而改证据"；而且 `_manifest_digest()`
+       本来就排除 `anchor` 块，不加也照样锚得上。
+    2. **必须打标记**：记录里带 `retroactive` / 作者 / 理由，`verify` 据此报
+       `anchored_retroactive`。绝不能与"封存当时就锚好"的 run 在机器可读层长得一样。
+    3. **不推离机**：事后锚点一旦进了离机账本，账本里它就与封存当时的锚点无法区分。
+       所以这里**不调用** `_replicate_anchor()`，`replication` 如实记 `local-only`，
+       并附一条说明为什么不推。要用离机副本承载事后锚点，需要单独授权。
+    """
+    from article_group.run_state import sealed_record
+
+    root = Path(run_dir)
+    record = sealed_record(root)
+    if not record:
+        return {
+            "status": "not_sealed",
+            "run_dir": str(root),
+            "reason": "该 run 当前不是已封存状态：封存会写它自己的锚点，不要补锚。",
+        }
+    manifest = load_manifest(root)
+    if manifest is None:
+        return {
+            "status": "no_manifest",
+            "run_dir": str(root),
+            "reason": f"没有 {MANIFEST_NAME}：补锚锚的是清单摘要，没有清单无从补起；"
+                      f"先用 --backfill 补录清单，再补锚。",
+        }
+    if manifest.get("schema_version") not in KNOWN_SCHEMA_VERSIONS:
+        return {
+            "status": "unknown_schema",
+            "run_dir": str(root),
+            "reason": f"清单版本不认识：{manifest.get('schema_version')!r}——"
+                      f"先弄清它是被改写还是更新版本的工具写的，再谈补锚。",
+        }
+    _existing, state = read_anchor_state(root)
+    if state != "missing":
+        return {
+            "status": "already_anchored" if state == "found" else f"anchor_{state}",
+            "run_dir": str(root),
+            "reason": f"锚点库里这个 run 已有记录（state={state}）：补锚只用于**从未锚过**的 run。"
+                      f"已锚定的 run 若锚点对不上，那是漂移，不是补锚能盖过去的。",
+        }
+
+    digest = _manifest_digest(manifest)
+    path = anchor_file_for(root)
+    payload: dict[str, Any] = {
+        "schema_version": "seal-anchor-v1",
+        "run_dir": str(root.resolve()),
+        "run_id": str(manifest.get("run_dir", "")),
+        "sealed_at": str(manifest.get("sealed_at", "")),
+        "sealed_by": str(manifest.get("sealed_by", "")),
+        "manifest_digest": digest,
+        "anchored_at": _dt.datetime.now().astimezone().replace(microsecond=0).isoformat(),
+        # 事后补锚**不推离机**（硬约束 3）：`local-only` 在这里是"本次刻意没有离机副本"，
+        # 与"环境里没配离机推送"是两回事，所以另给 `replication_note` 说清。
+        "replication": "local-only",
+        "replication_note": "事后补锚刻意不推离机：进离机账本后会与封存当时的锚点无法区分。",
+        "retroactive": True,
+        "retroactive_by": str(author),
+        "retroactive_reason": str(reason),
+        "retroactive_note": RETROACTIVE_NOTE,
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(_json_text(payload), encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError as exc:
+        return {
+            "status": "anchor_unavailable",
+            "run_dir": str(root),
+            "path": str(path),
+            "reason": f"锚点存储不可写（{type(exc).__name__}: {exc}）：{path.parent}",
+            "remedy": f"检查 {ANCHOR_DIR_ENV} 指向的目录是否可写",
+        }
+    return {
+        "status": "reanchored",
+        "run_dir": str(root),
+        "path": str(path),
+        "manifest_digest": digest,
+        "retroactive": True,
+        "retroactive_by": str(author),
+        "note": RETROACTIVE_NOTE,
+    }
+
+
 def check_remote_anchor(run_dir: str | Path, *, remote: str = "") -> dict[str, Any]:
     """对照离机副本。只在显式调用时联网；verify 不走这里。"""
     url = remote or _anchor_remote() or DEFAULT_ANCHOR_REMOTE
@@ -634,12 +742,17 @@ def load_manifest(run_dir: str | Path) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
-def _changelog_index(run_dir: Path) -> dict[str, dict[str, Any]]:
-    """路径 → 最后一条记账（谁/何时/是否 forced）。verify 只读，绝不写。"""
+def _changelog_entries(run_dir: Path) -> list[dict[str, Any]]:
+    """按行解析 `evidence-changelog.jsonl`，返回其中的 JSON 对象条目（verify 只读，绝不写）。
+
+    坏行跳过（与 `_changelog_index` 一直以来的口径一致）。**注意调用方拿到的是"全部"账目**：
+    任何需要按 `path` 归并的用法都得自己想清楚要不要去重——留底快照的账就**不能**去重，
+    见 `_recorded_snapshot_paths()`。
+    """
     path = run_dir / "evidence-changelog.jsonl"
-    index: dict[str, dict[str, Any]] = {}
     if not path.is_file():
-        return index
+        return []
+    entries: list[dict[str, Any]] = []
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line:
@@ -648,7 +761,16 @@ def _changelog_index(run_dir: Path) -> dict[str, dict[str, Any]]:
             entry = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if isinstance(entry, dict) and isinstance(entry.get("path"), str):
+        if isinstance(entry, dict):
+            entries.append(entry)
+    return entries
+
+
+def _changelog_index(run_dir: Path) -> dict[str, dict[str, Any]]:
+    """路径 → 最后一条记账（谁/何时/是否 forced）。verify 只读，绝不写。"""
+    index: dict[str, dict[str, Any]] = {}
+    for entry in _changelog_entries(run_dir):
+        if isinstance(entry.get("path"), str):
             index[entry["path"]] = entry
     return index
 
@@ -672,9 +794,23 @@ def _revoked_marker_entry(ledger: Mapping[str, dict[str, Any]]) -> dict[str, Any
     return latest
 
 
-def _unrecorded_snapshots(
-    run_root: Path, ledger: Mapping[str, dict[str, Any]]
-) -> list[dict[str, Any]]:
+def _recorded_snapshot_paths(run_dir: Path) -> set[str]:
+    """**全部**账目里登记过的留底快照路径（不是最后一条，见下）。
+
+    必须读原始日志逐行收集，**不能**拿 `_changelog_index()` 的返回值去当"已登记的留底集合"：
+    后者按 `path` 去重、每条目标路径只留最后一条账，而留底是"每写一次留一个快照"。
+    用去重索引当集合，会把**同一个文件被改写的前几次**留底全判成无账
+    （2026-09-25 实测：daily-009 假报 1174 条、daily-010 假报 428 条 `snapshot_unrecorded`，
+    而磁盘上每一个快照文件其实都有账——假阳性让两个已封存 run 被报成 `drifted`）。
+    """
+    return {
+        str(entry.get("snapshot_path", "")).strip()
+        for entry in _changelog_entries(run_dir)
+        if str(entry.get("snapshot_path", "")).strip()
+    }
+
+
+def _unrecorded_snapshots(run_root: Path) -> list[dict[str, Any]]:
     """`review/.before/**` 里**没有账**的留底快照（2026-09-25 收口既有残余）。
 
     为什么单列这一项：`review/.before/**` 整条在 `EXCLUDED_REASONS` 里（留底快照只会
@@ -685,15 +821,15 @@ def _unrecorded_snapshots(
     记下那个快照的路径（`snapshot_path`）。所以判据是"**每个快照文件都得有账**"，
     而不是"把它整条放行"。这样既保住"封存后合法的留底写入不算篡改"，
     又把**不记账**的写入暴露出来——后者才是这条通道真正的风险。
+
+    **账目必须逐行读**（`_recorded_snapshot_paths()`）：同一个文件被改写两次就是两条账、
+    两个快照，而 `_changelog_index()` 只留下最后一条。用去重索引会让这条判据退化成
+    "只有最后一次留底才有账"，把正常流程判成漂移。
     """
     base = run_root / BEFORE_DIR
     if not base.is_dir() and not base.is_symlink():
         return []
-    recorded = {
-        str(entry.get("snapshot_path", "")).strip()
-        for entry in ledger.values()
-        if str(entry.get("snapshot_path", "")).strip()
-    }
+    recorded = _recorded_snapshot_paths(run_root)
     out: list[dict[str, Any]] = []
     try:
         candidates = sorted(base.rglob("*"))
@@ -935,17 +1071,33 @@ def verify(run_dir: str | Path) -> dict[str, Any]:
             # 把锚点文件的**事实**带进报告：只报 "anchored" 而不说清它是本机快照还是
             # 已离机，会让操作者把 intact 读成"离机证明过"（复核 F1 的安全假象）。
             replication = str(recorded.get("replication") or block.get("replication") or "unknown")
+            retroactive = bool(recorded.get("retroactive") or block.get("retroactive"))
             anchor_note = {
-                "status": "anchored",
+                # 事后补锚**不叫 anchored**：状态名必须自己就把"这是补的"说出来，
+                # 否则它与封存当时就锚好的 run 在机器可读层完全一样（2026-09-25 裁决 b）。
+                "status": STATUS_ANCHORED_RETROACTIVE if retroactive else "anchored",
                 "path": str(anchor_path),
                 "kind": recorded.get("kind") or block.get("kind"),
                 "replication": replication,
                 "remote": recorded.get("remote") or block.get("remote") or "",
             }
+            if retroactive:
+                anchor_note.update({
+                    "retroactive": True,
+                    "retroactive_by": recorded.get("retroactive_by", ""),
+                    "retroactive_reason": recorded.get("retroactive_reason", ""),
+                    "reason": str(recorded.get("retroactive_note") or RETROACTIVE_NOTE),
+                    # 出路：要拿到"封存当时就被锚定"的当时性，只能撤销封存后重封
+                    # （代价是失去原封存时刻的当时性）。
+                    "remedy": "锚点是事后补的：只从补锚那一刻起有效。若必须证明封存时刻，"
+                              "只能撤销封存后重新封存（会失去原封存时刻的当时性）："
+                              f"{_unseal_command(root)}",
+                    "note": str(recorded.get("replication_note") or ""),
+                })
             # 第三轮复核 F4：**离机失败的原因要带到报告里**。此前这里不带 `reason`，于是
             # `_describe_anchor` 的 `anchor.get("reason")` 永远取不到，人读行永远退化成
             # 「离机复制失败：见清单」——操作者拿到结论却拿不到 clone 的报错原文。
-            if replication != "pushed":
+            elif replication != "pushed":
                 anchor_note["reason"] = (recorded.get("reason") or block.get("reason") or "")
                 anchor_note["note"] = recorded.get("note") or block.get("note") or ""
     elif anchor_state == "store_unreadable":
@@ -993,8 +1145,8 @@ def verify(run_dir: str | Path) -> dict[str, Any]:
 
     ledger = _changelog_index(root)
     # review/.before/** 不进清单（留底快照只会在封存后新增），所以它必须**另按账目**兜住：
-    # 没有对应账目的快照文件就是一条只写不记的通道。
-    changes.extend(_unrecorded_snapshots(root, ledger))
+    # 没有对应账目的快照文件就是一条只写不记的通道。账目按**全量日志**读，不去重。
+    changes.extend(_unrecorded_snapshots(root))
     revoked_entry = _revoked_marker_entry(ledger)
     for change in changes:
         entry = ledger.get(change["path"])
@@ -1011,6 +1163,9 @@ def verify(run_dir: str | Path) -> dict[str, Any]:
 
     if changes:
         status = "drifted"
+    elif anchored and anchor_note.get("status") == STATUS_ANCHORED_RETROACTIVE:
+        # 逐字节没变、也有锚点，但锚点是**事后补的**：不报 intact（见状态量处的注释）。
+        status = STATUS_ANCHORED_RETROACTIVE
     elif anchored:
         status = "intact"
     elif anchor_note.get("status") == "anchor_store_unreadable":
@@ -1024,7 +1179,7 @@ def verify(run_dir: str | Path) -> dict[str, Any]:
     return {
         "status": status,
         **({"reason": anchor_note.get("reason", ""), "remedy": anchor_note.get("remedy", "")}
-           if status == "unverifiable" else {}),
+           if status in ("unverifiable", STATUS_ANCHORED_RETROACTIVE) else {}),
         "run_dir": str(root),
         "sealed_at": manifest.get("sealed_at"),
         "sealed_by": manifest.get("sealed_by"),
@@ -1209,6 +1364,9 @@ def _describe(report: dict[str, Any]) -> str:
         if status == STATUS_UNANCHORED:
             lines.append("  文件与清单逐字节一致；但**清单自身没有被证明没被改写**"
                          "（本 run 没有可用的外部锚点）——不按 intact 上报。")
+        elif status == STATUS_ANCHORED_RETROACTIVE:
+            lines.append("  文件与清单逐字节一致；但锚点是**事后补的**：它只证明「从补锚那一刻起」"
+                         "清单未被改写，**不能**证明封存当时到现在未被改写——不按 intact 上报。")
         else:
             lines.append("  与封存时逐字节一致。")
     return "\n".join(lines)
@@ -1217,6 +1375,12 @@ def _describe(report: dict[str, Any]) -> str:
 def _describe_anchor(anchor: Mapping[str, Any]) -> str:
     """锚点状态的一行说明（人读模式也必须看得见，不许只在 --json 里）。"""
     status = str(anchor.get("status") or "unknown")
+    if status == STATUS_ANCHORED_RETROACTIVE:
+        # 事后补锚**不套用**下面 anchored 的措辞：那句"未设离机推送，没有离机副本"在这里
+        # 会把"刻意不推"说成"环境没配"，把真正该说的事（这是补的）淹掉。
+        return (f"锚点：{STATUS_ANCHORED_RETROACTIVE}（**事后补锚**，"
+                f"by {anchor.get('retroactive_by') or '?'}）—— {anchor.get('reason', '')} "
+                f"{anchor.get('note', '')}".rstrip())
     if status == "anchored":
         # 不许再用 `or "snapshot"` 兜底：那个取值在数据里根本不存在（复核 F1）。
         # 更要紧的是**必须说清本机快照还是已离机**——默认部署不推离机，此时同 uid 的
@@ -1258,6 +1422,23 @@ def _describe_anchor(anchor: Mapping[str, Any]) -> str:
     return f"锚点：{status}"
 
 
+def _require_accountable_identity(author: object, *, action: str) -> str:
+    """要求一个**有人担责**的 `--author`，返回清洗后的身份。
+
+    第四轮复核 R6：此前只挡字面量 "agent"，于是 `AGENT`（大小写变体）和 `<你的身份>`
+    （**我们自己在 remedy 里印的占位符**）都能过——一个明确但无意义的身份满足了一道
+    "要有人担责"的护栏，等于没挡。占位符尤其糟糕：操作者直接粘命令会把署名写成占位符本身。
+
+    `--unseal` 与 `--reanchor` 共用这一条：两者都是**制造/削弱证据**的动作。
+    """
+    cleaned = str(author).strip()
+    if cleaned.casefold() in {"", "agent"} or any(char in cleaned for char in "<>"):
+        raise SystemExit(
+            f"拒绝{action}：必须显式给 --author <身份>（不能用默认的 agent、"
+            f"也不能用 remedy 里印的 '<你的身份>' 占位符）——{action}是一件要有人担责的动作。")
+    return cleaned
+
+
 def _cli_unseal(args: argparse.Namespace) -> int:
     """`--unseal` 的**护栏**（2026-09-25 第三轮复核 F9）。
 
@@ -1274,23 +1455,42 @@ def _cli_unseal(args: argparse.Namespace) -> int:
         raise SystemExit(
             "拒绝撤销封存：必须给 --reason。撤销会留下 SEALED.revoked.* 与变更日志，"
             "但**封存的当时性会失去**——理由要能被人读懂。")
-    author = str(args.author).strip()
-    # 第四轮复核 R6：此前只挡字面量 "agent"，于是 `AGENT`（大小写变体）和
-    # `<你的身份>`（**我们自己在 remedy 里印的占位符**）都能过——一个明确但无意义的
-    # 身份满足了一道"要有人担责"的护栏，等于没挡。占位符尤其糟糕：操作者直接粘命令
-    # 会把署名写成占位符本身，而这里本该拒绝它。
-    if author.casefold() in {"", "agent"} or any(char in author for char in "<>"):
-        raise SystemExit(
-            "拒绝撤销封存：必须显式给 --author <身份>（不能用默认的 agent、"
-            "也不能用 remedy 里印的 '<你的身份>' 占位符）——撤销是一件要有人担责的动作。")
+    author = _require_accountable_identity(args.author, action="撤销封存")
     if not is_sealed(root):
         raise SystemExit(f"拒绝撤销封存：{root} 当前不是已封存状态，无需撤销。")
 
-    result = unseal(root, reason=str(args.reason), identity=str(args.author))
+    result = unseal(root, reason=str(args.reason), identity=author)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     print("已撤销封存：SEALED 改名留痕、变更日志已记账；该 run 现在可写。"
           "改完请用收尾流程重新 seal（重封会写新的锚点）。", file=sys.stderr)
     return EXIT_INTACT
+
+
+def _cli_reanchor(args: argparse.Namespace) -> int:
+    """`--reanchor` 的护栏（2026-09-25 controller 裁决 b）。
+
+    补锚是**制造证据**的动作——只不过它制造的是"从今天起"的保证，不是当时性。所以与
+    `--unseal` 同规格：必须有人担责（`--author`，不许 agent / 占位符）、必须有可读的理由
+    （`--reason`）。已锚过的、未封存的、没有清单的一律由 `reanchor()` 拒绝。
+
+    **退出码仍是 3**：动作可以成功，但这个 run 的校验状态从此是"补过锚、仍不能证明封存时刻"
+    （`anchored_retroactive`），不是 0。脚本若只按退出码分流，不会把它误读成 intact。
+    """
+    root = args.run_root
+    if not str(args.reason).strip():
+        raise SystemExit(
+            "拒绝补锚：必须给 --reason。事后补锚会在锚点记录里留下"
+            "「谁、为什么在此时补的」，理由要能被人读懂。")
+    author = _require_accountable_identity(args.author, action="补锚")
+    result = reanchor(root, author=author, reason=str(args.reason).strip())
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    if str(result.get("status")) != "reanchored":
+        print(f"补锚未执行：{result.get('reason', '')}", file=sys.stderr)
+        return EXIT_UNVERIFIABLE
+    print("已事后补锚：锚点文件写在 run 之外，**run 内一个字节都没动**；"
+          f"verify 会报 {STATUS_ANCHORED_RETROACTIVE}（退出 {EXIT_UNVERIFIABLE}）——它不是 intact。",
+          file=sys.stderr)
+    return EXIT_UNVERIFIABLE
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -1305,6 +1505,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                         help="撤销封存以便修改（SEALED 改名留痕 + 写变更日志）。"
                              "护栏：必须给 --reason 与显式的 --author <身份>，未封存时拒绝。"
                              "改完用 close_out 重新收尾（会重新 seal）。")
+    parser.add_argument("--reanchor", action="store_true",
+                        help="给封存时还没有锚点机制的老 run **事后补锚**（留痕：verify 报 "
+                             "anchored_retroactive，退出 3，不是 intact）。只写 run 之外的锚点，"
+                             "run 内字节一个都不动，且**不推离机**。"
+                             "护栏：必须给 --reason 与显式的 --author <身份>，已锚过/未封存时拒绝。")
     parser.add_argument("--author", default="agent")
     parser.add_argument("--reason", default="")
     parser.add_argument("--json", action="store_true")
@@ -1312,21 +1517,25 @@ def main(argv: Sequence[str] | None = None) -> int:
                         help="额外对照离机锚点（会联网；verify 本身不联网）")
     args = parser.parse_args(argv)
 
-    # 第四轮复核 R7：这三个 flag 各自是一次**独立动作**（撤销封存 / 补录清单 / 对照离机
-    # 副本），此前 `--unseal` 直接 return，静默吃掉同时给出的其它 flag——操作者会以为
-    # `--backfill` 也跑了。用显式冲突检查而不是 argparse 互斥组：argparse 的用法错误
+    # 第四轮复核 R7：这些 flag 各自是一次**独立动作**（撤销封存 / 补录清单 / 对照离机
+    # 副本 / 事后补锚），此前 `--unseal` 直接 return，静默吃掉同时给出的其它 flag——操作者
+    # 会以为 `--backfill` 也跑了。用显式冲突检查而不是 argparse 互斥组：argparse 的用法错误
     # 退出码是 2，而 2 在本工具里已经是"有漂移"的语义，不能混。
     selected = [name for name, given in (
-        ("--unseal", args.unseal), ("--backfill", args.backfill), ("--check-remote", args.check_remote),
+        ("--unseal", args.unseal), ("--backfill", args.backfill),
+        ("--check-remote", args.check_remote), ("--reanchor", args.reanchor),
     ) if given]
     if len(selected) > 1:
         raise SystemExit(
             f"拒绝执行：{' 与 '.join(selected)} 不能同时使用——它们各自是一次独立动作"
-            "（撤销封存 / 补录清单 / 对照离机副本），同时给出会让人以为都做了。"
+            "（撤销封存 / 补录清单 / 对照离机副本 / 事后补锚），同时给出会让人以为都做了。"
             "一次只给一个。")
 
     if args.unseal:
         return _cli_unseal(args)
+
+    if args.reanchor:
+        return _cli_reanchor(args)
 
     if args.check_remote:
         remote_report = check_remote_anchor(args.run_root)
@@ -1363,6 +1572,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     return {
         "intact": EXIT_INTACT,
         STATUS_UNANCHORED: EXIT_UNVERIFIABLE,
+        STATUS_ANCHORED_RETROACTIVE: EXIT_UNVERIFIABLE,
         "drifted": EXIT_DRIFTED,
         "unverifiable": EXIT_UNVERIFIABLE,
         "not_applicable": EXIT_NOT_APPLICABLE,
@@ -1387,6 +1597,8 @@ __all__ = [
     "EXIT_DRIFTED",
     "EXIT_INTACT",
     "STATUS_UNANCHORED",
+    "STATUS_ANCHORED_RETROACTIVE",
+    "reanchor",
     "read_anchor_state",
     "EXIT_NOT_APPLICABLE",
     "EXIT_UNVERIFIABLE",

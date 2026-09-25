@@ -35,9 +35,17 @@ __all__ = [
 
 
 # L2 复核记录的**文件名约定**（2026-09-25 契约值迁移）。
-# 历史产物（200 个文件 / 10 个 run）叫 `codex-l2-review.json` 及 `codex-l2-review-r*.json`。
+# 历史产物叫 `codex-l2-review.json`（**最终记录**）以及 `codex-l2-review-r*.json`
+# （**过程记录**：r1 / r3 / rw 各轮）。
 # 文件已经有 200 份，**不重写**——"改文件名 = 那些 run 的复核证据在脚本里找不到"。
 # 所以规矩是：**新名写、旧名读**（读端回退），见 resolve_l2_review_record()。
+#
+# **只有裸名参与"冻结绑定"判定**（2026-09-25 第五轮重做复核 minor）：裸名才是最终结论，
+# `-r*` 是过程留档。让 `-r*` 也参与回退反而更糟——`codex-l2-review-r1-needs-changes.json`
+# 会被读成"最终记录"，把「绑错冻结版本」降级成「绑了另一个版本」。真实产物实测：每个带
+# `-r*` 的目录**都**另有裸名（7 个裸名 / 13 个 `-r*`），所以按裸名解析今日无产物受影响。
+# 将来若某个 run 只有 `-r*`，它就是**没有最终 L2 记录**——`title_freeze.check()` 给
+# `frozen_ok`（= 没有可绑定的复核结论），而不是 `l2_reviewed_other_freeze`。
 L2_REVIEW_RECORD_NAME = "dsh-l2-review.json"
 LEGACY_L2_REVIEW_RECORD_NAMES = ("codex-l2-review.json",)
 

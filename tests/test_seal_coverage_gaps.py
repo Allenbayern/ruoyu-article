@@ -737,6 +737,59 @@ def test_a_recorded_snapshot_file_is_not_a_change(tmp_path: Path) -> None:
     assert report["unauthorized_changes"] == [], report["unauthorized_changes"]
 
 
+def test_two_snapshots_of_the_same_target_are_both_accounted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """同一个目标被 force 写**两次**（两个留底快照）时，两个快照都必须算"有账"。
+
+    第六轮复核 major（2026-09-25）：`_unrecorded_snapshots` 从 `_changelog_index()`
+    取账，而那个索引按**目标 path** 去重、只留最后一条，于是同一目标写两次时，
+    第一个快照的 `snapshot_path` 不在集合里 → 被误报成 `snapshot_unrecorded`。
+
+    上一个用例（写一次）恰好在去重账下蒙对，所以没抓住它。真实后果不是理论：
+    daily-009 报 1174 条、daily-010 报 428 条假漂移，状态从 `unanchored`（退出 3）
+    变成 `drifted`（退出 2）——按退出码消费结果的自动化会收到**假篡改告警**，
+    而真的无账快照被淹在里面。
+
+    注意反方向：这条误报只多报、不漏报，所以它不是封存绕过；本用例只钉住"别误报"。
+    """
+    import datetime as _dt
+
+    from article_group import evidence_write
+    from article_group.evidence_write import write_evidence
+
+    root = _sealed_run_with_review(tmp_path, "daily-996")
+    target = root / "delivery" / "art-001" / "delivery.md"
+
+    # 快照目录按秒命名，同一秒内两次写会落进同一个快照路径（也就不会触发本 bug），
+    # 所以把时钟错开 30 秒，制造"两个不同时刻的快照"这个真实形态。
+    # 每次 `write_evidence` 会取**两次** `_now()`（快照目录 + 记账时刻），故每两次调用
+    # 才前进一格——直接按调用次数递增会让快照目录与记账时刻错开。
+    start = _dt.datetime(2026, 9, 25, 12, 0, 0, tzinfo=_dt.timezone.utc)
+    tick = {"n": 0}
+
+    def fake_now() -> _dt.datetime:
+        moment = start + _dt.timedelta(seconds=30 * (tick["n"] // 2))
+        tick["n"] += 1
+        return moment
+
+    monkeypatch.setattr(evidence_write, "_now", fake_now)
+
+    write_evidence(target, "# 第一次改\n", run_dir=root, reason="test:force-1", force=True)
+    write_evidence(target, "# 第二次改\n", run_dir=root, reason="test:force-2", force=True)
+
+    snapshots = sorted(
+        path.relative_to(root).as_posix()
+        for path in (root / "review" / ".before").rglob("*.md")
+    )
+    # 前提断言：真的产生了**两个**快照，否则本用例会退化成上一个用例的重复
+    assert len(snapshots) == 2, snapshots
+
+    report = run_seal.verify(root)
+    assert [c for c in report["changes"] if c["kind"] == "snapshot_unrecorded"] == [], report["changes"]
+    assert report["unauthorized_changes"] == [], report["unauthorized_changes"]
+
+
 # ── ⑫ 离机推送的持久化开关（2026-09-25 controller 授权"启用离机锚点推送"） ──────
 
 
@@ -801,3 +854,185 @@ def test_the_durable_push_config_drives_real_replication(tmp_path: Path, monkeyp
     shown = subprocess.run(["git", "-C", str(remote), "show", f"main:anchors/{name}"],
                            capture_output=True, text=True, check=True)
     assert json.loads(shown.stdout)["manifest_digest"] == block["manifest_digest"]
+
+
+# ── ⑬ 事后补锚 `--reanchor`（2026-09-25 controller 裁决 b） ─────────────────────
+#
+# 对象就是 daily-008/009/010 的真实形态：真 v1 清单、**没有 anchor 块**、磁盘上没有锚点
+# （复用 `_v1_sealed_run`）。补锚要么把它们从"什么都证明不了"变成"从今天起可证明"，
+# 要么就会再造一个安全假象——所以这一组的重点全在**不能报成 intact**。
+
+
+def _tree_digest(root: Path) -> str:
+    """run 内所有文件/符号链接的路径+内容的整体摘要（证明"run 没被动过"）。"""
+    import hashlib
+
+    digest = hashlib.sha256()
+    for path in sorted(p for p in root.rglob("*") if p.is_file() or p.is_symlink()):
+        digest.update(path.relative_to(root).as_posix().encode("utf-8", "surrogateescape"))
+        digest.update(b"\0")
+        digest.update(
+            ("link:" + os.readlink(path)).encode("utf-8", "surrogateescape")
+            if path.is_symlink() else path.read_bytes()
+        )
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def test_reanchor_marks_the_anchor_retroactive_and_never_reports_intact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """补锚之后：状态是 `anchored_retroactive`（退出 3），**不是** intact/anchored。
+
+    这是本项的安全要害。事后补的锚点只证明"从补锚那一刻起"清单未被改写，而"封存当时
+    就锚好"的 run 报 intact——两者若在机器可读层长得一样，就正是 F1/F2 消除的那类假象，
+    按 `status == intact` 消费结果的自动化会把这三条旧 run 读成"证明过没被改"。
+    """
+    root = _v1_sealed_run(tmp_path, name="daily-971")
+    assert run_seal.verify(root)["status"] == run_seal.STATUS_UNANCHORED
+
+    pushed: list[tuple] = []
+    monkeypatch.setattr(run_seal, "_replicate_anchor",
+                        lambda *args, **kwargs: pushed.append(args) or ("pushed", "ssh://x"))
+    # 就算环境里配了离机推送，补锚也**不许**去推：事后锚点进离机账本后，
+    # 在账本里与封存当时的锚点无法区分。
+    monkeypatch.setenv(run_seal.ANCHOR_PUSH_ENV, "ssh://should-never-be-contacted/ledger.git")
+
+    result = run_seal.reanchor(root, author="owner", reason="controller 2026-09-25 裁决 b")
+    assert result["status"] == "reanchored", result
+    assert result["retroactive"] is True
+    assert pushed == [], "补锚不得推离机"
+
+    on_disk = run_seal.read_anchor(root)
+    assert on_disk is not None, "补锚没写下锚点文件"
+    assert on_disk["retroactive"] is True, on_disk
+    assert on_disk["retroactive_by"] == "owner"
+    assert on_disk["retroactive_reason"], on_disk
+    assert on_disk["replication"] == "local-only", on_disk
+
+    report = run_seal.verify(root)
+    assert report["status"] == run_seal.STATUS_ANCHORED_RETROACTIVE, report
+    assert report["status"] != "intact"
+    assert report["changes"] == [], report["changes"]
+    anchor = report["anchor"]
+    assert anchor["status"] == run_seal.STATUS_ANCHORED_RETROACTIVE, anchor
+    assert anchor["retroactive"] is True and anchor["retroactive_by"] == "owner", anchor
+    assert anchor["replication"] == "local-only"
+
+    text = run_seal._describe(report)
+    assert run_seal.STATUS_ANCHORED_RETROACTIVE in text, text
+    assert "事后补" in text, text
+    assert "不按 intact 上报" in text, text
+
+    # CLI 层也不许给 0（脚本按退出码分流时不能把它读成完好）
+    assert run_seal.main(["--run-root", str(root)]) == run_seal.EXIT_UNVERIFIABLE
+
+
+def test_reanchor_changes_nothing_inside_the_run(tmp_path: Path) -> None:
+    """补锚只往 run **之外**的锚点库写一个文件：run 内每个字节逐位相同。
+
+    改封存 run 的清单（哪怕只是补一个 `anchor` 块）就是"为了取证而改证据"，
+    而且 `_manifest_digest()` 本来就排除 `anchor` 块，不加也照样锚得上。
+    """
+    root = _v1_sealed_run(tmp_path, name="daily-972")
+    before = _tree_digest(root)
+
+    assert run_seal.reanchor(root, author="owner", reason="证明 run 没被动过")["status"] == "reanchored"
+
+    assert _tree_digest(root) == before, "补锚动了 run 内的字节"
+    assert "anchor" not in run_seal.load_manifest(root), "补锚往封存清单里塞了 anchor 块"
+
+
+def test_reanchor_has_teeth_a_rewritten_manifest_is_still_caught(tmp_path: Path) -> None:
+    """补锚给的是**真**保证：补完之后改写清单，`verify` 必须报 drifted。
+
+    只钉"状态名不是 intact"是不够的——若补锚写的摘要根本没被用来比对，状态名照样对，
+    但那是一个空壳。这里在补锚后用子进程改写清单正文（模拟进程外写手），必须被抓到。
+    """
+    root = _v1_sealed_run(tmp_path, name="daily-973")
+    assert run_seal.reanchor(root, author="owner", reason="x")["status"] == "reanchored"
+    assert run_seal.verify(root)["status"] == run_seal.STATUS_ANCHORED_RETROACTIVE
+
+    subprocess.run(
+        [sys.executable, "-c",
+         "import json,pathlib,sys;"
+         "p=pathlib.Path(sys.argv[1])/'SEALED.manifest.json';"
+         "m=json.loads(p.read_text(encoding='utf-8'));"
+         "m['file_count']=m.get('file_count',0)+1;"
+         "p.write_text(json.dumps(m,ensure_ascii=False,indent=2)+'\\n',encoding='utf-8')",
+         str(root)],
+        check=True,
+    )
+    report = run_seal.verify(root)
+    assert report["status"] == "drifted", report
+    assert any(item["kind"] == "anchor_mismatch" for item in report["changes"]), report["changes"]
+
+
+def test_reanchor_refuses_open_runs_and_already_anchored_runs(tmp_path: Path) -> None:
+    """未封存的、以及已经锚过的 run 都不许补锚——补锚只用于**从未锚过**的 run。"""
+    open_root = tmp_path / "never-sealed"
+    (open_root / "delivery").mkdir(parents=True)
+    (open_root / "delivery" / "a.md").write_text("# x\n", encoding="utf-8")
+    assert run_seal.reanchor(open_root, author="owner", reason="x")["status"] == "not_sealed"
+
+    anchored = _sealed_run(tmp_path, name="daily-974")
+    assert run_seal.reanchor(anchored, author="owner", reason="x")["status"] == "already_anchored"
+    # 被拒绝之后不许留下任何痕迹：那个 run 仍然是正常锚定的 intact、锚点没被改成 retroactive
+    assert "retroactive" not in run_seal.read_anchor(anchored)
+    assert run_seal.verify(anchored)["status"] == "intact"
+
+
+def test_reanchor_cli_requires_a_reason_and_an_accountable_author(tmp_path: Path) -> None:
+    """补锚是制造证据的动作：必须有人担责（`--author`，不许 agent/占位符）、必须有理由。"""
+    root = _v1_sealed_run(tmp_path, name="daily-975")
+
+    with pytest.raises(SystemExit):
+        run_seal.main(["--run-root", str(root), "--reanchor", "--author", "owner"])
+    for bad_author in ("agent", "AGENT", "<你的身份>"):
+        with pytest.raises(SystemExit):
+            run_seal.main(["--run-root", str(root), "--reanchor",
+                           "--reason", "x", "--author", bad_author])
+    # 与其它独立动作不能同时给（第四轮复核 R7 的口径）
+    with pytest.raises(SystemExit):
+        run_seal.main(["--run-root", str(root), "--reanchor", "--unseal",
+                       "--reason", "x", "--author", "owner"])
+
+    assert run_seal.read_anchor(root) is None, "护栏拦下之后不许留下锚点"
+    assert run_seal.verify(root)["status"] == run_seal.STATUS_UNANCHORED
+
+
+# ── ⑭ 复现/验收脚本自己的锚点隔离（2026-09-25，实测事故后补） ────────────────────
+
+
+def test_the_repro_script_never_pushes_to_the_configured_ledger(tmp_path: Path) -> None:
+    """复现脚本必须把**持久化推送配置**也隔离掉，否则会往真实离机账本推残留。
+
+    实测事故：§24.3 启用离机推送后 `_anchor_remote()` 多了"回退读
+    `~/.dsh/seal-anchor-push.conf`"这一级，而 `repro_anchor_bypass.py` 当时只
+    `delenv` 环境变量、没有隔离配置路径——于是 mac-backup 可达时生产账本里多了三条
+    `2026-09-25-var-{a,b,c}.anchor.json` 复现残留（`verify-objective.py` 每跑一次都会经过它）。
+
+    这条用例给一个**本地裸仓库**当配置里的远端，跑完复现脚本后它必须仍然没有任何 ref：
+    脚本若只挡环境变量、放行继承来的配置路径，就会真的推上去。
+    """
+    import os
+
+    script = (Path(__file__).resolve().parents[1]
+              / "runs/2026-09-25/seal-anchor-bypass/repro_anchor_bypass.py")
+    if not script.is_file():
+        # `runs/` 只是部分被跟踪（见 AGENTS.md「Where the suite may be run」）：
+        # 干净检出里没有这个脚本，显式跳过并说明，而不是让用例恒真通过。
+        pytest.skip("干净检出里没有 runs/…/repro_anchor_bypass.py（runs/ 只部分被跟踪）")
+
+    remote = _bare_ledger(tmp_path)
+    config = tmp_path / "prod-like-push.conf"
+    config.write_text(f"# 假装这是生产配置\nremote={remote}\n", encoding="utf-8")
+    env = {**os.environ, run_seal.ANCHOR_PUSH_CONFIG_ENV: str(config)}
+    env.pop(run_seal.ANCHOR_PUSH_ENV, None)
+
+    completed = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, env=env)
+    assert completed.returncode == 0, completed.stderr[-800:]
+
+    refs = subprocess.run(["git", "-C", str(remote), "for-each-ref"],
+                          capture_output=True, text=True, check=True).stdout.strip()
+    assert refs == "", f"复现脚本往配置里的离机账本推了东西：{refs}"

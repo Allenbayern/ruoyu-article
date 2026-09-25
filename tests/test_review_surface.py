@@ -87,6 +87,49 @@ def _write_markdown(root: Path, relative: str, text: str = "# 标题\n\n正文�
     return path
 
 
+def test_the_live_engine_stamps_the_current_surface_on_the_editorial_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """活引擎写出的 editorial 复核记录必须带**现值**（2026-09-25 第五轮重做复核 major 3）。
+
+    实测过的活写路径：`daily_engine` 直接调 `generate_daily_001.editorial_record`，而后者
+    硬编码 `"review_surface": "markdown_codex"`（它是 daily-001 史实脚本的 helper）。
+    于是**下一个 run 的 `batch.json` 写 `markdown_dsh`，同一个 run 的
+    `review/<aid>/editorial-review-record.json` 写 `markdown_codex`**——同一个 run 的两类
+    产物对同一个契约值给出不同答案。门禁认旧值（`is_markdown_surface`），所以它不会红，
+    只有按值统计/审计的下游会出错。
+
+    史实脚本本身不许改（§七：改了会让 daily-001 的重跑产出与磁盘不一致），
+    所以覆盖必须落在**活调用点**——这条测试钉的就是那个调用点。
+    """
+    from scripts import daily_engine
+    from scripts import generate_daily_001 as base
+
+    monkeypatch.setattr(daily_engine, "ROOT", tmp_path, raising=False)
+    monkeypatch.setattr(daily_engine, "RUN_ID", "2026-09-25/daily-014", raising=False)
+    monkeypatch.setattr(base, "ROOT", tmp_path, raising=False)
+    # `editorial_record` 会对这些路径逐个取 sha256（模板里的 ref()），所以夹具要齐
+    _write_markdown(tmp_path, "delivery/art-001/delivery.md")
+    _write_markdown(tmp_path, "drafts/art-001/body_draft.md")
+    for relative in ("review/art-001/topic-card.json", "review/art-001/fact-card.json",
+                     "review/art-001/title-pack.json"):
+        (tmp_path / relative).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / relative).write_text("{}\n", encoding="utf-8")
+
+    record = daily_engine.build_editorial_review_record(
+        "art-001", "标题", "src-official", "delivery/art-001/delivery.md"
+    )
+
+    assert record["review_surface"] == DEFAULT_REVIEW_SURFACE, record["review_surface"]
+    assert "markdown_codex" not in json.dumps(record, ensure_ascii=False)
+    assert record["run_id"] == "2026-09-25/daily-014"
+    assert record["article_task_id"] == "at-art-001"
+    # 反面：史实脚本自己的模板仍然是当年那个值——覆盖只发生在活引擎这一层
+    assert base.editorial_record(
+        "art-001", "标题", "src-official", "delivery/art-001/delivery.md"
+    )["review_surface"] == "markdown_codex"
+
+
 def test_review_surface_defaults_to_markdown_and_accepts_explicit_legacy_html():
     assert DEFAULT_REVIEW_SURFACE == "markdown_dsh"
     assert resolve_review_surface(None) == "markdown_dsh"

@@ -262,3 +262,50 @@ def test_ledger_reason_prefix_writes_the_new_one_and_keeps_the_alias() -> None:
 
     assert dsh_review.REASON_PREFIX == "dsh_review"
     assert codex_review.REASON_PREFIX == "codex_review"
+
+
+def test_the_markdown_audit_cli_still_reads_a_historical_surface(tmp_path: Path) -> None:
+    """**门禁/CLI 层**的旧值回归网（2026-09-25 第五轮重做复核 major 2）。
+
+    为什么单列这一条：B 迁移把**每个门禁测试的夹具**从 `markdown_codex` 翻成了
+    `markdown_dsh`，于是"旧值仍可读"只剩**单元**用例在钉。实测（重做复核的变异实验）：
+    把 `is_markdown_surface` 改成 `value == DEFAULT_REVIEW_SURFACE`——15 个生产调用点
+    同时失去旧值容忍度——套件里**没有任何门禁用例变红**。也就是说"门禁重新读不懂历史
+    批次"这件事，CI 不会喊。
+
+    `scripts/markdown_review_audit.py` 拿 batch.json 的**原始**值过 `is_markdown_surface`
+    （不像 `final_review` 会先 `resolve_review_surface` 归一化），所以它是能真正暴露这个
+    回归的门禁入口。断言"历史值批次"与"现值批次"退出码**相同**：把读端收紧回字面量比较，
+    历史值那一侧会从 0 变成 2（`INPUT_ERROR:..._requires_markdown_surface`）。
+    """
+    import shutil
+    import subprocess
+    import sys
+
+    from tests.test_final_review import _make_markdown_batch
+
+    current = _make_markdown_batch(tmp_path / "current")
+    historical = tmp_path / "historical" / "markdown-999"
+    historical.parent.mkdir(parents=True)
+    shutil.copytree(current, historical)
+    batch_path = historical / "batch.json"
+    payload = json.loads(batch_path.read_text(encoding="utf-8"))
+    assert payload["review_surface"] == "markdown_dsh", "夹具应当是现值"
+    payload["review_surface"] = "markdown_codex"
+    batch_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+
+    audit_cli = Path(__file__).resolve().parents[1] / "scripts" / "markdown_review_audit.py"
+
+    def audit(run_dir: Path) -> "subprocess.CompletedProcess[str]":
+        return subprocess.run(
+            [sys.executable, str(audit_cli), "--run-dir", str(run_dir)],
+            capture_output=True, text=True,
+        )
+
+    current_run = audit(current)
+    historical_run = audit(historical)
+    assert current_run.returncode == 0, current_run.stderr
+    assert historical_run.returncode == current_run.returncode, historical_run.stderr
+    assert "requires_markdown_surface" not in historical_run.stderr
