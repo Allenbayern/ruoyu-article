@@ -1,7 +1,7 @@
 # Disabled template: declarative only. No systemctl action is performed here.
 
 [Unit]
-Description=Schedule the Ruoyu Codex monthly review audit snapshot
+Description=Schedule the Ruoyu dsh monthly review audit snapshot
 
 [Timer]
 OnCalendar=*-*-01 03:30:00 Asia/Shanghai

@@ -1,6 +1,6 @@
 # Disabled template: do not enable before migration acceptance and recovery-point review.
 [Unit]
-Description=Schedule the Ruoyu Codex Newrank evidence watch
+Description=Schedule the Ruoyu dsh Newrank evidence watch
 
 [Timer]
 OnCalendar=*-*-* 09:00:00

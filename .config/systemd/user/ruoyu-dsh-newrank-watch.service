@@ -1,6 +1,6 @@
 # Disabled template: install or enable only after controller cutover approval.
 [Unit]
-Description=Ruoyu Codex Newrank film/TV evidence watch
+Description=Ruoyu dsh Newrank film/TV evidence watch
 ConditionPathExists=%h/Projects/ruoyu-film-daily/scripts/dsh_newrank_watch.py
 After=network-online.target
 Wants=network-online.target
@@ -8,7 +8,10 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=%h/Projects/ruoyu-film-daily
-ExecStart=/usr/bin/python3 %h/Projects/ruoyu-film-daily/scripts/dsh_newrank_watch.py --days 3 --output-root %h/.codex/runs/newrank-watch
+# 输出根与脚本自己的 DEFAULT_OUTPUT_ROOT 对齐（`<repo>/runs/newrank-watch`）。
+# 此前写的是**已退役运行时**的目录名（`~/.codex/runs/newrank-watch`，该目录不存在）——
+# 这处提及是历史记录的一部分，不是活路径；照 §七 的规矩保留，免得下次又有人把它改回来。
+ExecStart=/usr/bin/python3 %h/Projects/ruoyu-film-daily/scripts/dsh_newrank_watch.py --days 3 --output-root %h/Projects/ruoyu-film-daily/runs/newrank-watch
 PassEnvironment=NEWRANK_N_TOKEN
 NoNewPrivileges=yes
 
