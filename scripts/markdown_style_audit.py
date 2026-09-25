@@ -12,7 +12,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from article_group.review_surface import validate_batch_review_surface  # noqa: E402
+from article_group.review_surface import (  # noqa: E402
+    is_markdown_surface,
+    validate_batch_review_surface,
+)
 from article_group.style_gate import validate_markdown_file  # noqa: E402
 
 
@@ -49,8 +52,8 @@ def main(argv: list[str] | None = None) -> int:
     if surface_errors:
         print("INPUT_ERROR:" + ";".join(surface_errors), file=sys.stderr)
         return 2
-    if batch.get("review_surface") != "markdown_codex":
-        print("INPUT_ERROR:markdown_style_audit_requires_markdown_codex", file=sys.stderr)
+    if not is_markdown_surface(batch.get("review_surface")):
+        print("INPUT_ERROR:markdown_style_audit_requires_markdown_surface", file=sys.stderr)
         return 2
 
     output_dir = (args.output_dir or root / "review").resolve()

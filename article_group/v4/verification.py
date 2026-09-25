@@ -15,6 +15,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from article_group.review_surface import is_markdown_surface
+
 from .contracts import (
     new_artifact_envelope,
     parse_json_object,
@@ -739,8 +741,8 @@ def _content_status(run_dir: Path) -> tuple[str, list[str]]:
     status = _text(manifest.get("content_status")) or _text(batch.get("content_status"))
     if status != "CONTENT_READY":
         blockers.append("content_status_not_ready")
-    if batch.get("review_surface") != "markdown_codex":
-        blockers.append("content_delivery_requires_markdown_codex")
+    if not is_markdown_surface(batch.get("review_surface")):
+        blockers.append("content_delivery_requires_markdown_surface")
     if not isinstance(articles, list) or not articles:
         blockers.append("batch_articles_invalid")
     else:

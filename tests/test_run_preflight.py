@@ -210,13 +210,13 @@ def test_preflight_accepts_markdown_review_surface_without_preview_mode():
     batch.update({
         "run_profile_contract_version": "run-profile-v1",
         "run_profile": "three_slot_controlled",
-        "review_surface": "markdown_codex",
+        "review_surface": "markdown_dsh",
     })
 
     report = preflight_batch(batch, RUN_DIR)
 
     assert report["status"] == "PASS"
-    assert report["review_surface"] == "markdown_codex"
+    assert report["review_surface"] == "markdown_dsh"
     assert report["review_surface_errors"] == []
     assert report["preview_errors"] == []
 
@@ -226,7 +226,7 @@ def test_preflight_rejects_markdown_surface_with_legacy_preview_mode():
     batch.update({
         "run_profile_contract_version": "run-profile-v1",
         "run_profile": "three_slot_controlled",
-        "review_surface": "markdown_codex",
+        "review_surface": "markdown_dsh",
         "preview_mode": "local_codex",
     })
 

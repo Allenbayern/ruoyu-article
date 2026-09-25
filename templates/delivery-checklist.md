@@ -49,16 +49,16 @@
 ## Presentation
 
 - [ ] Markdown is the approved and normally retained reading/review artifact.
-- review_surface: `markdown_codex | html_delivery`
+- review_surface: `markdown_dsh | html_delivery`（历史产物里的 `markdown_codex` 等价于 `markdown_dsh`）
 - markdown_review_evidence_ref:
 - markdown_approval_ref:
 - presentation_state: `verified | template-blocked`
 - markdown_draft_ref:
 - content_delivery_ref: `review/content-delivery.json`
 - [ ] `content-delivery.json` reports `content_status=CONTENT_READY` before handing the Markdown to the user.
-- [ ] When `review_surface=markdown_codex`, current Markdown path/size/SHA-256/CJK count match `review/markdown-review-evidence.json`.
+- [ ] When `review_surface=markdown_dsh`, current Markdown path/size/SHA-256/CJK count match `review/markdown-review-evidence.json`.
 - html_delivery_state: `not_requested | generated | withheld`
-- [ ] When `review_surface=markdown_codex`, `html_delivery_state=not_requested` is normal and no HTML, freeze manifest, route audit, or preview service is required.
+- [ ] When `review_surface=markdown_dsh`, `html_delivery_state=not_requested` is normal and no HTML, freeze manifest, route audit, or preview service is required.
 - [ ] When `review_surface=html_delivery`, HTML generation/freeze and the historical local/canonical preview contract are explicitly declared and independently bound.
 - legacy_preview_mode: `local_codex | canonical_http` (only for `review_surface=html_delivery`)
 - legacy_preview_evidence_ref:

@@ -74,7 +74,7 @@ def test_markdown_human_attestation_v3_binds_current_markdown(tmp_path):
         tmp_path,
         "art-001",
         [],
-        review_surface="markdown_codex",
+        review_surface="markdown_dsh",
         markdown_paths=[markdown],
     ) == []
 
@@ -104,7 +104,7 @@ def test_markdown_human_attestation_rejects_html_binding_fields(tmp_path):
         tmp_path,
         "art-001",
         [],
-        review_surface="markdown_codex",
+        review_surface="markdown_dsh",
         markdown_paths=[markdown],
     )
 

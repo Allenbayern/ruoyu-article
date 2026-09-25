@@ -210,7 +210,7 @@ def _make_markdown_batch(root: Path) -> Path:
 
     payload = {
         "run_id": "2026-08-26/markdown-999",
-        "review_surface": "markdown_codex",
+        "review_surface": "markdown_dsh",
         "articles": articles,
     }
     _write_json(batch / "batch.json", payload)
@@ -282,7 +282,7 @@ def test_modern_final_review_blocks_without_selected_title_package(tmp_path: Pat
         "run_id": "article-first-999",
         "article_first_contract_version": "article-first-v1",
         "legacy_compatibility": True,
-        "review_surface": "markdown_codex",
+        "review_surface": "markdown_dsh",
         "articles": [{
             "article_id": "art-001",
             "body_draft_path": "drafts/body.md",
@@ -309,7 +309,7 @@ def test_modern_artifacts_without_a_run_contract_or_legacy_marker_are_rejected(
         batch / "batch.json",
         {
             "run_id": "2026-09-13/unmarked-modern",
-            "review_surface": "markdown_codex",
+            "review_surface": "markdown_dsh",
             "articles": [{
                 "article_id": "art-001",
                 "body_draft_path": "drafts/body_draft.md",
@@ -432,7 +432,7 @@ def test_modern_final_review_accepts_a_current_selected_title_package(tmp_path: 
         "run_id": "article-first-selected",
         "article_first_contract_version": "article-first-v1",
         "legacy_compatibility": True,
-        "review_surface": "markdown_codex",
+        "review_surface": "markdown_dsh",
         "articles": articles,
     }
     _write_json(batch / "batch.json", payload)
@@ -983,7 +983,7 @@ def test_markdown_surface_is_publishable_without_html_or_preview_evidence(tmp_pa
     report = evaluate_batch(batch)
 
     assert report["verdict"] == PUBLISHABLE
-    assert report["review_surface"] == "markdown_codex"
+    assert report["review_surface"] == "markdown_dsh"
     assert "preview_mode" not in report
 
 
@@ -1042,7 +1042,7 @@ def test_markdown_surface_rejects_editorial_record_html_bindings(tmp_path: Path)
     markdown.parent.mkdir(parents=True)
     markdown.write_text("# 标题\n\n正文", encoding="utf-8")
     record = {
-        "review_surface": "markdown_codex",
+        "review_surface": "markdown_dsh",
         "article_id": "art-001",
         "final_review_ref": {
             "path": "drafts/art-001.md",
@@ -1060,7 +1060,7 @@ def test_markdown_surface_rejects_editorial_record_html_bindings(tmp_path: Path)
     }
 
     errors = _validate_editorial_review_surface(
-        record, tmp_path, "markdown_codex", {"art-001": markdown}
+        record, tmp_path, "markdown_dsh", {"art-001": markdown}
     )
 
     assert "editorial_html_reference_forbidden:review/frozen/old.html" in errors
@@ -1586,7 +1586,7 @@ def test_a_copied_run_rebases_a_legacy_absolute_style_binding(tmp_path: Path) ->
     shutil.copytree(original, copy)
 
     target, errors = _validate_style_artifact(
-        record, copy, [copy / "delivery" / "art-001" / "delivery.md"], review_surface="markdown_codex"
+        record, copy, [copy / "delivery" / "art-001" / "delivery.md"], review_surface="markdown_dsh"
     )
 
     assert errors == []
@@ -1607,7 +1607,7 @@ def test_a_copied_run_still_rejects_changed_bytes(tmp_path: Path) -> None:
     (copy / "delivery" / "art-001" / "delivery.md").write_text("# 标题\n\n正文改过了\n", encoding="utf-8")
 
     target, errors = _validate_style_artifact(
-        record, copy, [copy / "delivery" / "art-001" / "delivery.md"], review_surface="markdown_codex"
+        record, copy, [copy / "delivery" / "art-001" / "delivery.md"], review_surface="markdown_dsh"
     )
 
     assert target is not None
@@ -1623,7 +1623,7 @@ def test_a_missing_rebased_artifact_is_reported_as_a_path_error(tmp_path: Path) 
     (copy / "delivery" / "art-001" / "delivery.md").unlink()
 
     target, errors = _validate_style_artifact(
-        record, copy, [copy / "delivery" / "art-001" / "delivery.md"], review_surface="markdown_codex"
+        record, copy, [copy / "delivery" / "art-001" / "delivery.md"], review_surface="markdown_dsh"
     )
 
     assert target is None

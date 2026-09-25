@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
 
 from article_group.review_surface import (  # noqa: E402
     build_markdown_review_evidence,
+    is_markdown_surface,
     validate_batch_review_surface,
     validate_markdown_review_evidence,
 )
@@ -39,8 +40,8 @@ def main(argv: list[str] | None = None) -> int:
     if surface_errors:
         print("INPUT_ERROR:" + ";".join(surface_errors), file=sys.stderr)
         return 2
-    if batch.get("review_surface") != "markdown_codex":
-        print("INPUT_ERROR:markdown_review_audit_requires_markdown_codex", file=sys.stderr)
+    if not is_markdown_surface(batch.get("review_surface")):
+        print("INPUT_ERROR:markdown_review_audit_requires_markdown_surface", file=sys.stderr)
         return 2
 
     try:

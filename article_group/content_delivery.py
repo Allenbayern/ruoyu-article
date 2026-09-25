@@ -21,6 +21,7 @@ from article_group.article_first import (
 )
 from article_group.content_fidelity import content_body_path, evaluate_content_fidelity
 from article_group.delivery import compose_delivery_markdown, validate_body_draft, validate_delivery_markdown
+from article_group.review_surface import is_markdown_surface, normalize_review_surface
 from article_group.final_review import (
     BLOCKED,
     PUBLISHABLE,
@@ -359,8 +360,8 @@ def _build_content_delivery_record_from_report(
     if strict_batch:
         blockers.extend(validate_run_contract(batch))
         blockers.extend(validate_referenced_contract_artifacts(run_dir, batch))
-    if batch.get("review_surface") != "markdown_codex":
-        blockers.append("content_delivery_requires_markdown_codex")
+    if not is_markdown_surface(batch.get("review_surface")):
+        blockers.append("content_delivery_requires_markdown_surface")
     if batch.get("publication_authorization", "not_authorized") != "not_authorized":
         blockers.append("publication_authorization_must_remain_not_authorized")
 
@@ -397,7 +398,7 @@ def _build_content_delivery_record_from_report(
         "schema_version": CONTENT_DELIVERY_SCHEMA,
         "run_id": batch.get("run_id", ""),
         "content_status": CONTENT_READY if not blockers else CONTENT_BLOCKED,
-        "review_surface": batch.get("review_surface"),
+        "review_surface": normalize_review_surface(batch.get("review_surface")),
         "final_review_verdict": report.get("verdict"),
         "final_review_path": "review/final-review.json",
         "content_result": report.get("content_result", "UNKNOWN"),

@@ -20,6 +20,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import scripts.generate_daily_001 as base
 from article_group.content_fidelity import evaluate_content_fidelity
+from article_group.review_surface import DEFAULT_REVIEW_SURFACE
 from article_group.independent_review import is_placeholder_record
 from article_group.prose_pilot import analyze_text
 from article_group.run_gates import (
@@ -873,7 +874,7 @@ def reviews_and_delivery(bodies_map: dict[str, str]) -> None:
         "review/markdown-review-evidence.json",
         {
             "schema_version": "markdown-review-evidence-v1",
-            "review_surface": "markdown_codex",
+            "review_surface": DEFAULT_REVIEW_SURFACE,
             "articles": {
                 aid: {
                     "markdown_path": f"delivery/{aid}/delivery.md",
@@ -1014,7 +1015,7 @@ def batch_manifest(bodies_map: dict[str, str]) -> None:
         "milestone": "M2 content-handoff",
         "manifest_state": "R7 mechanically-verified",
         "target_state": "R7.5 awaiting-independent-review",
-        "review_surface": "markdown_codex",
+        "review_surface": DEFAULT_REVIEW_SURFACE,
         "review_surface_contract_version": "review-surface-v1",
         **CONTRACT,
         "article_first_contract_version": "article-first-v1",
@@ -1135,7 +1136,7 @@ def batch_manifest(bodies_map: dict[str, str]) -> None:
     )
     write_text(
         "prose-batch.yaml",
-        f"run_id: {RUN_ID}\nreview_surface: markdown_codex\narticles:\n{article_lines}",
+        f"run_id: {RUN_ID}\nreview_surface: {DEFAULT_REVIEW_SURFACE}\narticles:\n{article_lines}",
     )
 
 

@@ -2,7 +2,7 @@
 
 STATE: `BRIEF_READY`
 RUN_PROFILE: `two_article_daily`（默认日更）| `three_slot_controlled`（显式 legacy 对照批次）
-REVIEW_SURFACE: `markdown_codex`（默认审阅）| `html_delivery`（显式历史/专门交付）
+REVIEW_SURFACE: `markdown_dsh`（默认审阅；2026-09-25 前的历史产物写的是 `markdown_codex`，读端照样认）| `html_delivery`（显式历史/专门交付）
 GATE: `adversarial-review`
 OBJECTIVE: Create one real profile-declared article batch that is evidence-backed and review-ready, with a title-free body reviewed before any title packaging; no publication, scheduling, or HTML rendering.
 DELIVERABLE: `runs/YYYY-MM-DD/<run-id>/controlled-run-manifest.json` plus profile slot candidates, evidence, body drafts, content-fidelity records, title packs, and delivery artifacts.
@@ -18,7 +18,7 @@ ACCEPTANCE:
 - Batch and article authorization fields are `not_authorized` with all authorization audit fields blank.
 - Offline validator creates a mechanically verified manifest; independent review and controller acceptance are separate later transitions, and no article receives publication authorization.
 - Independent review receives the original brief, artifacts, validator result, and coverage gaps.
-- Review surface is explicit for `run-profile-v1`: `markdown_codex` requires current Markdown path/size/SHA-256/CJK evidence and does not generate HTML; `html_delivery` is an explicit legacy/专门路径 and retains its historical preview contract.
+- Review surface is explicit for `run-profile-v1`: `markdown_dsh` (formerly `markdown_codex`; both spellings are accepted by readers) requires current Markdown path/size/SHA-256/CJK evidence and does not generate HTML; `html_delivery` is an explicit legacy/专门路径 and retains its historical preview contract.
 EVIDENCE: Candidate cards, editorial meeting, evidence packs, claim ledgers, writing briefs, Markdown drafts, delivery checklists, dedupe matrix, validator output, review-readiness packet.
 NON_SUCCESS: Fewer than three independently supportable topics; missing full-text/locator for a material assertion; duplicate slots; unresolved conflict/denial; article content below substance gate; request to publish/deliver/render HTML; missing independent review evidence.
 STOP: Stop at `R8 review-ready`; wait for independent review and controller acceptance. `publish-ready` and publication authority are not outputs of this run.

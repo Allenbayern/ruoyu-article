@@ -8,6 +8,8 @@ from pathlib import Path
 import re
 from typing import Any
 
+from article_group.review_surface import is_markdown_surface
+
 
 def _resolve_inside(root: Path, raw: object) -> Path | None:
     if not isinstance(raw, str) or not raw.strip():
@@ -41,7 +43,7 @@ def validate_human_attestation(
     if not isinstance(attestation, dict):
         return ["human_attestation_missing"]
     errors: list[str] = []
-    if review_surface == "markdown_codex":
+    if is_markdown_surface(review_surface):
         return _validate_markdown_attestation(
             attestation,
             run_root,

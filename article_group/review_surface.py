@@ -15,11 +15,35 @@ from typing import Any, Iterable
 
 from article_group.run_profile import MAX_CJK_CHARS, MIN_CJK_CHARS
 
-DEFAULT_REVIEW_SURFACE = "markdown_codex"
-REVIEW_SURFACES = ("markdown_codex", "html_delivery")
+DEFAULT_REVIEW_SURFACE = "markdown_dsh"
+REVIEW_SURFACES = ("markdown_dsh", "html_delivery")
+# 历史产物里写的是 "markdown_codex"（2026-09-25 契约值迁移之前）。**历史产物不重写**
+# ——"当时写的是什么"本身是事实——所以读端必须照样认它，折到现值再判。
+# 这是 `codex→dsh` 改名落到**契约值**这一层：改的是名字，不是语义。
+LEGACY_REVIEW_SURFACES = {"markdown_codex": DEFAULT_REVIEW_SURFACE}
 MARKDOWN_REVIEW_EVIDENCE_SCHEMA = "markdown-review-evidence-v1"
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 _CJK_RE = re.compile(r"[㐀-䶿一-鿿]")
+
+
+def normalize_review_surface(value: object) -> object:
+    """把历史值折到现值；不是字符串、或不是历史值时**原样返回**。
+
+    只做映射，不做校验：非法值仍要能被 `resolve_review_surface` / 校验函数当非法值拒绝，
+    不能在这里被静默兜底成一个合法值。
+    """
+    if isinstance(value, str):
+        return LEGACY_REVIEW_SURFACES.get(value.strip(), value)
+    return value
+
+
+def is_markdown_surface(value: object) -> bool:
+    """是不是 Markdown 审阅面（**历史值也算**）。
+
+    凡"从产物里读出来再跟 markdown 面比"的地方都该用这个，而不是跟字面量比——
+    否则读一份 2026-09-25 之前写的 batch.json 会得出"不是 markdown 面"这个假结论。
+    """
+    return normalize_review_surface(value) == DEFAULT_REVIEW_SURFACE
 
 
 def resolve_review_surface(value: object) -> str:
@@ -28,7 +52,7 @@ def resolve_review_surface(value: object) -> str:
         return DEFAULT_REVIEW_SURFACE
     if not isinstance(value, str) or not value.strip():
         raise ValueError("review_surface_invalid")
-    surface = value.strip()
+    surface = normalize_review_surface(value.strip())
     if surface not in REVIEW_SURFACES:
         raise ValueError(f"review_surface_invalid:{surface}")
     return surface
@@ -37,7 +61,11 @@ def resolve_review_surface(value: object) -> str:
 def validate_batch_review_surface(
     batch: dict[str, Any], *, require_explicit: bool = False
 ) -> list[str]:
-    """Validate the batch-level review surface without inspecting artifacts."""
+    """Validate the batch-level review surface without inspecting artifacts.
+
+    历史 batch 里的 `markdown_codex` 照样合法（此处折到现值再判），否则这次迁移就等于
+    让既有 run 的门禁全部读不出自己。
+    """
     if "review_surface" not in batch:
         return ["review_surface_missing"] if require_explicit else []
 
@@ -45,7 +73,7 @@ def validate_batch_review_surface(
     if not isinstance(raw, str) or not raw.strip():
         return ["review_surface_invalid"]
 
-    surface = raw.strip()
+    surface = normalize_review_surface(raw.strip())
     if surface not in REVIEW_SURFACES:
         return [f"review_surface_invalid:{surface}"]
 
@@ -146,7 +174,7 @@ def validate_markdown_review_evidence(
     errors: list[str] = []
     if payload.get("schema_version") != MARKDOWN_REVIEW_EVIDENCE_SCHEMA:
         errors.append("markdown_evidence_schema_version_invalid")
-    if payload.get("review_surface") != DEFAULT_REVIEW_SURFACE:
+    if normalize_review_surface(payload.get("review_surface")) != DEFAULT_REVIEW_SURFACE:
         errors.append("markdown_evidence_review_surface_invalid")
 
     expected: dict[str, dict[str, Any]] = {}

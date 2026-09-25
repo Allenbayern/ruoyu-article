@@ -43,6 +43,9 @@ from article_group.preview_contract import (
 from article_group.provenance import validate_current_source_provenance
 from article_group.revalidation import validate_revalidation_record
 from article_group.review_surface import (
+    DEFAULT_REVIEW_SURFACE,
+    is_markdown_surface,
+    normalize_review_surface,
     resolve_review_surface,
     validate_batch_review_surface,
     validate_markdown_review_evidence,
@@ -634,7 +637,7 @@ def _review_completion_items(
         html_state = str(article.get("html_delivery_state", "")).lower()
         if delivery in {"pending_independent_review", "pending_controller_acceptance", "pending"}:
             items.append(f"{aid}: delivery_state={delivery}")
-        if review_surface != "markdown_codex" and html_state in {
+        if not is_markdown_surface(review_surface) and html_state in {
             "withheld", "pending", "withheld_pending_review"
         }:
             items.append(f"{aid}: html_delivery_state={html_state}")
@@ -751,8 +754,10 @@ def _current_review_artifacts(root: Path, batch: dict) -> list[dict[str, str]]:
     """Return the current final review surface and its byte identities."""
 
     entries: list[dict[str, str]] = []
-    surface = batch.get("review_surface")
-    if surface == "markdown_codex":
+    # 历史 batch 里写的是 markdown_codex：先折到现值再判，否则旧 run 的审阅面会被读成
+    # "不是 markdown 面"，于是它当前的成稿在整个门禁里凭空消失。
+    surface = normalize_review_surface(batch.get("review_surface"))
+    if surface == DEFAULT_REVIEW_SURFACE:
         articles = batch.get("articles")
         if not isinstance(articles, list):
             return entries
@@ -957,7 +962,7 @@ def _validate_scoring_card(
         ):
             errors.append(f"entry_field_missing:{field}")
 
-    if review_surface == "markdown_codex":
+    if is_markdown_surface(review_surface):
         return errors + _validate_scoring_artifact_binding(
             card,
             root,
@@ -984,7 +989,7 @@ def _validate_scoring_artifact_binding(
     delivery_artifacts: list[Path],
 ) -> list[str]:
     """Bind one scoring card to exactly one current surface artifact."""
-    if review_surface == "markdown_codex":
+    if is_markdown_surface(review_surface):
         hash_fields = [field for field in _MARKDOWN_HASH_FIELDS if field in card]
         path_fields = [field for field in _MARKDOWN_PATH_FIELDS if field in card]
         identity_missing = "markdown_identity_missing"
@@ -1011,7 +1016,7 @@ def _validate_scoring_artifact_binding(
             errors.append("hash_invalid")
             expected_hash = None
 
-    if review_surface == "markdown_codex":
+    if is_markdown_surface(review_surface):
         article_artifacts = delivery_artifacts
     else:
         article_artifacts = _article_delivery_htmls(article_id, delivery_artifacts)
@@ -1043,7 +1048,7 @@ def _validate_scoring_artifact_binding(
     else:
         errors.append(
             "path_required_for_article_markdown"
-            if review_surface == "markdown_codex"
+            if is_markdown_surface(review_surface)
             else "path_required_for_article_delivery_html"
         )
 
@@ -1085,7 +1090,7 @@ def _validate_style_artifact(
 ) -> tuple[Path | None, list[str]]:
     """Validate a style report's byte/path binding to the current surface."""
     errors: list[str] = []
-    if review_surface == "markdown_codex" and report.get("artifact_type") != "markdown":
+    if is_markdown_surface(review_surface) and report.get("artifact_type") != "markdown":
         errors.append("artifact_binding_type_invalid:markdown")
     artifact_path = report.get("artifact_path")
     artifact_hash = report.get("artifact_sha256")
@@ -1134,10 +1139,10 @@ def _validate_editorial_review_surface(
     markdown_by_article: dict[str, Path],
 ) -> list[str]:
     """Keep editorial-record evidence on the same surface as final_review."""
-    if review_surface != "markdown_codex":
+    if not is_markdown_surface(review_surface):
         return []
     errors: list[str] = []
-    if record.get("review_surface") != "markdown_codex":
+    if not is_markdown_surface(record.get("review_surface")):
         errors.append("editorial_review_surface_missing_or_invalid")
 
     article_id = str(record.get("article_id", ""))
@@ -1368,7 +1373,7 @@ def evaluate_batch(batch_dir: str | Path) -> dict:
     delivery_htmls: list[Path] = []
     markdown_by_article: dict[str, Path] = {}
     review_artifacts: list[Path]
-    if review_surface == "markdown_codex":
+    if is_markdown_surface(review_surface):
         evidence_path = root / "review" / "markdown-review-evidence.json"
         if not evidence_path.is_file():
             return _blocked("evidence_missing:markdown-review-evidence")
@@ -1436,7 +1441,7 @@ def evaluate_batch(batch_dir: str | Path) -> dict:
     # ---- 2. 机械闸门：style_gate ---------------------------------------
     style_pattern = (
         "review/style-gate-markdown-*.json"
-        if review_surface == "markdown_codex"
+        if is_markdown_surface(review_surface)
         else "review/style-gate-*.json"
     )
     style_files = sorted(root.glob(style_pattern))

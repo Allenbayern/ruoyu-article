@@ -76,7 +76,7 @@ def test_content_delivery_record_binds_current_markdown(tmp_path: Path):
         json.dumps(
             {
                 "run_id": "demo/run",
-                "review_surface": "markdown_codex",
+                "review_surface": "markdown_dsh",
                 "publication_authorization": "not_authorized",
                 "articles": [
                     {
@@ -92,7 +92,7 @@ def test_content_delivery_record_binds_current_markdown(tmp_path: Path):
     )
     report = {
         "verdict": "PENDING",
-        "review_surface": "markdown_codex",
+        "review_surface": "markdown_dsh",
         "publication_authorization": "not_authorized",
         "human_judgment_items": ["art-001: human_attestation_missing"],
     }
@@ -157,7 +157,7 @@ def test_article_first_content_delivery_requires_selected_title_pack(tmp_path: P
         "run_id": "article-first",
         "article_first_contract_version": "article-first-v1",
         "legacy_compatibility": True,
-        "review_surface": "markdown_codex",
+        "review_surface": "markdown_dsh",
         "publication_authorization": "not_authorized",
         "articles": [{
             "article_id": "art-001",
@@ -169,7 +169,7 @@ def test_article_first_content_delivery_requires_selected_title_pack(tmp_path: P
     })
     report = {
         "verdict": "PUBLISHABLE",
-        "review_surface": "markdown_codex",
+        "review_surface": "markdown_dsh",
         "publication_authorization": "not_authorized",
         "human_judgment_items": [],
     }
@@ -191,7 +191,7 @@ def test_content_delivery_cannot_be_unlocked_by_a_caller_supplied_final_report(
         json.dumps(
             {
                 "run_id": "2026-09-13/run",
-                "review_surface": "markdown_codex",
+                "review_surface": "markdown_dsh",
                 "articles": [],
             }
         ),
@@ -224,7 +224,7 @@ def test_content_delivery_rejects_a_stale_persisted_final_review(tmp_path: Path)
         json.dumps(
             {
                 "run_id": "2026-09-13/run",
-                "review_surface": "markdown_codex",
+                "review_surface": "markdown_dsh",
                 "articles": [],
             }
         ),
@@ -255,7 +255,7 @@ def test_content_delivery_rejects_a_caller_report_that_is_not_bound_to_current_r
         json.dumps(
             {
                 "run_id": "2026-09-13/run",
-                "review_surface": "markdown_codex",
+                "review_surface": "markdown_dsh",
                 "articles": [],
             }
         ),
@@ -283,7 +283,7 @@ def test_final_review_writer_persists_run_and_surface_bindings(tmp_path: Path):
         json.dumps(
             {
                 "run_id": "2026-09-13/run",
-                "review_surface": "markdown_codex",
+                "review_surface": "markdown_dsh",
                 "articles": [],
             }
         ),

@@ -453,7 +453,7 @@ def test_markdown_style_audit_cli_writes_current_bound_reports(tmp_path: Path):
         articles.append({"article_id": article_id, "markdown_path": relative})
     (tmp_path / "batch.json").write_text(
         __import__("json").dumps({
-            "review_surface": "markdown_codex",
+            "review_surface": "markdown_dsh",
             "articles": articles,
         }),
         encoding="utf-8",
@@ -724,9 +724,9 @@ def test_runs_before_runs_layout_records_the_inner_run_relative_path(tmp_path: P
 
     report = validate_markdown_file(delivery)
     assert report["artifact_path"] == "delivery/delivery.md"
-    _, errors = _validate_style_artifact(report, run, [delivery], review_surface="markdown_codex")
+    _, errors = _validate_style_artifact(report, run, [delivery], review_surface="markdown_dsh")
     assert errors == []
 
     explicit = validate_markdown_file(delivery, run_root=run)
     assert explicit["artifact_path"] == "delivery/delivery.md"
-    assert _validate_style_artifact(explicit, run, [delivery], review_surface="markdown_codex")[1] == []
+    assert _validate_style_artifact(explicit, run, [delivery], review_surface="markdown_dsh")[1] == []
