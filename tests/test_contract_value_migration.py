@@ -66,24 +66,29 @@ def test_real_historical_review_records_still_parse_as_this_contract() -> None:
     assert checked, "找到了文件却没有一份带 schema_version —— 断言退化成恒真了"
 
 
-def test_no_real_historical_schema_version_falls_outside_the_accepted_sets() -> None:
-    """**这次迁移最要紧的一条**：真实历史产物里出现过的每个含 `codex` 的
-    schema_version 都必须在某个 `ACCEPTED_*` 集合里——否则那批历史证据在新读端下
-    就成了读不出来的东西。
+#: 2026-09-25 实测冻结的**历史 schema_version 全集**。
+#: 来源：扫描 `runs/` 下 2534 个 json（+ `review/**/*l2-review*.json` 单列），
+#: 含 `codex` 的 schema_version 恰好这 5 种，逐种份数见括注。
+#:
+#: 为什么把它钉成**字面量**而不是"现场扫 runs/"：`runs/` 只是**部分**被跟踪
+#: （`git ls-files runs` = 187 个文件 / 88 个 json），所以干净检出里扫不到任何
+#: `codex` schema_version——只靠现场扫描的话，这条防线在新克隆里会**恒真失败**
+#: （第四轮复核 major 1 实测：干净检出因此多出 1 个失败）。
+#: 钉成字面量之后，它在任何环境里都真的在守卫："有人删掉某个 LEGACY 值就红"。
+FROZEN_HISTORICAL_SCHEMA_VERSIONS = {
+    "codex-review-contract-1.0",        # 78 份
+    "codex-l2-review-timeout-v1",       # 3 份（§七 清单漏登记，实测补出）
+    "codex-viral-library-index-v1",     # 2 份
+    "codex-viral-library-context-v1",   # 1 份
+    "codex-daily-article-consumer/v1",  # 1 份
+}
 
-    这条用例由**数据**驱动，它已经赚回一次：2026-09-25 实测 runs/ 下 2534 个 json，
-    含 `codex` 的 schema_version 有 5 种，其中 `codex-l2-review-timeout-v1`（3 份）在
-    §七 的清单里根本没登记。将来再有新形态漏登记，这里会红。
-    """
+
+def _all_accepted_schema_versions() -> set[str]:
+    """所有族的 `ACCEPTED_*` 并集（每个族都必须把自己的历史值收进去）。"""
     import importlib
 
-    import pytest
-
     from article_group import dsh_review
-
-    runs = Path(__file__).resolve().parents[1] / "runs"
-    if not runs.is_dir():
-        pytest.skip("干净检出（runs/ 不入版本库）：无历史产物可扫描")
 
     accepted: set[str] = set(dsh_review.ACCEPTED_SCHEMA_VERSIONS)
     for module_name, attr in (
@@ -95,13 +100,46 @@ def test_no_real_historical_schema_version_falls_outside_the_accepted_sets() -> 
         ("scripts.dsh_skill_inventory", "ACCEPTED_INVENTORY_SCHEMA_VERSIONS"),
     ):
         accepted.update(getattr(importlib.import_module(module_name), attr))
+    return accepted
 
+
+def test_every_measured_historical_schema_version_is_still_accepted() -> None:
+    """**这次迁移最要紧的一条**：实测到的每个历史 `codex-*` schema_version 都必须在某个
+    `ACCEPTED_*` 里——否则那批历史证据在新读端下就是读不出来的东西。
+
+    它已经赚回一次：`codex-l2-review-timeout-v1`（3 份，
+    `runs/2026-09-04/daily-003/…`）在 §七 的清单里根本没登记，是"扫真实产物"抓出来的。
+
+    这条**不依赖 `runs/`**，所以在干净检出里也在真的守卫（现场扫描见下一条）。
+    """
+    accepted = _all_accepted_schema_versions()
+    missing = FROZEN_HISTORICAL_SCHEMA_VERSIONS - accepted
+    assert not missing, f"这些历史 schema_version 没有任何 ACCEPTED_* 收录：{sorted(missing)}"
     assert "dsh-review-contract-1.0" in accepted, "现值没进 ACCEPTED_* —— 集合自己就错了"
 
+
+def test_no_real_historical_schema_version_falls_outside_the_accepted_sets() -> None:
+    """现场扫描 `runs/`：**有没有出现清单之外的新形态**。
+
+    与上一条分工：上一条用冻结集合守卫"别删"，这一条用现场数据守卫"别无登记"。
+
+    注意 `runs/` 只是**部分**被跟踪，所以干净检出里扫到的对象不完整；扫不到 `codex`
+    值时**显式跳过并说明**，而不是让断言恒真失败——那会变成第四个"干净检出多出来的
+    失败"，把真正的信号淹掉（第四轮复核 major 1）。
+    """
+    import pytest
+
+    accepted = _all_accepted_schema_versions()
+    runs = Path(__file__).resolve().parents[1] / "runs"
+    if not runs.is_dir():
+        pytest.skip("干净检出（runs/ 不入版本库）：无历史产物可扫描")
+
+    scanned = 0
     seen: dict[str, list[str]] = {}
     for path in runs.rglob("*.json"):
         if ".before" in path.parts:
             continue
+        scanned += 1
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError):
@@ -112,7 +150,16 @@ def test_no_real_historical_schema_version_falls_outside_the_accepted_sets() -> 
         if isinstance(version, str) and "codex" in version.lower():
             seen.setdefault(version, []).append(str(path.relative_to(runs.parent)))
 
-    assert seen, "扫描到 0 个历史 codex schema_version —— 断言退化成恒真了"
+    if not seen:
+        pytest.skip(
+            f"扫了 {scanned} 个 json 但没有含 codex 的 schema_version："
+            "这条路径上 runs/ 只是部分跟踪（git ls-files runs = 187 个文件），"
+            "本环境的现场数据不足以做这条检查；『别删历史值』由上一条冻结集合守卫"
+        )
+    assert scanned > 0
+
+    unreadable = {v: paths[:3] for v, paths in seen.items() if v not in accepted}
+    assert not unreadable, f"这些历史 schema_version 没有任何 ACCEPTED_* 集合收录：{unreadable}"
     unreadable = {v: paths[:3] for v, paths in seen.items() if v not in accepted}
     assert not unreadable, f"这些历史 schema_version 没有任何 ACCEPTED_* 集合收录：{unreadable}"
 

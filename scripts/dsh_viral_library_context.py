@@ -35,6 +35,10 @@ except ImportError:  # pragma: no cover - exercised by direct script execution.
 
 CONTEXT_SCHEMA_VERSION = "dsh-viral-library-context-v1"
 # 历史产物写的是 codex-viral-library-context-v1；读端认这两个值。
+# **读端现状（2026-09-25 复核 major 2 的记录）**：本仓内**没有**任何代码读这个
+# schema_version 做校验，所以这几个常量目前**不是**一条被走到的兼容路径，
+# 而是给外部消费者/将来门禁的**前瞻契约**。不要因为「没人用」就删掉：
+# 历史产物里那几个旧值仍在磁盘上（实测见 docs/dsh/PROPOSAL-legacy-naming-decisions.md §七）。
 LEGACY_CONTEXT_SCHEMA_VERSIONS = ("codex-viral-library-context-v1",)
 ACCEPTED_CONTEXT_SCHEMA_VERSIONS = (CONTEXT_SCHEMA_VERSION, *LEGACY_CONTEXT_SCHEMA_VERSIONS)
 MAX_POSITIVE_SAMPLES = 3

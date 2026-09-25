@@ -112,10 +112,26 @@ if external_review is None and codex is None:
 
 1. **读端先兼容**：每处读端接受**新旧两个值**（新值为 `dsh-*`），并加测试钉住"旧值仍可读"。
    落成 `normalize_*` / `is_*` / `ACCEPTED_*` 三件套 + `tests/test_contract_value_migration.py`。
+   **但读端的覆盖面是分族的，不能一概而论**（第四轮复核 major 2 逼出来的诚实结论）：
+
+   | 族 | 本仓内有真实读端吗 | 兼容落在哪 |
+   |---|---|---|
+   | `review_surface` | **有**（`final_review` 11 处、`content_delivery`、`v4/verification`、`human_attestation`、两个 audit 脚本） | `is_markdown_surface()`，逐处接线并端到端验证（73 个真实 batch 全部仍可读） |
+   | `preview_mode` | **有**（`final_review`、`preview_contract.validate_preview_evidence`、`preview_route_audit`） | `is_local_preview()` / `normalize_preview_mode()` |
+   | L2 产物名 | **有**（`title_freeze`、`evidence_rebind`） | `resolve_l2_review_record()` 新名优先、回退旧名 |
+   | `codex-review-contract-1.0` | **没有**（本仓无门禁按 `schema_version` 校验复核记录） | `is_review_contract_record()`：前瞻契约 |
+   | viral-library reader/index/context、skill-inventory、review-audit | **没有** | `ACCEPTED_*` 常量：前瞻契约 |
+   | 消费者 manifest 名 | **没有**（runner 拒绝往非空输出目录写 → `output_exists`） | `ACCEPTED_CONSUMER_MANIFEST_NAMES`：旧名只对**外部消费者**可见 |
+
+   后三行的常量**不是**被走到的分支，代码里逐处写明了这一点。它们的守卫方式是
+   "实测冻结集合"（见下），而不是"有一个读者在读"——不要把它们读成已接线的兼容路径。
 2. **写端改新值**：`DEFAULT_REVIEW_SURFACE`、`DEFAULT_PREVIEW_MODE`、`CONSUMER_MANIFEST_NAME`、
    `schema_version` 写出值、生产引擎 `scripts/daily_engine.py`。
 3. **历史产物**：**一份都没重写**。证据：73 个真实 `batch.json` 全部仍通过校验（72 个解析为新值）；
    扫描 `runs/` 下 2534 个 json，历史 `schema_version` 全部落在某个 `ACCEPTED_*` 里。
+   **注意 `runs/` 只是部分被跟踪**（`git ls-files runs` = 187 个文件 / 88 个 json），
+   所以"扫 `runs/`"这条检查在干净检出里扫不到 `codex` 值——它显式跳过并说明原因，
+   守卫改由**冻结集合**承担（`FROZEN_HISTORICAL_SCHEMA_VERSIONS`，字面量钉住实测的 5 个值）。
 4. **文档**：`AGENTS.md`、`templates/*`、`schemas/dsh-review-contract.json` 同步；本文档标记已执行。
 5. **独立复核一轮**：对象仅限本次迁移 diff（见 §八）。
 

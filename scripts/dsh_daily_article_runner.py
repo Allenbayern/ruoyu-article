@@ -43,6 +43,9 @@ CONSUMER_MANIFEST_NAME = "dsh-daily-article-run.json"
 LEGACY_CONSUMER_MANIFEST_NAMES = ("codex-daily-article-run.json",)
 # 实测历史产物：runs/2026-09-04/daily-002/producer-consume/codex-daily-article-run.json
 # 里的 schema_version 是 codex-daily-article-consumer/v1。
+# **读端现状**：本 runner 拒绝往非空输出目录写（`output_exists`），所以本仓内
+# **没有**读这个 manifest 的路径——旧名只对**外部消费者**可见。这几个常量是前瞻契约，
+# 不是一条被走到的分支（2026-09-25 复核 major 2）。
 LEGACY_CONSUMER_SCHEMA_VERSIONS = ("codex-daily-article-consumer/v1",)
 ACCEPTED_CONSUMER_SCHEMA_VERSIONS = ("dsh-daily-article-consumer/v1", *LEGACY_CONSUMER_SCHEMA_VERSIONS)
 ACCEPTED_CONSUMER_MANIFEST_NAMES = (CONSUMER_MANIFEST_NAME, *LEGACY_CONSUMER_MANIFEST_NAMES)

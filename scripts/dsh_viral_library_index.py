@@ -45,6 +45,10 @@ DEFAULT_EVIDENCE_RUN = Path("runs/2026-08-11/viral-research")
 INDEX_SCHEMA_VERSION = "dsh-viral-library-index-v1"
 # 历史产物（runs/2026-09-04/daily-002/viral-library/library-index.json）写的是
 # codex-viral-library-index-v1；读端认这两个值。
+# **读端现状（2026-09-25 复核 major 2 的记录）**：本仓内**没有**任何代码读这个
+# schema_version 做校验，所以这几个常量目前**不是**一条被走到的兼容路径，
+# 而是给外部消费者/将来门禁的**前瞻契约**。不要因为「没人用」就删掉：
+# 历史产物里那几个旧值仍在磁盘上（实测见 docs/dsh/PROPOSAL-legacy-naming-decisions.md §七）。
 LEGACY_INDEX_SCHEMA_VERSIONS = ("codex-viral-library-index-v1",)
 ACCEPTED_INDEX_SCHEMA_VERSIONS = (INDEX_SCHEMA_VERSION, *LEGACY_INDEX_SCHEMA_VERSIONS)
 PACKAGE_SCHEMA_VERSION = "viral-research-package-v1"
