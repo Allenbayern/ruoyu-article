@@ -317,7 +317,7 @@ def _bound_review_record(tmp_path, **overrides) -> dict:
         created_from_run="2026-09-17/daily-009",
     )
     record = {
-        "schema_version": "codex-review-contract-1.0",
+        "schema_version": "dsh-review-contract-1.0",
         "review_mode": "l2",
         "article_task_id": "at-art-001",
         "article_id": "art-001",

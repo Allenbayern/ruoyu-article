@@ -68,7 +68,7 @@ def _write_record(root: Path, record: dict) -> bytes:
 FINISHED_RECORDS = {
     # codex_review 契约记录：daily-009 的 approve 就是这种形状被覆盖的
     "contract_pass": {
-        "schema_version": "codex-review-contract-1.0",
+        "schema_version": "dsh-review-contract-1.0",
         "article_id": "art-001",
         "status": "PASS",
         "decision": "approve",

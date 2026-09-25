@@ -16,7 +16,8 @@ support.
 Canonical independent-review records (2026-09-18, daily-009 复盘): the gate and
 the generator engine read ``review/<aid>/independent-review.json`` in the
 ``article-independent-review-v1`` shape, while this tool's own record is the
-``codex-review-contract-1.0`` shape.  Pointing ``--output`` at
+``dsh-review-contract-1.0`` shape (historically ``codex-review-contract-1.0``;
+both are accepted by :func:`is_review_contract_record`).  Pointing ``--output`` at
 ``independent-review.json`` (or passing ``--canonical-independent-review``)
 makes the tool write the canonical shape directly — ``status=complete`` plus the
 full artifact binding — so no reviewer has to hand-copy a record that the
@@ -53,9 +54,27 @@ from article_group.independent_review import build_independent_review_binding
 from article_group.run_contract import REQUIRED_RUN_CONTRACT, is_strict_run_contract
 
 
-SCHEMA_VERSION = "codex-review-contract-1.0"
+SCHEMA_VERSION = "dsh-review-contract-1.0"
+# 2026-09-25 之前写下的记录是 codex-review-contract-1.0。**历史记录不重写**，
+# 所以读端要认它——这些记录是门禁与审计的历史证据，不能因为一次改名就读不出来。
+# 实测（扫描 runs/ 下 2534 个 json）：历史记录里有**两个**本工具的 schema_version。
+# `codex-l2-review-timeout-v1`（3 份，例 runs/2026-09-04/daily-003/…）是复核**超时**的
+# 兄弟形状——它在 §七 的清单里没有出现，是这次按真实产物实测补出来的。
+LEGACY_SCHEMA_VERSIONS = ("codex-review-contract-1.0", "codex-l2-review-timeout-v1")
+ACCEPTED_SCHEMA_VERSIONS = (SCHEMA_VERSION, *LEGACY_SCHEMA_VERSIONS)
 DEFAULT_SCHEMA = Path(__file__).resolve().parent.parent / "schemas" / "dsh-review-contract.json"
 CANONICAL_RECORD_NAME = "independent-review.json"
+
+
+def is_review_contract_record(payload: object) -> bool:
+    """这份 payload 是不是本契约形状的记录（**历史版本也算**）。
+
+    这是读端该用的判据。当前仓内没有任何门禁按 `schema_version` 校验复核记录
+    （`independent_review` 校验的是另一套 `article-independent-review-v1`），所以
+    这个谓词服务的是**外部消费者与将来的门禁**——它们必须同时认历史值，
+    否则 2026-09-25 之前的复核记录会整体读不出来。
+    """
+    return isinstance(payload, Mapping) and payload.get("schema_version") in ACCEPTED_SCHEMA_VERSIONS
 
 
 def _binding_gaps(args: argparse.Namespace) -> list[str]:

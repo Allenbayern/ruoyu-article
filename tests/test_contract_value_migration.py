@@ -1,0 +1,179 @@
+"""契约值迁移（`codex` → `dsh`）的兼容契约（2026-09-25，备案 §七）。
+
+为什么单开一个文件：这次迁移跨 7 个契约族，**读端兼容**这件事散在各自的模块里，
+需要一个地方一次性把"旧值仍然可读"钉住——否则某次重构把某个 `LEGACY_*` 删掉，
+只有对应模块自己的用例会红，而"历史产物读不出来了"这件事要到线上才发现。
+
+三个不变量，每个族都要满足：
+
+1. **现值**是我们今天**写出去**的值（`dsh-*`）；
+2. **历史值**在 `LEGACY_*` 里，且被 `ACCEPTED_*` 收录；
+3. **历史产物不重写**：所以读端认历史值这件事本身必须有断言（下面的断言就是它）。
+
+`article_group.review_surface` / `preview_contract` 两族的兼容用例在各自模块的
+测试里（那里有真实夹具与证据文件可跑），这里不重复。
+"""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+
+def test_review_contract_schema_version_accepts_historical_records() -> None:
+    from article_group import dsh_review
+
+    assert dsh_review.SCHEMA_VERSION == "dsh-review-contract-1.0"
+    # 实测补出来的第二个历史值：复核**超时**的兄弟形状（§七 清单里没有）
+    assert dsh_review.LEGACY_SCHEMA_VERSIONS == (
+        "codex-review-contract-1.0", "codex-l2-review-timeout-v1")
+    assert set(dsh_review.ACCEPTED_SCHEMA_VERSIONS) == {
+        "dsh-review-contract-1.0", "codex-review-contract-1.0", "codex-l2-review-timeout-v1"}
+
+    assert dsh_review.is_review_contract_record({"schema_version": "dsh-review-contract-1.0"})
+    assert dsh_review.is_review_contract_record({"schema_version": "codex-review-contract-1.0"})
+    assert dsh_review.is_review_contract_record({"schema_version": "codex-l2-review-timeout-v1"})
+    assert not dsh_review.is_review_contract_record({"schema_version": "article-independent-review-v1"})
+    assert not dsh_review.is_review_contract_record({"schema_version": "dsh-review-contract-2.0"})
+    assert not dsh_review.is_review_contract_record({"schema_version": None})
+    assert not dsh_review.is_review_contract_record(None)
+    assert not dsh_review.is_review_contract_record([])
+
+
+def test_real_historical_review_records_still_parse_as_this_contract() -> None:
+    """真实历史产物：`runs/` 里 2026-09-25 之前写的复核记录仍被认成本契约形状。
+
+    这些文件不进版本库（`runs/` 被刻意排除），所以本用例在没有历史的干净检出里
+    自动跳过——**跳过要说明原因**，不能静默。
+    """
+    import pytest
+
+    from article_group import dsh_review
+
+    runs = Path(__file__).resolve().parents[1] / "runs"
+    records = sorted(runs.glob("**/review/**/*l2-review*.json")) if runs.is_dir() else []
+    if not records:
+        pytest.skip("干净检出（runs/ 不入版本库）：无历史复核记录可验")
+    checked = 0
+    for path in records:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict) or "schema_version" not in payload:
+            continue
+        checked += 1
+        assert dsh_review.is_review_contract_record(payload), (str(path), payload.get("schema_version"))
+    assert checked, "找到了文件却没有一份带 schema_version —— 断言退化成恒真了"
+
+
+def test_no_real_historical_schema_version_falls_outside_the_accepted_sets() -> None:
+    """**这次迁移最要紧的一条**：真实历史产物里出现过的每个含 `codex` 的
+    schema_version 都必须在某个 `ACCEPTED_*` 集合里——否则那批历史证据在新读端下
+    就成了读不出来的东西。
+
+    这条用例由**数据**驱动，它已经赚回一次：2026-09-25 实测 runs/ 下 2534 个 json，
+    含 `codex` 的 schema_version 有 5 种，其中 `codex-l2-review-timeout-v1`（3 份）在
+    §七 的清单里根本没登记。将来再有新形态漏登记，这里会红。
+    """
+    import importlib
+
+    import pytest
+
+    from article_group import dsh_review
+
+    runs = Path(__file__).resolve().parents[1] / "runs"
+    if not runs.is_dir():
+        pytest.skip("干净检出（runs/ 不入版本库）：无历史产物可扫描")
+
+    accepted: set[str] = set(dsh_review.ACCEPTED_SCHEMA_VERSIONS)
+    for module_name, attr in (
+        ("scripts.dsh_daily_article_runner", "ACCEPTED_CONSUMER_SCHEMA_VERSIONS"),
+        ("scripts.dsh_viral_library_index", "ACCEPTED_INDEX_SCHEMA_VERSIONS"),
+        ("scripts.dsh_viral_library_context", "ACCEPTED_CONTEXT_SCHEMA_VERSIONS"),
+        ("scripts.dsh_viral_library_reader", "ACCEPTED_READER_SCHEMA_VERSIONS"),
+        ("scripts.dsh_review_audit", "ACCEPTED_AUDIT_SCHEMA_VERSIONS"),
+        ("scripts.dsh_skill_inventory", "ACCEPTED_INVENTORY_SCHEMA_VERSIONS"),
+    ):
+        accepted.update(getattr(importlib.import_module(module_name), attr))
+
+    assert "dsh-review-contract-1.0" in accepted, "现值没进 ACCEPTED_* —— 集合自己就错了"
+
+    seen: dict[str, list[str]] = {}
+    for path in runs.rglob("*.json"):
+        if ".before" in path.parts:
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        version = payload.get("schema_version")
+        if isinstance(version, str) and "codex" in version.lower():
+            seen.setdefault(version, []).append(str(path.relative_to(runs.parent)))
+
+    assert seen, "扫描到 0 个历史 codex schema_version —— 断言退化成恒真了"
+    unreadable = {v: paths[:3] for v, paths in seen.items() if v not in accepted}
+    assert not unreadable, f"这些历史 schema_version 没有任何 ACCEPTED_* 集合收录：{unreadable}"
+
+
+def test_viral_library_schema_versions_accept_historical_outputs() -> None:
+    import importlib
+
+    reader = importlib.import_module("scripts.dsh_viral_library_reader")
+    context = importlib.import_module("scripts.dsh_viral_library_context")
+
+    assert reader.READER_SCHEMA_VERSION == "dsh-viral-library-reader-v1"
+    assert reader.LEGACY_READER_SCHEMA_VERSIONS == ("codex-viral-library-reader-v1",)
+    assert "codex-viral-library-reader-v1" in reader.ACCEPTED_READER_SCHEMA_VERSIONS
+
+    assert context.CONTEXT_SCHEMA_VERSION == "dsh-viral-library-context-v1"
+    assert context.LEGACY_CONTEXT_SCHEMA_VERSIONS == ("codex-viral-library-context-v1",)
+    assert "codex-viral-library-context-v1" in context.ACCEPTED_CONTEXT_SCHEMA_VERSIONS
+
+
+def test_index_and_skill_inventory_write_the_new_schema_versions() -> None:
+    """写出去的值必须是新值：**写端只写现值**（历史值只活在读端的 ACCEPTED_* 里）。"""
+    import importlib
+
+    index = importlib.import_module("scripts.dsh_viral_library_index")
+    inventory = importlib.import_module("scripts.dsh_skill_inventory")
+    audit = importlib.import_module("scripts.dsh_review_audit")
+
+    assert index.INDEX_SCHEMA_VERSION == "dsh-viral-library-index-v1"
+    assert index.LEGACY_INDEX_SCHEMA_VERSIONS == ("codex-viral-library-index-v1",)
+    assert inventory.INVENTORY_SCHEMA_VERSION == "dsh-skill-inventory-1"
+    assert inventory.LEGACY_INVENTORY_SCHEMA_VERSIONS == ("codex-skill-inventory-1",)
+    assert audit.AUDIT_SCHEMA_VERSION == "dsh-review-audit-1.0"
+    assert audit.AUDIT_MANIFEST_SCHEMA_VERSION == "dsh-review-audit-manifest-1.0"
+    assert set(audit.LEGACY_AUDIT_SCHEMA_VERSIONS) == {
+        "codex-review-audit-1.0", "codex-review-audit-manifest-1.0"}
+
+    root = Path(__file__).resolve().parents[1]
+    audit_src = (root / "scripts" / "dsh_review_audit.py").read_text(encoding="utf-8")
+    # 月报的产物名与它自己的 schema 一起改（同一族的产物文件名）
+    assert 'f"dsh-review-audit-{month}.json"' in audit_src
+    # 只钉产物名模板：`codex-review-audit-*` 仍会出现在 LEGACY_* 常量与注释里（那是读端契约）
+    assert 'f"codex-review-audit-{month}.json"' not in audit_src
+
+
+def test_consumer_manifest_name_moves_but_the_old_name_stays_accepted() -> None:
+    """消费者 manifest：写端写新名；**旧名仍是读端契约的一部分**（外部消费者可能还在找它）。"""
+    import importlib
+
+    module = importlib.import_module("scripts.dsh_daily_article_runner")
+
+    assert module.CONSUMER_MANIFEST_NAME == "dsh-daily-article-run.json"
+    assert module.LEGACY_CONSUMER_MANIFEST_NAMES == ("codex-daily-article-run.json",)
+    assert set(module.ACCEPTED_CONSUMER_MANIFEST_NAMES) == {
+        "dsh-daily-article-run.json", "codex-daily-article-run.json"}
+    assert module.CONSUMER_MANIFEST_NAME in module.ACCEPTED_CONSUMER_MANIFEST_NAMES
+
+
+def test_the_two_surfaces_of_the_migration_agree_on_being_legacy_tolerant() -> None:
+    """迁移的两个"面值"（审阅面 / 预览模式）也必须保留历史映射——防被顺手删掉。"""
+    from article_group.preview_contract import LEGACY_PREVIEW_MODES
+    from article_group.review_surface import LEGACY_REVIEW_SURFACES
+
+    assert LEGACY_REVIEW_SURFACES == {"markdown_codex": "markdown_dsh"}
+    assert LEGACY_PREVIEW_MODES == {"local_codex": "local_dsh"}

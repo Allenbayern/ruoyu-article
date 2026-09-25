@@ -33,7 +33,10 @@ except ImportError:  # pragma: no cover - exercised by direct script execution.
     )
 
 
-CONTEXT_SCHEMA_VERSION = "codex-viral-library-context-v1"
+CONTEXT_SCHEMA_VERSION = "dsh-viral-library-context-v1"
+# 历史产物写的是 codex-viral-library-context-v1；读端认这两个值。
+LEGACY_CONTEXT_SCHEMA_VERSIONS = ("codex-viral-library-context-v1",)
+ACCEPTED_CONTEXT_SCHEMA_VERSIONS = (CONTEXT_SCHEMA_VERSION, *LEGACY_CONTEXT_SCHEMA_VERSIONS)
 MAX_POSITIVE_SAMPLES = 3
 MAX_REFERENCE_IDS = 8
 _HASH_PATTERN = re.compile(r"[0-9a-f]{64}\Z")

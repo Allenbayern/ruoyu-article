@@ -12,6 +12,13 @@ import sys
 from typing import Any, NoReturn, Sequence
 
 
+AUDIT_SCHEMA_VERSION = "dsh-review-audit-1.0"
+AUDIT_MANIFEST_SCHEMA_VERSION = "dsh-review-audit-manifest-1.0"
+# 历史产物写的是 codex-review-audit-1.0 / codex-review-audit-manifest-1.0；读端认这四个值。
+LEGACY_AUDIT_SCHEMA_VERSIONS = ("codex-review-audit-1.0", "codex-review-audit-manifest-1.0")
+ACCEPTED_AUDIT_SCHEMA_VERSIONS = (
+    AUDIT_SCHEMA_VERSION, AUDIT_MANIFEST_SCHEMA_VERSION, *LEGACY_AUDIT_SCHEMA_VERSIONS)
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_HOME_AGENTS = Path.home() / "AGENTS.md"
 DEFAULT_PROJECT_AGENTS = PROJECT_ROOT / "AGENTS.md"
@@ -114,8 +121,8 @@ def _recent_runs(root: Path, limit: int) -> dict[str, Any]:
 
 def _write_monthly_snapshot(report: dict[str, Any], month: str, output_root: Path) -> tuple[Path, Path] | None:
     output_root = output_root.expanduser()
-    report_path = output_root / f"codex-review-audit-{month}.json"
-    manifest_path = output_root / f"codex-review-audit-{month}.json.manifest.json"
+    report_path = output_root / f"dsh-review-audit-{month}.json"
+    manifest_path = output_root / f"dsh-review-audit-{month}.json.manifest.json"
     if report_path.exists() or manifest_path.exists():
         return None
     output_root.mkdir(parents=True, exist_ok=True)
@@ -124,7 +131,7 @@ def _write_monthly_snapshot(report: dict[str, Any], month: str, output_root: Pat
     manifest_path.write_text(
         json.dumps(
             {
-                "schema_version": "codex-review-audit-manifest-1.0",
+                "schema_version": AUDIT_MANIFEST_SCHEMA_VERSION,
                 "month": month,
                 "report": str(report_path),
                 "report_sha256": report_sha256,
@@ -153,7 +160,7 @@ def build_report(
     if not isinstance(required_fields, list):
         required_fields = []
     report: dict[str, Any] = {
-        "schema_version": "codex-review-audit-1.0",
+        "schema_version": AUDIT_SCHEMA_VERSION,
         "read_only": True,
         "mutation": {"files_written": [], "files_deleted": [], "external_actions": []},
         "inputs": {

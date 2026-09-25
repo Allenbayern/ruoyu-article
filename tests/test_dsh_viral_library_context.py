@@ -274,7 +274,7 @@ def test_context_is_structured_and_does_not_leak_fixture_content(tmp_path: Path)
     encoded = json.dumps(result, ensure_ascii=False)
 
     assert result["status"] == "available"
-    assert result["schema_version"] == "codex-viral-library-context-v1"
+    assert result["schema_version"] == "dsh-viral-library-context-v1"
     assert result["positive_samples"]
     sample = result["positive_samples"][0]
     assert sample["title_strategy"] in {

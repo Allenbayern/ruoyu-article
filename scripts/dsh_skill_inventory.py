@@ -13,6 +13,11 @@ from pathlib import Path
 import re
 from typing import Any, Sequence
 
+INVENTORY_SCHEMA_VERSION = "dsh-skill-inventory-1"
+# 历史产物写的是 codex-skill-inventory-1；读端认这两个值。
+LEGACY_INVENTORY_SCHEMA_VERSIONS = ("codex-skill-inventory-1",)
+ACCEPTED_INVENTORY_SCHEMA_VERSIONS = (INVENTORY_SCHEMA_VERSION, *LEGACY_INVENTORY_SCHEMA_VERSIONS)
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 AGENT_SKILLS_ROOT = Path.home() / ".agents" / "skills"
@@ -133,7 +138,7 @@ def build_report(project_root: Path, codex_skills_root: Path) -> dict[str, Any]:
     ]
     return {
         "read_only": True,
-        "schema_version": "codex-skill-inventory-1",
+        "schema_version": INVENTORY_SCHEMA_VERSION,
         "sources": sources,
         "summary": {
             "project_skill_count": len(sources[0]["skills"]),

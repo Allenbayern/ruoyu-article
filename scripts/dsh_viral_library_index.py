@@ -42,6 +42,11 @@ LEGACY_DIRS = (
 DEFAULT_EVIDENCE_RUN = Path("runs/2026-08-11/viral-research")
 
 # 生产端 article_group/viral_research_package.py 的产物契约。
+INDEX_SCHEMA_VERSION = "dsh-viral-library-index-v1"
+# 历史产物（runs/2026-09-04/daily-002/viral-library/library-index.json）写的是
+# codex-viral-library-index-v1；读端认这两个值。
+LEGACY_INDEX_SCHEMA_VERSIONS = ("codex-viral-library-index-v1",)
+ACCEPTED_INDEX_SCHEMA_VERSIONS = (INDEX_SCHEMA_VERSION, *LEGACY_INDEX_SCHEMA_VERSIONS)
 PACKAGE_SCHEMA_VERSION = "viral-research-package-v1"
 PACKAGE_INTEGRITY_SCHEMA_VERSION = "viral-research-package-integrity-v1"
 
@@ -598,7 +603,7 @@ def build_index(
         ]
 
     result = {
-        "schema_version": "codex-viral-library-index-v1",
+        "schema_version": INDEX_SCHEMA_VERSION,
         "project_root": ".",
         "library_entrypoints": {
             "codex_skill": ".agents/skills/ruoyu-viral-library/SKILL.md",

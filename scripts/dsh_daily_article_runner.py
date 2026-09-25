@@ -37,7 +37,15 @@ except ImportError:  # pragma: no cover - exercised by direct script execution.
 MANIFEST_NAME = "run-manifest.json"
 HANDOFF_NAME = "article-research-handoff.json"
 SUMMARY_NAME = "run_summary.json"
-CONSUMER_MANIFEST_NAME = "codex-daily-article-run.json"
+CONSUMER_MANIFEST_NAME = "dsh-daily-article-run.json"
+# 历史输出目录里躺的是 codex-daily-article-run.json。**历史产物不重写**，
+# 所以读端（含外部消费者）两个名字都该认；写端只写新名。
+LEGACY_CONSUMER_MANIFEST_NAMES = ("codex-daily-article-run.json",)
+# 实测历史产物：runs/2026-09-04/daily-002/producer-consume/codex-daily-article-run.json
+# 里的 schema_version 是 codex-daily-article-consumer/v1。
+LEGACY_CONSUMER_SCHEMA_VERSIONS = ("codex-daily-article-consumer/v1",)
+ACCEPTED_CONSUMER_SCHEMA_VERSIONS = ("dsh-daily-article-consumer/v1", *LEGACY_CONSUMER_SCHEMA_VERSIONS)
+ACCEPTED_CONSUMER_MANIFEST_NAMES = (CONSUMER_MANIFEST_NAME, *LEGACY_CONSUMER_MANIFEST_NAMES)
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PRODUCER_REQUIRED_ARTIFACTS = (
     "source-audit.json",
@@ -811,7 +819,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
 
     payload: dict[str, Any] = {
-        "schema_version": "codex-daily-article-consumer/v1",
+        "schema_version": "dsh-daily-article-consumer/v1",
         "status": "candidate_evidence_only",
         "lane": "article",
         "date": summary.get("date") or producer_manifest.get("date"),

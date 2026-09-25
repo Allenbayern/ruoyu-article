@@ -29,7 +29,7 @@ def test_inventory_scans_project_and_codex_roots_in_stable_order(tmp_path: Path)
     report = dsh_skill_inventory.build_report(project_root, codex_root)
 
     assert report["read_only"] is True
-    assert report["schema_version"] == "codex-skill-inventory-1"
+    assert report["schema_version"] == "dsh-skill-inventory-1"
     assert [item["directory"] for item in report["sources"][0]["skills"]] == ["alpha", "zeta"]
     assert report["sources"][0]["skills"][0]["metadata"] == {
         "description": "another project skill",

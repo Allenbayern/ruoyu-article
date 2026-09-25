@@ -2,7 +2,8 @@
 
 > `schema_version: article-independent-review-v1`。按单篇记录，超时不能当作通过。
 
-`codex-review-contract-1.0` 的 normal 记录是仓库代码审查证据；即使它写入
+`dsh-review-contract-1.0` 的 normal 记录是仓库代码审查证据（2026-09-25 前的历史记录
+写的是 `codex-review-contract-1.0`，读端认两者）；即使它写入
 `status=PASS`、`decision=review_completed`，也不能代替本记录的文章独立复核。文章独立
 复核必须另写本 schema，并使用 `approve` 等明确批准决策及当前产物绑定。
 

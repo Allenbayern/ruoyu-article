@@ -409,7 +409,7 @@ def test_daily_article_runner_accepts_current_producer_core_manifest_contract(
     assert result == 0
     assert captured.err == ""
     assert json.loads(
-        (tmp_path / "consumer-run" / "codex-daily-article-run.json").read_text(
+        (tmp_path / "consumer-run" / "dsh-daily-article-run.json").read_text(
             encoding="utf-8"
         )
     )["producer"]["run_id"] == "daily-001"
@@ -443,7 +443,7 @@ def test_daily_article_runner_consumes_explicit_producer_read_only_and_separates
     assert result == 0
     assert captured.err == ""
     manifest = json.loads(
-        (consumer_root / "codex-daily-article-run.json").read_text(encoding="utf-8")
+        (consumer_root / "dsh-daily-article-run.json").read_text(encoding="utf-8")
     )
     assert manifest["status"] == "candidate_evidence_only"
     assert manifest["producer"]["run_id"] == "daily-001"
@@ -513,7 +513,7 @@ def test_daily_article_runner_reads_valid_library_and_records_external_readbacks
     assert result == 0
     assert captured.err == ""
     manifest = json.loads(
-        (consumer_root / "codex-daily-article-run.json").read_text(encoding="utf-8")
+        (consumer_root / "dsh-daily-article-run.json").read_text(encoding="utf-8")
     )
     assert "pending_consumer" in module.LIBRARY_CONTEXT_STATUSES
     assert manifest["producer"]["handoff"]["sha256"] == _digest(handoff)
@@ -652,7 +652,7 @@ def test_daily_article_runner_keeps_pending_consumer_visible_for_missing_library
     assert result == 0
     assert captured.err == ""
     manifest = json.loads(
-        (consumer_root / "codex-daily-article-run.json").read_text(encoding="utf-8")
+        (consumer_root / "dsh-daily-article-run.json").read_text(encoding="utf-8")
     )
     assert manifest["library_context_status"] == "unavailable"
     assert manifest["library"]["reader"]["status"] == "unavailable"
@@ -700,7 +700,7 @@ def test_daily_article_runner_keeps_corrupt_library_unavailable_without_mutation
     assert result == 0
     assert captured.err == ""
     manifest = json.loads(
-        (consumer_root / "codex-daily-article-run.json").read_text(encoding="utf-8")
+        (consumer_root / "dsh-daily-article-run.json").read_text(encoding="utf-8")
     )
     assert manifest["library_context_status"] == "unavailable"
     assert manifest["library"]["reader"]["status"] == "unavailable"
@@ -818,8 +818,8 @@ def test_review_audit_can_write_an_immutable_monthly_snapshot(tmp_path: Path, ca
             str(output_root),
         ]
     )
-    first_output = output_root / "codex-review-audit-2026-08.json"
-    first_manifest = output_root / "codex-review-audit-2026-08.json.manifest.json"
+    first_output = output_root / "dsh-review-audit-2026-08.json"
+    first_manifest = output_root / "dsh-review-audit-2026-08.json.manifest.json"
     first_stdout = capsys.readouterr()
 
     second = module.main(

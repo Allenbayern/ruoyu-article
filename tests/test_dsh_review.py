@@ -605,7 +605,7 @@ def test_contract_named_output_keeps_the_contract_shape(
     )
 
     record = json.loads(output.read_text(encoding="utf-8"))
-    assert record["schema_version"] == "codex-review-contract-1.0"
+    assert record["schema_version"] == "dsh-review-contract-1.0"
     assert record["status"] == "PASS"
     assert "contract_status" not in record
 
@@ -709,7 +709,7 @@ def test_canonical_name_without_the_article_chain_records_the_gap(
     )
 
     record = json.loads(output.read_text(encoding="utf-8"))
-    assert record["schema_version"] == "codex-review-contract-1.0"  # 不假装写成 canonical
+    assert record["schema_version"] == "dsh-review-contract-1.0"  # 不假装写成 canonical
     assert record["canonical_record_incomplete"] == [
         "--article-id",
         "--artifact-path",
@@ -983,7 +983,7 @@ def _base_review_setup(tmp_path: Path) -> tuple[Path, Path, Path]:
     base_record.write_text(
         json.dumps(
             {
-                "schema_version": "codex-review-contract-1.0",
+                "schema_version": "dsh-review-contract-1.0",
                 "decision": "needs_changes",
                 **binding,
                 "findings": [

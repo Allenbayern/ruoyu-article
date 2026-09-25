@@ -23,7 +23,10 @@ from typing import Any, Iterable
 from urllib.parse import quote, urlsplit, urlunsplit
 
 
-READER_SCHEMA_VERSION = "codex-viral-library-reader-v1"
+READER_SCHEMA_VERSION = "dsh-viral-library-reader-v1"
+# 历史产物（2026-09-25 前）写的是 codex-viral-library-reader-v1；读端认这两个值。
+LEGACY_READER_SCHEMA_VERSIONS = ("codex-viral-library-reader-v1",)
+ACCEPTED_READER_SCHEMA_VERSIONS = (READER_SCHEMA_VERSION, *LEGACY_READER_SCHEMA_VERSIONS)
 LIBRARY_SCHEMA_VERSION = "viral-library-schema-v3"
 SUPPORTED_LIBRARY_SCHEMA_VERSIONS = frozenset(
     {
