@@ -71,7 +71,7 @@ def _load(module_name: str):
 def test_newrank_watch_missing_token_is_stable_and_side_effect_free(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    module = _load("scripts.codex_newrank_watch")
+    module = _load("scripts.dsh_newrank_watch")
     output_root = tmp_path / "newrank"
     monkeypatch.delenv("NEWRANK_N_TOKEN", raising=False)
 
@@ -87,7 +87,7 @@ def test_newrank_watch_missing_token_is_stable_and_side_effect_free(
 def test_newrank_watch_uses_runtime_token_and_immutable_date_artifacts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    module = _load("scripts.codex_newrank_watch")
+    module = _load("scripts.dsh_newrank_watch")
     output_root = tmp_path / "newrank"
     seen: dict[str, object] = {}
     monkeypatch.setenv("NEWRANK_N_TOKEN", "runtime-token-that-must-not-print")
@@ -126,7 +126,7 @@ def test_newrank_watch_uses_runtime_token_and_immutable_date_artifacts(
 def test_daily_article_runner_requires_explicit_producer_run(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    module = _load("scripts.codex_daily_article_runner")
+    module = _load("scripts.dsh_daily_article_runner")
 
     result = module.main(
         [
@@ -378,7 +378,7 @@ def _write_producer_package(
 def test_daily_article_runner_accepts_current_producer_core_manifest_contract(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    module = _load("scripts.codex_daily_article_runner")
+    module = _load("scripts.dsh_daily_article_runner")
     producer_root = tmp_path / "producer-run"
     required = [
         "article-candidates.jsonl",
@@ -418,7 +418,7 @@ def test_daily_article_runner_accepts_current_producer_core_manifest_contract(
 def test_daily_article_runner_consumes_explicit_producer_read_only_and_separates_manifests(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    module = _load("scripts.codex_daily_article_runner")
+    module = _load("scripts.dsh_daily_article_runner")
     producer_root = tmp_path / "producer-run"
     library_root = tmp_path / "library"
     producer_manifest, handoff = _write_producer_package(
@@ -473,7 +473,7 @@ def test_daily_article_runner_consumes_explicit_producer_read_only_and_separates
 def test_daily_article_runner_reads_valid_library_and_records_external_readbacks(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    module = _load("scripts.codex_daily_article_runner")
+    module = _load("scripts.dsh_daily_article_runner")
     producer_root = tmp_path / "producer-run"
     producer_manifest, handoff = _write_producer_package(
         producer_root,
@@ -570,7 +570,7 @@ def test_daily_article_runner_rejects_supplied_library_root_that_differs_from_ha
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    module = _load("scripts.codex_daily_article_runner")
+    module = _load("scripts.dsh_daily_article_runner")
     producer_root = tmp_path / "producer-run"
     declared_root = tmp_path / "declared-library"
     supplied_root = tmp_path / "supplied-library"
@@ -627,7 +627,7 @@ def test_daily_article_runner_rejects_supplied_library_root_that_differs_from_ha
 def test_daily_article_runner_keeps_pending_consumer_visible_for_missing_library(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    module = _load("scripts.codex_daily_article_runner")
+    module = _load("scripts.dsh_daily_article_runner")
     producer_root = tmp_path / "producer-run"
     _write_producer_package(
         producer_root,
@@ -666,7 +666,7 @@ def test_daily_article_runner_keeps_pending_consumer_visible_for_missing_library
 def test_daily_article_runner_keeps_corrupt_library_unavailable_without_mutation(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    module = _load("scripts.codex_daily_article_runner")
+    module = _load("scripts.dsh_daily_article_runner")
     producer_root = tmp_path / "producer-run"
     _write_producer_package(
         producer_root,

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.codex_viral_library_context import build_library_context, main
+from scripts.dsh_viral_library_context import build_library_context, main
 
 
 CORE_SCHEMA = """

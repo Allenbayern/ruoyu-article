@@ -84,7 +84,7 @@ uv run python -m article_group.wechat_capture \
 ```
 
 失败的验证码页、空壳页和网络失败不会进入材料包。完整用法与错误码见
-[`docs/codex/wechat-source-capture.md`](docs/codex/wechat-source-capture.md)。
+[`docs/dsh/wechat-source-capture.md`](docs/dsh/wechat-source-capture.md)。
 
 ## 发现雷达（玉峰）
 
@@ -143,7 +143,7 @@ validate_pipeline_transition(
 ```
 
 V3 的 Schema 和状态门禁说明见
-[`docs/codex/editorial-pipeline-v3.md`](docs/codex/editorial-pipeline-v3.md)。它只校验
+[`docs/dsh/editorial-pipeline-v3.md`](docs/dsh/editorial-pipeline-v3.md)。它只校验
 文章组已经决定的选题及其材料，不自动选题、换题、写作、建爆款库或发布。
 
 ```bash
@@ -195,6 +195,18 @@ uv run python -m article_group.sync_compliance \
 | `preview/index.html` | 目录页：**标题即链接**，附最强钩子、CJK 字数、交付稿 SHA-256、`content_status` 与终审三栏 |
 | `preview/art-00N.html` | 阅读页：中文长文排版、手机/暗色/打印适配、**零外链**（内网/离线可读），正文与 Markdown 逐段一致 |
 | `preview/wechat/**` | 既有公众号复制版原样搬入（复制到公众号后台用） |
+| `preview/links.json` | **交付链接清单**（2026-09-24，schema `preview-links-v1`）：每篇的正文 / 阅读页 /（有则）公众号版的 run 相对路径、**绝对路径**、SHA-256 与可直接粘贴的 Markdown 链接；交付期读它取链接，不手写路径 |
+
+`links.json` 的口径（2026-09-24 独立复核后收口）：**只信 `state: "complete"`**（构建开始时先改写为 `building`，
+build 中途失败就不会留下"看起来完整"的旧清单）；路径含控制字符或非 UTF-8 时 `markdown_link` 给 `null` 并附
+`link_unavailable_reason`；`stale_preview_files` 列出本轮不再维护的陈旧产物（**不删文件**，只点名）；
+公众号版只在 `wechat/` 源还在时才广告。
+
+无桌面宿主（headless）上交付靠 **DSH 侧边栏文件预览**，因此清单里的链接一律用**绝对路径**：
+相对链接按会话工作区根解析（dsh 默认 `/home/allen/dsh`），而 run 在项目目录下，相对链接必然解析到错误位置。
+另注意侧边栏 HTML 预览是 `sandbox` + `blob:` 的 iframe，宿主只重写 `<script src>` / `<link rel=stylesheet>`，
+**不重写 `<a href>`**——所以 `preview/index.html` 的"标题即链接"只在 HTTP 下可跳转，侧边栏里要逐篇直链
+`articles[].reading.markdown_link`。这些限制也写在 `links.json` 的 `notes` 里。
 
 - **不是门禁**：与 `wechat_render` 同性质的后置便利步骤；生成失败只记 `status/reason`，不影响已通过的交付，也不构成发布授权。
 - **生成与发布分离**：引擎只写 run 内 `preview/`（走 `evidence_write` 留底通道）；发布到主机静态根用
@@ -237,19 +249,19 @@ python -m scripts.daily_engine --spec scripts/run_real_daily_009.py --stages gat
 RUN_ROOT=runs/<run-id>
 
 # 1) package：把本地抓爬证据封装成不可覆盖、带逐文件 SHA-256 的 package
-uv run python scripts/codex_viral_research_package.py \
+uv run python scripts/dsh_viral_research_package.py \
   --capture-manifest "$RUN_ROOT/capture.json" \
   --run-root "$RUN_ROOT" \
   --output-root "$RUN_ROOT/viral-research/package"
 
 # 2) inventory：盘点旧库、各证据通道与 package 状态
-uv run python scripts/codex_viral_library_index.py \
+uv run python scripts/dsh_viral_library_index.py \
   --project-root . \
   --evidence-run "$RUN_ROOT/viral-research" \
   --compact > "$RUN_ROOT/viral-research/inventory.json"
 
 # 3) prepare：按微信影视长文形态选出可蒸馏样本
-uv run python scripts/codex_viral_distill.py prepare \
+uv run python scripts/dsh_viral_distill.py prepare \
   --package-root "$RUN_ROOT/viral-research/package" \
   --platform wechat \
   --medium long_form \
@@ -269,7 +281,7 @@ uv run python scripts/codex_viral_distill.py prepare \
 #    —— 本仓库已退役 Codex CLI，脚本名保留仅为链接与测试稳定。
 
 # 5) finalize：校验语义 pass 产出的 case cards，落 provisional review packet
-uv run python scripts/codex_viral_distill.py finalize \
+uv run python scripts/dsh_viral_distill.py finalize \
   --prepared "$RUN_ROOT/viral-research/distillation/prepare.json" \
   --package-root "$RUN_ROOT/viral-research/package" \
   --platform wechat \
@@ -285,13 +297,13 @@ uv run python scripts/codex_viral_distill.py finalize \
 证据不完整时产出 `status: blocked` 并在 `errors[]` 列出缺口，同时仍写入 `integrity.json`
 （逐文件 SHA-256）——失败同样留痕可审计。
 
-`codex_viral_library_index.py` 同时盘点三条证据通道：历史 lane 布局（`wechat-viral/`、
+`dsh_viral_library_index.py` 同时盘点三条证据通道：历史 lane 布局（`wechat-viral/`、
 `bilibili-public-metrics/`）与新的 `package/`。读包时会**实校 `integrity.json` 的逐文件 SHA-256**：
 缺失或任何一项对不上，整包样本一律不计入 `usable_for_positive_patterns`（fail-closed），
 原因落在 `integrity.mismatches`。包内样本的 `raw_ref` / `clean_ref` / `metadata_ref` 相对**批次的
 `RUN_ROOT`** 书写（即 `--evidence-run` 所给目录的父级）。
 
-需要为已入包的单个样本补挂表现证据时用 `scripts/codex_viral_research_attach_evidence.py`
+需要为已入包的单个样本补挂表现证据时用 `scripts/dsh_viral_research_attach_evidence.py`
 （`--package-root` / `--sample-id` / `--evidence-file` / `--output-revision`），产出新 revision 而非原地改包。
 
 蒸馏报告与候选原则保持 `promotion_status: provisional_only`、`automatic_publication_authority: false`。
@@ -346,7 +358,7 @@ V4 只处理文章组已经确定的选题：组合计划、证据图、缺口�
   --output-dir runs/<日期>/<运行编号>/v4
 ```
 
-验收结果会分别列出 `PASS`、缺失来源角色、重试要求、人工升级项、`content_status` 和 `publication_authorization`。`CONTENT_READY` 只是 Markdown 可交给真人处理，发布授权始终为 `not_authorized`。详细字段和各子命令见 [`docs/codex/editorial-pipeline-v4.md`](docs/codex/editorial-pipeline-v4.md)。
+验收结果会分别列出 `PASS`、缺失来源角色、重试要求、人工升级项、`content_status` 和 `publication_authorization`。`CONTENT_READY` 只是 Markdown 可交给真人处理，发布授权始终为 `not_authorized`。详细字段和各子命令见 [`docs/dsh/editorial-pipeline-v4.md`](docs/dsh/editorial-pipeline-v4.md)。
 
 ## 文章组 V5 自适应反馈层
 
@@ -358,4 +370,4 @@ V5 在 V4 的证据、调度和反馈基础上增加实验记录、内容生命�
   --output-dir runs/2026-09-09/v5/controlled-001
 ```
 
-该命令只读取显式运行根，写出八个 JSON 并逐一读回；输出拒绝不同内容覆盖，不生成 HTML，不保存凭据。受控 fixture 是合成测试输入。报告独立列出 `PASS`、缺失来源角色、重试要求、人工升级项和 `content_status`；`CONTENT_READY` 只代表交给文章组/controller 复核，`publication_authorization` 始终为 `not_authorized`。完整字段、生命周期、失败分类、配额边界和策略状态见 [`docs/codex/editorial-pipeline-v5.md`](docs/codex/editorial-pipeline-v5.md)。
+该命令只读取显式运行根，写出八个 JSON 并逐一读回；输出拒绝不同内容覆盖，不生成 HTML，不保存凭据。受控 fixture 是合成测试输入。报告独立列出 `PASS`、缺失来源角色、重试要求、人工升级项和 `content_status`；`CONTENT_READY` 只代表交给文章组/controller 复核，`publication_authorization` 始终为 `not_authorized`。完整字段、生命周期、失败分类、配额边界和策略状态见 [`docs/dsh/editorial-pipeline-v5.md`](docs/dsh/editorial-pipeline-v5.md)。

@@ -3,7 +3,7 @@
 - article_id:
 - batch_id:
 - state: `brief_locked | drafting_content | content_review | content_passed | title_packaging | title_review | final_review | delivered`
-- editorial_lessons_ref: `docs/codex/editorial-lessons.md`（历史经验参考；不替代当前来源、门禁或授权判断）
+- editorial_lessons_ref: `docs/dsh/editorial-lessons.md`（历史经验参考；不替代当前来源、门禁或授权判断）
 
 ## Intake And Historical Dedupe
 

@@ -17,10 +17,10 @@ This is a research-evidence library. It is not a publication queue, a canonical 
 From the repository root, run the read-only inventory before selecting samples:
 
 ```bash
-python scripts/codex_viral_library_index.py --project-root .
+python scripts/dsh_viral_library_index.py --project-root .
 ```
 
-Read `docs/codex/viral-library-migration.md` for the source map and migration boundary. The inventory is intentionally content-light: it reports paths, hashes, statuses, and resolvable evidence references without loading the whole article corpus.
+Read `docs/dsh/viral-library-migration.md` for the source map and migration boundary. The inventory is intentionally content-light: it reports paths, hashes, statuses, and resolvable evidence references without loading the whole article corpus.
 
 ## Source layers
 

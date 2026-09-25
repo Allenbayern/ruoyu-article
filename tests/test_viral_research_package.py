@@ -12,7 +12,7 @@ from article_group.viral_research_package import (
     validate_package_root,
 )
 from article_group.viral_research_contract import normalize_sample_id
-from scripts.codex_viral_research_package import main as package_cli
+from scripts.dsh_viral_research_package import main as package_cli
 
 
 def _ref(root: Path, relative: str, content: str) -> str:

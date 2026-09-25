@@ -41,7 +41,7 @@ OUT_OF_SCOPE: dict[str, str] = {
     "article_group/step_log.py": "append-only 时间线：护栏按契约放行追加（'a' 同目录同文件），重写/删除仍拦",
     "scripts/markdown_review_audit.py": "只写显式 --output 审计报告",
     "scripts/markdown_style_audit.py": "只写显式 --output 报告目录",
-    "scripts/codex_viral_library_index.py": "只写显式 --output 索引报告（读 run 卡，不写 run）",
+    "scripts/dsh_viral_library_index.py": "只写显式 --output 索引报告（读 run 卡，不写 run）",
     "scripts/topic_scout.py": "只写显式 --out-dir 选题建议产物（读 research run，不写 run）；已 fail-closed 拒绝覆盖旧产物、拒绝写入含 SEALED 标记的 run",
     "scripts/topic_backlog.py": "滚动储备池库落在 state/（项目级状态，非 run 目录；2026-09-25 由 run/ 改名，避免与 runs/ 只差一个字母的混淆）；run_dir/adopted_run_id 仅作为来源与去向元数据记录，不作为写入目标；已 fail-closed 拒绝把 --db 或 --out 指进含 SEALED 的 run",
     "scripts/article_group_controller.py": "只写显式 --output 控制面产物",
@@ -100,7 +100,7 @@ OUT_OF_SCOPE: dict[str, str] = {
 PENDING: dict[str, str] = {
     "article_group/v4/verification.py": "旁路校验产物（v4 冻结层）：接入前先确认是否仍在用",
     "article_group/v5/verification.py": "旁路校验产物（v5 冻结层）：同上",
-    "scripts/codex_daily_article_runner.py": "消费清单按路径写、可覆盖（有读回校验但无留底）：下一步接入留底通道或改成 new-only",
+    "scripts/dsh_daily_article_runner.py": "消费清单按路径写、可覆盖（有读回校验但无留底）：下一步接入留底通道或改成 new-only",
 }
 
 

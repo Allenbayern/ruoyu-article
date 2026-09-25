@@ -8,17 +8,17 @@
 
 可脱离 Hermes 私有状态、可审查、可验证的流程已经迁移到项目级 skill：
 
-- `.agents/skills/codex-ops-portable/SKILL.md`
-- `scripts/codex_skill_inventory.py`
-- `tests/test_codex_skill_inventory.py`
+- `.agents/skills/dsh-ops-portable/SKILL.md`
+- `scripts/dsh_skill_inventory.py`
+- `tests/test_dsh_skill_inventory.py`
 
 现有若雨 Codex 适配器仍是主要执行入口：
 
 - `article_group/codex_review.py`
 - `scripts/codex_review_audit.py`
-- `scripts/codex_newrank_watch.py`
-- `scripts/codex_daily_article_runner.py`
-- `schemas/codex-review-contract.json`
+- `scripts/dsh_newrank_watch.py`
+- `scripts/dsh_daily_article_runner.py`
+- `schemas/dsh-review-contract.json`
 
 Codex review、脚本输出和审查包都只是证据。它们不能授权发布、合并、部署、远程写入、配置变更或状态晋级。
 
@@ -27,7 +27,7 @@ Codex review、脚本输出和审查包都只是证据。它们不能授权发�
 | Hermes 能力或工具 | Codex 承载方式 | 状态与边界 |
 |---|---|---|
 | 若雨文章生产规则 | 项目 `AGENTS.md`、现有用户级文章 skill、项目 gates | 已有承载；canonical 规则仍在 Vault，历史批次不能变成当前稿件 |
-| 源码/部署同步审计 | `codex-ops-portable`、Git、`systemctl --user`、`readlink /proc/<pid>` | 已迁移为只读优先流程；外部写入需单独授权、恢复点和精确回读 |
+| 源码/部署同步审计 | `dsh-ops-portable`、Git、`systemctl --user`、`readlink /proc/<pid>` | 已迁移为只读优先流程；外部写入需单独授权、恢复点和精确回读 |
 | Python CLI 运行验证 | 项目测试、`uv run pytest`、`py_compile`、负向路径测试 | 已迁移；零退出码不是完整验收 |
 | 确定性脱敏 | skill 中的 `[REDACTED]` 规则、现有安全启动桥接 | 已迁移为流程；不得读取或复制凭证值 |
 | review evidence / adversarial review | `codex review`、`--output-schema`、现有 review contract 和 `codex_review.py` | 已有适配；normal 输出明确是 `repository_code_review`，不能代替文章独立复核；审查结论是证据，不是授权 |
@@ -68,7 +68,7 @@ codex features list
 ### 只读盘点项目与用户级 skill
 
 ```bash
-python scripts/codex_skill_inventory.py \
+python scripts/dsh_skill_inventory.py \
   --project-root /home/allen/Projects/ruoyu-film-daily \
   --codex-skills-root /home/allen/.codex/skills
 ```
@@ -79,7 +79,7 @@ python scripts/codex_skill_inventory.py \
 
 ```bash
 codex exec --sandbox read-only --ephemeral \
-  --output-schema schemas/codex-review-contract.json \
+  --output-schema schemas/dsh-review-contract.json \
   -C /home/allen/Projects/ruoyu-film-daily \
   "检查指定文件并返回结构化证据，不要编辑文件或访问凭证。"
 ```
@@ -94,8 +94,8 @@ codex review --uncommitted \
 ### 本地验证
 
 ```bash
-uv run pytest -q tests/test_codex_skill_inventory.py
-python -m py_compile scripts/codex_skill_inventory.py
+uv run pytest -q tests/test_dsh_skill_inventory.py
+python -m py_compile scripts/dsh_skill_inventory.py
 ```
 
 ### 本地调度替代

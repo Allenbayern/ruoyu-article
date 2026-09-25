@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts.codex_viral_library_index import build_index, main
+from scripts.dsh_viral_library_index import build_index, main
 
 
 def _write_json(path: Path, value: object) -> None:

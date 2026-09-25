@@ -17,7 +17,7 @@
 - content_fidelity_path: `review/<article_id>/content-fidelity.json`
 - title_pack_path: （仅 `content_passed` 后填写：`review/<article_id>/title_pack.json`）
 - delivery_path: （仅选定标题并通过终审后填写：`delivery/<article_id>/delivery.md`）
-- editorial_lessons_ref: `docs/codex/editorial-lessons.md`（历史经验参考；不替代当前来源核验）
+- editorial_lessons_ref: `docs/dsh/editorial-lessons.md`（历史经验参考；不替代当前来源核验）
 
 ## Content Contract
 

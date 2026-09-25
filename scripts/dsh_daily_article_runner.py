@@ -26,13 +26,13 @@ from article_group import runs_guard as _runs_guard  # noqa: E402
 _runs_guard.install()
 
 try:  # Support package imports and direct ``python scripts/...`` execution.
-    from .codex_viral_library_context import build_library_context
-    from .codex_viral_library_index import build_index
-    from .codex_viral_library_reader import read_library
+    from .dsh_viral_library_context import build_library_context
+    from .dsh_viral_library_index import build_index
+    from .dsh_viral_library_reader import read_library
 except ImportError:  # pragma: no cover - exercised by direct script execution.
-    from codex_viral_library_context import build_library_context  # type: ignore[no-redef]
-    from codex_viral_library_index import build_index  # type: ignore[no-redef]
-    from codex_viral_library_reader import read_library  # type: ignore[no-redef]
+    from dsh_viral_library_context import build_library_context  # type: ignore[no-redef]
+    from dsh_viral_library_index import build_index  # type: ignore[no-redef]
+    from dsh_viral_library_reader import read_library  # type: ignore[no-redef]
 
 MANIFEST_NAME = "run-manifest.json"
 HANDOFF_NAME = "article-research-handoff.json"

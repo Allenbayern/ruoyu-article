@@ -20,13 +20,13 @@ import tempfile
 from typing import Any, Iterable
 
 try:  # Support both package imports and ``python scripts/...`` execution.
-    from .codex_viral_library_reader import (
+    from .dsh_viral_library_reader import (
         LibraryReaderError,
         read_library,
         read_snapshot_for_bounded_classifier,
     )
 except ImportError:  # pragma: no cover - exercised by direct script execution.
-    from codex_viral_library_reader import (  # type: ignore[no-redef]
+    from dsh_viral_library_reader import (  # type: ignore[no-redef]
         LibraryReaderError,
         read_library,
         read_snapshot_for_bounded_classifier,

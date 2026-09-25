@@ -141,7 +141,7 @@
    preflight-report 与 run_gates blocking 门禁（`article_group/topic_preflight.py`，
    测试 `tests/test_topic_preflight.py`）；
 2. **发现源扩展（调研完成，待拍板）**：谈资型版面（豆瓣小组/小红书）方案调研已
-   落盘 `docs/codex/talk-material-discovery-plan-2026-09.md`——第一步 DailyHotApi
+   落盘 `docs/dsh/talk-material-discovery-plan-2026-09.md`——第一步 DailyHotApi
    （豆瓣小组讨论精选等 48 路由，Docker 零成本），小红书爬虫有判例红线仅人工
    工具流；
 3. **本文档与 playbook 的关系**：本文档是借用方法的台账；playbook 与本组门禁仍是

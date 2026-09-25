@@ -20,7 +20,7 @@ DEFAULT_SKILLS_ROOT = (
     if (Path.home() / ".agents" / "skills").is_dir()
     else Path.home() / ".codex" / "skills"
 )
-DEFAULT_SCHEMA = PROJECT_ROOT / "schemas" / "codex-review-contract.json"
+DEFAULT_SCHEMA = PROJECT_ROOT / "schemas" / "dsh-review-contract.json"
 DEFAULT_RUNS_ROOT = PROJECT_ROOT / "runs"
 
 

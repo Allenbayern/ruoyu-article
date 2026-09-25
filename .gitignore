@@ -32,10 +32,10 @@ venv/
 /docs/
 !docs/
 docs/*
-!docs/codex/
-docs/codex/*
-!docs/codex/skill-tool-migration.md
-!docs/codex/viral-library-migration.md
+!docs/dsh/
+docs/dsh/*
+!docs/dsh/skill-tool-migration.md
+!docs/dsh/viral-library-migration.md
 ARTICLE_GROUP_OPERATING_CONTRACT_v1_DRAFT.md
 
 # Local scratch (never daily-commit material)
@@ -47,11 +47,11 @@ briefs/
 scripts/
 !scripts/
 scripts/*
-!scripts/codex_newrank_watch.py
-!scripts/codex_daily_article_runner.py
+!scripts/dsh_newrank_watch.py
+!scripts/dsh_daily_article_runner.py
 !scripts/codex_review_audit.py
 # 2026-09-23：codex_review_audit → dsh_review_audit 改名后，实现搬到 dsh_ 名下，
-# codex_ 只剩兼容薄壳。tests/test_codex_linux_runners.py 里被跟踪的三个审计测试
+# codex_ 只剩兼容薄壳。tests/test_dsh_linux_runners.py 里被跟踪的三个审计测试
 # 导入的是 scripts.dsh_review_audit；这个新名字不进白名单时，干净检出会因
 # ModuleNotFoundError 直接失败（实测：干净克隆多出 3 个回归）。与 codex_ 条目对称。
 !scripts/dsh_review_audit.py
@@ -65,8 +65,8 @@ scripts/*
 !scripts/scout_calibration.py
 !scripts/topic_backlog.py
 !scripts/scout_to_candidate_pool.py
-!scripts/codex_skill_inventory.py
-!scripts/codex_viral_library_index.py
+!scripts/dsh_skill_inventory.py
+!scripts/dsh_viral_library_index.py
 !scripts/run_real_daily_005.py
 !scripts/daily_engine.py
 !scripts/generate_daily_001.py
@@ -98,19 +98,19 @@ references/learning-samples/
 /handover-hotspot/
 
 # Reusable editorial execution documents and audit entrypoints
-!docs/codex/*.md
+!docs/dsh/*.md
 !docs/superpowers/
 docs/superpowers/*
 !docs/superpowers/specs/
 docs/superpowers/specs/*
 !docs/superpowers/specs/2026-09-08-editorial-pipeline-v4-design.md
-!scripts/codex_viral_library_reader.py
-!scripts/codex_viral_library_context.py
+!scripts/dsh_viral_library_reader.py
+!scripts/dsh_viral_library_context.py
 # 爆款研究库生产者 CLI（2026-09-17 随 viral_research_* 模块一同纳入；
 # README「爆款研究库」一节的命令直接调用它们，缺了干净克隆跑不通）
-!scripts/codex_viral_research_package.py
-!scripts/codex_viral_distill.py
-!scripts/codex_viral_research_attach_evidence.py
+!scripts/dsh_viral_research_package.py
+!scripts/dsh_viral_distill.py
+!scripts/dsh_viral_research_attach_evidence.py
 !scripts/markdown_review_audit.py
 !scripts/markdown_style_audit.py
 !scripts/content_delivery_audit.py

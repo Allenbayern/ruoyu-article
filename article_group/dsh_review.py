@@ -23,7 +23,7 @@ full artifact binding — so no reviewer has to hand-copy a record that the
 engine would later overwrite with a PENDING placeholder.
 
 Contract enforcement (2026-09-18, B5′): every structured L2 review is validated
-against ``schemas/codex-review-contract.json`` (severity ∈ blocker/major/minor,
+against ``schemas/dsh-review-contract.json`` (severity ∈ blocker/major/minor,
 exact finding keys, no extra keys).  A review that does not satisfy it is
 recorded as ``UNVERIFIED`` with ``contract_errors`` — never as a verdict.  And a
 ``blocker``/``major`` finding can never be recorded as an approve: such a
@@ -54,7 +54,7 @@ from article_group.run_contract import REQUIRED_RUN_CONTRACT, is_strict_run_cont
 
 
 SCHEMA_VERSION = "codex-review-contract-1.0"
-DEFAULT_SCHEMA = Path(__file__).resolve().parent.parent / "schemas" / "codex-review-contract.json"
+DEFAULT_SCHEMA = Path(__file__).resolve().parent.parent / "schemas" / "dsh-review-contract.json"
 CANONICAL_RECORD_NAME = "independent-review.json"
 
 
@@ -515,7 +515,7 @@ def build_base_review_diff(
 
 
 def validate_review_contract(review: object, schema_path: str | Path) -> list[str]:
-    """按 ``schemas/codex-review-contract.json`` 校验复核 JSON。
+    """按 ``schemas/dsh-review-contract.json`` 校验复核 JSON。
 
     2026-09-18（B5′）：契约里 severity 早就是 blocker/major/minor 三级，但
     ``--review-json`` 路径此前只挑 5 个 key 拷贝，复核员自造

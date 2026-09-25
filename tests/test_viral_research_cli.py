@@ -4,7 +4,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from scripts.codex_viral_research_package import main
+from scripts.dsh_viral_research_package import main
 
 
 def test_cli_help_is_available(capsys):
@@ -18,7 +18,7 @@ def test_cli_help_is_available(capsys):
 def test_direct_script_entrypoint_resolves_project_package():
     root = Path(__file__).resolve().parents[1]
     result = subprocess.run(
-        [sys.executable, str(root / "scripts" / "codex_viral_research_package.py"), "--help"],
+        [sys.executable, str(root / "scripts" / "dsh_viral_research_package.py"), "--help"],
         cwd=root,
         capture_output=True,
         text=True,

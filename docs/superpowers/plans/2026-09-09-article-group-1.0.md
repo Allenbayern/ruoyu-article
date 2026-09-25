@@ -53,7 +53,7 @@
 ### Task 3: Documentation and controlled fixture
 
 **Files:**
-- Create: `docs/codex/article-group-1.0.md`
+- Create: `docs/dsh/article-group-1.0.md`
 - Create: `tests/fixtures/controller-v1/manifest.json`
 - Create: `tests/fixtures/controller-v1/decisions.jsonl`
 - Test: `tests/test_workflow.py`

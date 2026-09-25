@@ -38,7 +38,7 @@
 - Create schemas/editorial-pipeline-v5/v5-artifact.schema.json: V5 envelope schema。
 - Create tests/test_v5_contracts.py, tests/test_v5_experiment.py, tests/test_v5_lifecycle.py, tests/test_v5_dna_failure.py, tests/test_v5_quota_strategy.py, tests/test_v5_resources_integration.py, tests/test_article_group_v5_cli.py。
 - Create tests/fixtures/v5/controlled-001/: 仅合成、脱敏的 V5 运行输入。
-- Create docs/codex/editorial-pipeline-v5.md and update README.zh-CN.md: 使用方式、字段、边界和验收结果。
+- Create docs/dsh/editorial-pipeline-v5.md and update README.zh-CN.md: 使用方式、字段、边界和验收结果。
 
 ---
 
@@ -476,7 +476,7 @@ git commit -m "feat: add v5 offline verification lane"
 ### Task 8: Documentation, full regression, and smoke handoff
 
 **Files:**
-- Create docs/codex/editorial-pipeline-v5.md
+- Create docs/dsh/editorial-pipeline-v5.md
 - Modify README.zh-CN.md
 - Maintain .superpowers/sdd/2026-09-09-editorial-pipeline-v5/progress.md (created before Task 1 by the SDD controller)
 
@@ -513,7 +513,7 @@ Run the command above, then run .venv/bin/pytest -q again. Read all eight JSON f
 - [ ] Step 5: Commit
 
 ~~~bash
-git add docs/codex/editorial-pipeline-v5.md README.zh-CN.md .superpowers/sdd/2026-09-09-editorial-pipeline-v5/progress.md
+git add docs/dsh/editorial-pipeline-v5.md README.zh-CN.md .superpowers/sdd/2026-09-09-editorial-pipeline-v5/progress.md
 git commit -m "docs: add v5 runbook and acceptance record"
 ~~~
 

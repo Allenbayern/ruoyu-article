@@ -10,7 +10,7 @@
 - decided_at: `YYYY-MM-DDThh:mm:ss+08:00`
 - decision: `proceed | hold | waiting_source | reject`
 - stop_reasons: `[]`（若 decision 不是 `proceed`，至少填写一项）
-- editorial_lessons_ref: `docs/codex/editorial-lessons.md`（历史经验参考；不把历史文章当作当前事实证据）
+- editorial_lessons_ref: `docs/dsh/editorial-lessons.md`（历史经验参考；不把历史文章当作当前事实证据）
 
 ## Scope
 
@@ -43,7 +43,7 @@
 
 以下是编辑补充记录，使用实际比较结果填写；不新增机器放行或豁免权限。
 
-- historical_dedupe_ref: （比较同作品、同事件簇和近似标题的历史记录；引用 `docs/codex/editorial-lessons.md` 时同时写明具体 run/path）
+- historical_dedupe_ref: （比较同作品、同事件簇和近似标题的历史记录；引用 `docs/dsh/editorial-lessons.md` 时同时写明具体 run/path）
 - same_work_recent_check: `pass | override | blocked`
 - title_near_duplicate_check: `pass | override | blocked`
 - new_angle_statement: （本篇新增的事实、具体场景、人物关系或读者问题；只换标题不算新角度）

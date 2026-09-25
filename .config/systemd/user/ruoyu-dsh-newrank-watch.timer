@@ -5,6 +5,6 @@ Description=Schedule the Ruoyu Codex Newrank evidence watch
 [Timer]
 OnCalendar=*-*-* 09:00:00
 Persistent=false
-Unit=ruoyu-codex-newrank-watch.service
+Unit=ruoyu-dsh-newrank-watch.service
 
 # Deliberately no [Install] section: this timer is not enabled by this repository.

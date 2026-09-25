@@ -1,5 +1,5 @@
 ---
-name: codex-ops-portable
+name: dsh-ops-portable
 description: "Use for portable, evidence-first Codex operations: source/deployment audits, Python CLI validation, secret-safe execution, and review packets."
 ---
 

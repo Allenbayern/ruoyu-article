@@ -17,7 +17,7 @@
 ## 当前执行口径（2026-09-05）
 
 - 用户已确认：日常两篇、Markdown 成品、无需发布；沿用现有 `two_article_daily`、`markdown_codex` 与 `CONTENT_READY` 检查。内容交付与 R8 治理分别判断，不因没有发布授权要求用户完成发布流程。明确要求 HTML 的任务才执行 HTML 冻结和预览要求。
-- 标题、选题历史、首屏兑现和自然表达的执行方法见 `docs/codex/editorial-learning-playbook.md`；本次复盘证据见 `runs/2026-09-05/editorial-retrospective/`。
+- 标题、选题历史、首屏兑现和自然表达的执行方法见 `docs/dsh/editorial-learning-playbook.md`；本次复盘证据见 `runs/2026-09-05/editorial-retrospective/`。
 - 下方历史日志中的问句提评论率、固定反转和传播效果推断属于候选观察。使用与否由本篇材料决定，不作为成品合格门槛，不把模型评分当传播数据。
 - 本次仅对齐项目说明和模板，不修改机器闸门或推广状态。Vault 两份长期规则已于 2026-09-06 获用户明确批准并按提案写回；验证见 `runs/2026-09-05/editorial-retrospective/vault-writeback-2026-09-06/verification.json`。
 

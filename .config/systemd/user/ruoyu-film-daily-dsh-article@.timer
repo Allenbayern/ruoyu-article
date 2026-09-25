@@ -7,7 +7,7 @@ Description=Ruoyu Film Daily Codex article evidence timer (disabled template)
 [Timer]
 OnCalendar=*-*-* 17:00:00 Asia/Shanghai
 Persistent=false
-Unit=ruoyu-film-daily-codex-article@%i.service
+Unit=ruoyu-film-daily-dsh-article@%i.service
 
 [Install]
 WantedBy=timers.target

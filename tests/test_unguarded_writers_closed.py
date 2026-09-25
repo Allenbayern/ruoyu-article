@@ -139,7 +139,7 @@ def _sealed_run_with_capture(tmp_path: Path) -> tuple[Path, Path]:
 
 def test_viral_research_package_cli_refuses_sealed_run_with_a_message(tmp_path: Path):
     root, capture = _sealed_run_with_capture(tmp_path)
-    result = _run(["scripts/codex_viral_research_package.py",
+    result = _run(["scripts/dsh_viral_research_package.py",
                    "--capture-manifest", str(capture), "--run-root", str(root),
                    "--output-root", str(root / "viral-research" / "package")])
     assert result.returncode == 2
@@ -150,7 +150,7 @@ def test_viral_research_package_cli_refuses_sealed_run_with_a_message(tmp_path: 
 
 def test_viral_library_index_cli_refuses_sealed_output(tmp_path: Path):
     root, _capture = _sealed_run_with_capture(tmp_path)
-    result = _run(["scripts/codex_viral_library_index.py",
+    result = _run(["scripts/dsh_viral_library_index.py",
                    "--project-root", str(tmp_path), "--evidence-run", "runs/2026-09-16/daily-008",
                    "--output", str(root / "review" / "index.json")])
     assert result.returncode == 2
@@ -168,7 +168,7 @@ def test_viral_research_attach_evidence_cli_refuses_sealed_run(tmp_path: Path):
     evidence = _write_evidence(tmp_path)
     seal(tmp_path, identity="owner")  # 把整棵 tmp_path 变成封存区
 
-    result = _run(["scripts/codex_viral_research_attach_evidence.py",
+    result = _run(["scripts/dsh_viral_research_attach_evidence.py",
                    "--package-root", str(package_root), "--sample-id", sample_id,
                    "--evidence-file", str(evidence),
                    "--output-revision", str(package_root / "revisions" / "rev-001")])
@@ -186,7 +186,7 @@ def test_viral_distill_cli_refuses_sealed_output(tmp_path: Path):
     package_root = cards_root.parent / "package"
     seal(tmp_path, identity="owner")
 
-    result = _run(["scripts/codex_viral_distill.py", "finalize",
+    result = _run(["scripts/dsh_viral_distill.py", "finalize",
                    "--prepared", str(prepare_path), "--package-root", str(package_root),
                    "--cards-root", str(cards_root),
                    "--platform", _criteria().platform, "--medium", _criteria().medium,

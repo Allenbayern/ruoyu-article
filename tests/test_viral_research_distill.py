@@ -508,7 +508,7 @@ def test_finalize_refuses_overwrite(tmp_path: Path):
 
 
 def test_cli_help_is_available(capsys):
-    from scripts.codex_viral_distill import main
+    from scripts.dsh_viral_distill import main
     try:
         main(["--help"])
     except SystemExit as error:

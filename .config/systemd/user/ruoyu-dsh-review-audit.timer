@@ -6,6 +6,6 @@ Description=Schedule the Ruoyu Codex monthly review audit snapshot
 [Timer]
 OnCalendar=*-*-01 03:30:00 Asia/Shanghai
 Persistent=false
-Unit=ruoyu-codex-review-audit.service
+Unit=ruoyu-dsh-review-audit.service
 
 # Deliberately no [Install] section: this timer is not enabled by this repository.

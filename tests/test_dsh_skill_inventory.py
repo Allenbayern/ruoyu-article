@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts import codex_skill_inventory
+from scripts import dsh_skill_inventory
 
 
 def _write_skill(root: Path, directory: str, name: str, description: str) -> Path:
@@ -26,7 +26,7 @@ def test_inventory_scans_project_and_codex_roots_in_stable_order(tmp_path: Path)
     _write_skill(project_skills, "alpha", "alpha", "another project skill")
     _write_skill(codex_root, "beta", "beta", "user skill")
 
-    report = codex_skill_inventory.build_report(project_root, codex_root)
+    report = dsh_skill_inventory.build_report(project_root, codex_root)
 
     assert report["read_only"] is True
     assert report["schema_version"] == "codex-skill-inventory-1"
@@ -44,7 +44,7 @@ def test_inventory_handles_missing_roots_without_writing(tmp_path: Path) -> None
     codex_root = tmp_path / "missing-codex"
     before = sorted(path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*"))
 
-    report = codex_skill_inventory.build_report(project_root, codex_root)
+    report = dsh_skill_inventory.build_report(project_root, codex_root)
 
     after = sorted(path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*"))
     assert before == after
@@ -63,7 +63,7 @@ def test_inventory_does_not_read_or_emit_sensitive_files(tmp_path: Path) -> None
     (codex_root / "not-a-skill").mkdir()
     (codex_root / "not-a-skill" / "payload.txt").write_text("SHOULD_NOT_APPEAR\n", encoding="utf-8")
 
-    report = codex_skill_inventory.build_report(project_root, codex_root)
+    report = dsh_skill_inventory.build_report(project_root, codex_root)
     rendered = json.dumps(report, ensure_ascii=False, sort_keys=True)
 
     assert "SHOULD_NOT_APPEAR" not in rendered
@@ -82,7 +82,7 @@ def test_inventory_redacts_common_secret_markers_from_frontmatter(tmp_path: Path
         encoding="utf-8",
     )
 
-    report = codex_skill_inventory.build_report(project_root, tmp_path / "no-codex")
+    report = dsh_skill_inventory.build_report(project_root, tmp_path / "no-codex")
     metadata = report["sources"][0]["skills"][0]["metadata"]
 
     assert "secret-value" not in metadata["description"]
@@ -95,7 +95,7 @@ def test_cli_emits_parseable_stable_json(tmp_path: Path, capsys: pytest.CaptureF
     project_root = tmp_path / "project"
     _write_skill(project_root / ".agents" / "skills", "one", "one", "one")
 
-    result = codex_skill_inventory.main(
+    result = dsh_skill_inventory.main(
         ["--project-root", str(project_root), "--codex-skills-root", str(tmp_path / "codex")]
     )
 

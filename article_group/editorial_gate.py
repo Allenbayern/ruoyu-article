@@ -1,6 +1,6 @@
 """编辑质量门禁（2026-09-21 新增；daily-010 两篇成品编读复盘倒推出来的规则）。
 
-为什么需要它：项目里早就有编辑规则（`docs/codex/editorial-learning-playbook.md`
+为什么需要它：项目里早就有编辑规则（`docs/dsh/editorial-learning-playbook.md`
 §3「正文先回答读者问题」、§6「开稿最小检查」、§7「获得感写作闸门」、§8「先选形态
 再配材料」，以及 `templates/writing-brief.md` 的 opening_scene / judgment_basis /
 ending_interaction_question / reference_shape_material_fit），但**没有任何门禁读它们**：

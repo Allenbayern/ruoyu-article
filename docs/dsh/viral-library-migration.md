@@ -13,7 +13,7 @@ Codex 不需要继承 Hermes 的 memory、session 或私有知识库。爆款文
 项目级入口是：
 
 - `.agents/skills/ruoyu-viral-library/SKILL.md`
-- `scripts/codex_viral_library_index.py`
+- `scripts/dsh_viral_library_index.py`
 - 本说明文件
 - 根目录 `AGENTS.md` 的 Codex handoff 段落
 
@@ -34,7 +34,7 @@ Codex 不需要继承 Hermes 的 memory、session 或私有知识库。爆款文
 ## 包通道：`viral-research-package-v1`（2026-09-17 接入）
 
 上面表格前三条是 2026-08-11 那批**手工整理**的 lane 布局。自 2026-09-17 起，同一批证据也可以由
-生产端 `scripts/codex_viral_research_package.py` 封成**可复现的包**，消费端会把它作为第三条证据通道读取。
+生产端 `scripts/dsh_viral_research_package.py` 封成**可复现的包**，消费端会把它作为第三条证据通道读取。
 
 包固定为四个文件：
 
@@ -65,7 +65,7 @@ Codex 不需要继承 Hermes 的 memory、session 或私有知识库。爆款文
 在项目根目录运行：
 
 ```bash
-python scripts/codex_viral_library_index.py --project-root .
+python scripts/dsh_viral_library_index.py --project-root .
 ```
 
 脚本输出稳定 JSON，包含：
@@ -94,7 +94,7 @@ Codex 的调用顺序由 `.agents/skills/ruoyu-viral-library/SKILL.md` 固定：
 - **凭证占位符要看得见**（2026-09-17 实测）：本机 14 张 `qualified_viral` 卡的
   `client_evidence.sha256` 是 64 个 0——契约只校验格式，所以"自称合格"一直没人复核。
   现在 `case_contract.case_card_warnings` 把它标成 warning：legacy 索引
-  （`scripts/codex_viral_library_index.py`）逐卡输出 `warnings`/`warning_codes` 并在包级给出
+  （`scripts/dsh_viral_library_index.py`）逐卡输出 `warnings`/`warning_codes` 并在包级给出
   `warning_counts`、`usable_with_warnings_count`；新管线的 package 组装会把降级原因
   随 sample 落盘，卡片信封写进 `case_contract.warnings`。**warning 不改变资格判定**
   （收紧成硬失败会把现有唯一一批合格语料清零）；要修的是凭证本身——重新取证回填，

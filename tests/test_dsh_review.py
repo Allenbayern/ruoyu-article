@@ -1285,7 +1285,7 @@ def test_base_review_without_a_binding_says_so(tmp_path: Path, monkeypatch: pyte
     assert "无法定位历史版本" in artifact["reason"]
 
 
-def test_codex_review_rebases_run_relative_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_dsh_review_rebases_run_relative_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """当 --output 传 run-relative 路径（如 review/<aid>/...）时，自动锚定至 run-root 下。"""
     run_root = tmp_path / "runs" / "2026-09-21" / "daily-test"
     review_dir = run_root / "review" / "art-001"

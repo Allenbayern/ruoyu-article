@@ -29,7 +29,7 @@ from article_group.viral_research_distill import (
     finalize_distillation,
 )
 from article_group.viral_research_package import build_package, validate_package_root
-from scripts.codex_viral_library_index import build_index
+from scripts.dsh_viral_library_index import build_index
 
 ALL_ZERO = "0" * 64
 

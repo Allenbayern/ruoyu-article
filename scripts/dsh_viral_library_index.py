@@ -20,9 +20,9 @@ from pathlib import Path
 from typing import Any, Iterable
 
 try:  # Support both package imports and ``python scripts/...`` execution.
-    from .codex_viral_library_reader import read_library
+    from .dsh_viral_library_reader import read_library
 except ImportError:  # pragma: no cover - exercised by direct script execution.
-    from codex_viral_library_reader import read_library  # type: ignore[no-redef]
+    from dsh_viral_library_reader import read_library  # type: ignore[no-redef]
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from article_group.case_contract import case_card_warnings  # noqa: E402
@@ -602,7 +602,7 @@ def build_index(
         "project_root": ".",
         "library_entrypoints": {
             "codex_skill": ".agents/skills/ruoyu-viral-library/SKILL.md",
-            "migration_note": "docs/codex/viral-library-migration.md",
+            "migration_note": "docs/dsh/viral-library-migration.md",
             "qualification_contract": "article_group/case_contract.py",
             "distillation_contract": "article_group/case_distill.py",
             "external_canonical_governance": {

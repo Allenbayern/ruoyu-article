@@ -2,7 +2,7 @@
 """DailyHotApi 薄适配器：谈资型热帖信号 → 雷达快照 JSON。
 
 部署：Linux 主机 docker 容器 imsyy/dailyhot-api（127.0.0.1:6688，内网只读），
-见 docs/codex/talk-material-discovery-plan-2026-09.md 第 1 步。
+见 docs/dsh/talk-material-discovery-plan-2026-09.md 第 1 步。
 用途边界：信号仅作 R0 选题发现，不作事实来源；每条可经 url 回溯原帖核验。
 采集纪律：每日低频只读一次（cron），路由间加间隔，不并发。
 

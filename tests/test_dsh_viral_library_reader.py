@@ -9,13 +9,13 @@ import pytest
 
 
 def _read_library(root: Path) -> dict[str, object]:
-    from scripts.codex_viral_library_reader import read_library
+    from scripts.dsh_viral_library_reader import read_library
 
     return read_library(root)
 
 
 def _reader(root: Path):
-    from scripts.codex_viral_library_reader import LibraryReader
+    from scripts.dsh_viral_library_reader import LibraryReader
 
     return LibraryReader(root)
 
