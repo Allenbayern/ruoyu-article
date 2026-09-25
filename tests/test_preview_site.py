@@ -1276,7 +1276,15 @@ def test_a_removed_local_anchor_is_loud_not_intact(tmp_path, monkeypatch):
 
 
 def test_anchor_push_failure_is_recorded_not_fatal(tmp_path, monkeypatch):
-    """离机复制失败不阻断封存，但清单必须如实记 anchor_unavailable，不许报成已推送。"""
+    """离机复制失败不阻断封存，但**机器可读层不许自相矛盾**（第二轮复核 major）。
+
+    此前这里断言清单记 `anchor_unavailable`——可本机锚点其实**写成了**，而 `verify`
+    走"锚点文件在"的分支报 `intact`/退出 0。于是同一份报告里清单说"锚点不可用"、
+    verify 说"完好"，人读行还只说"离机复制状态：failed"，**没有**那句要命的
+    「仅本机快照，只改本机锚点仍能掩盖」——F1 要关的安全假象在这个变体下原样存在。
+
+    现在如实记：锚点**已锚到 run 之外**（本机），只是离机那一步失败。
+    """
     from article_group import run_seal
     from article_group.run_state import seal
 
@@ -1291,10 +1299,38 @@ def test_anchor_push_failure_is_recorded_not_fatal(tmp_path, monkeypatch):
     run_seal.write_manifest(run, run_seal.build_manifest(run, sealed_at="t", sealed_by="t"))
     seal(run, identity="t")
     payload = json.loads((run / "SEALED.manifest.json").read_text(encoding="utf-8"))
-    assert payload["anchor"]["status"] == "anchor_unavailable"
+    assert payload["anchor"]["status"] == "anchored"
+    assert payload["anchor"]["kind"] == "local-snapshot"
     assert payload["anchor"]["replication"] == "failed"
     assert "simulated unreachable" in payload["anchor"]["reason"]
     assert run_seal.read_anchor(run) is not None, "本机锚点仍应留下"
+
+
+def test_a_failed_push_keeps_the_local_snapshot_warning_in_the_report(tmp_path, monkeypatch):
+    """major（第二轮复核）：push 失败 = 没有离机副本，警告必须与 local-only 同等强烈。"""
+    from article_group import run_seal
+    from article_group.run_state import seal
+
+    monkeypatch.setenv(run_seal.ANCHOR_DIR_ENV, str(tmp_path / "anchors"))
+    monkeypatch.setenv(run_seal.ANCHOR_PUSH_ENV, "ssh://example/ledger.git")
+    monkeypatch.setattr(run_seal, "_replicate_anchor",
+                        lambda *_a, **_k: ("failed", "simulated unreachable"))
+    run = _make_run(tmp_path)
+    build(run)
+    run_seal.write_manifest(run, run_seal.build_manifest(run, sealed_at="t", sealed_by="t"))
+    seal(run, identity="t")
+
+    report = run_seal.verify(run)
+    manifest_block = run_seal.load_manifest(run)["anchor"]
+    # 机器可读层两层必须一致（此前清单 anchor_unavailable、verify anchored）
+    assert manifest_block["status"] == report["anchor"]["status"] == "anchored"
+    assert report["anchor"]["replication"] == "failed"
+    # 人读层必须有那句本机快照的警告（与 local-only 同等待遇）
+    text = run_seal._describe(report)
+    assert "仅本机快照" in text, text
+    assert "只改本机锚点仍能掩盖" in text, text
+    # 补救提示不能说"重跑封存"——seal() 幂等，重跑不会重试锚点
+    assert "重跑封存" not in text, text
 
 
 def test_check_remote_does_not_run_during_verify(tmp_path, monkeypatch):
@@ -1396,7 +1432,7 @@ def test_unwritable_anchor_store_records_anchor_unavailable(tmp_path, monkeypatc
         assert report["anchor"]["status"] == "anchor_unavailable"
         # 2026-09-25 语义修正：这里此前断言 `intact`——但"锚点不可用"意味着**清单有没被
         # 改写查不出来**，报 intact 就是在说一件没被证明的事。现在改报
-        # intact_unanchored（文件逐字节没变 ≠ 证明过没被改），且不算漂移。
+        # unanchored（文件逐字节没变 ≠ 证明过没被改），且不算漂移。
         assert report["status"] == run_seal.STATUS_UNANCHORED, \
             "锚点不可用本身不算漂移，但它也**不是** intact——它证明不了清单没被改写"
         assert report["changes"] == []
@@ -1449,7 +1485,8 @@ def test_a_v1_manifest_carrying_the_v2_flag_is_refused_not_silently_downgraded(t
 
     result = run_seal.verify(run)
     assert result["status"] == "unverifiable", f"矛盾的版本/标志被放行：{result}"
-    assert "inventory" in str(result.get("reason")) or "标志" in str(result.get("reason"))
+    # 精确断言（第二轮复核 minor）：同模式的弱断言原有三处，这里是最初漏掉的一处
+    assert result["reason"] == "清单声明 v1 却带着 v2 的 inventory 标志：两个信号矛盾，拒绝给结论", result
 
 
 def test_fifo_replaced_by_socket_is_detected(tmp_path):

@@ -19,10 +19,13 @@ run 内产物记 run 相对路径（可移植），run 外记绝对路径。写�
 """
 from __future__ import annotations
 
-from pathlib import Path
+import json
 import re
+from pathlib import Path
+from typing import Any
 
-__all__ = ["rebase_moved_run_path", "run_relative_reference"]
+__all__ = [
+    "json_text","rebase_moved_run_path", "run_relative_reference"]
 
 
 _RUN_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -127,3 +130,28 @@ def rebase_moved_run_path(root: str | Path, declared: str | Path) -> Path | None
         if candidate.is_file():
             return candidate
     return None
+
+
+def json_text(payload: Any, *, indent: int | None = None) -> str:
+    """序列化成**能落盘**的 JSON 文本（路径含非 UTF-8 字节时也不崩）。
+
+    为什么放在这个叶子模块：`run_seal`（清单与锚点）、`run_state`（SEALED 标记）、
+    `step_log`（步骤流水）、`evidence_write`（变更日志）四个写手都要落 JSON 文本，
+    而它们之间有依赖方向（`evidence_write` 依赖 `run_state`），共用实现只能放在
+    谁都不依赖的叶子里——否则要么循环导入，要么同一段取舍被抄三遍。
+
+    取舍：路径带 surrogateescape 还原出的孤立代理字符（`\\udcff`）时，
+    `ensure_ascii=False` 的文本**无法用严格 utf-8 编码落盘**，而这类写入往往发生在
+    "目标文件已经写下去之后"或"封存收尾中途"，于是变成证据丢失（2026-09-25 复核实测：
+    文件已写、`evidence-changelog.jsonl` 为 0 字节）。此时退回 `ensure_ascii=True`：
+    代理字符写成 `\\udcff` 转义，既能落盘、又能被 `json.loads` **原样读回**，
+    内容摘要因此保持稳定。正常内容仍走 `ensure_ascii=False`（中文可读）。
+
+    返回的文本**不含**结尾换行——调用方自己决定要不要补。
+    """
+    text = json.dumps(payload, ensure_ascii=False, indent=indent)
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        text = json.dumps(payload, ensure_ascii=True, indent=indent)
+    return text

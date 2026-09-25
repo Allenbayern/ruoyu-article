@@ -254,7 +254,7 @@ def test_a_nested_runs_layout_is_sealed_guarded_and_verified(tmp_path: Path) -> 
 # 这与仓库已有的病根同型：被检查的产物自己声明「我通过了」不算证据。
 #
 # 这一组把门重新钉死：锚点文件在就得对得上，块被抹掉同样是漂移；
-# 而**没有锚点**的 run（含全部 v1 老 run）必须报 intact_unanchored，不许冒充 intact。
+# 而**没有锚点**的 run（含全部 v1 老 run）必须报 `unanchored`，不许冒充 intact。
 
 _FORGE = """
 import json, sys
@@ -341,7 +341,7 @@ def test_a_run_without_an_anchor_is_not_reported_intact(tmp_path: Path, monkeypa
 def test_cli_reports_an_unanchored_run_as_unverifiable(tmp_path: Path, monkeypatch) -> None:
     """退出码要与人读文字一致：未锚定 = 无法验证（3），不是完好（0）。
 
-    状态名刻意不以 `intact` 开头（复核 F2）——`intact_unanchored` 会被读成
+    状态名刻意不以 `intact` 开头（复核 F2）——此前那个名字（`intact_unanchored`）会被读成
     「文件没变、没事」，而它恰恰是一句没能证明的话。
     """
     root = _sealed_run_without_anchor(tmp_path, monkeypatch)
@@ -423,14 +423,23 @@ p.write_text(json.dumps(m, ensure_ascii=False, indent=2) + "\\n", encoding="utf-
 """
 
 
-def _v1_manifest(root: Path, *, sealed_at: str, sealed_by: str) -> dict:
+def _v1_manifest(root: Path, *, sealed_at: str, sealed_by: str, backfilled: bool = False) -> dict:
     """按**真实 v1 的字节形状**造清单（复核 F10）。
 
-    真实 v1（`runs/2026-09-16/daily-008` 实测）的条目键只有 `['path','sha256','size']`，
-    顶层没有 `inventory` / `dirs` / `others` / `entry_count` / `scan_errors`。
-    此前这个 helper 是"`build_manifest` 之后 pop 几个键"，造出来的是**v1 版本号 + v2 形状**
-    的混合体：门控只看版本/标志，所以结论成立，但将来 v1 若开始比 `kind`，helper 仍绿而
-    真实 v1 会红——正是本轮修掉的那类"测试自己骗自己"。所以这里手写条目形状并断言它。
+    真实 v1（`runs/2026-09-16/daily-008`、`2026-09-17/daily-009` 实测）的条目键只有
+    `['path','sha256','size']`，顶层没有 `inventory` / `dirs` / `others` / `entry_count` /
+    `scan_errors`。此前这个 helper 是"`build_manifest` 之后 pop 几个键"，造出来的是
+    **v1 版本号 + v2 形状**的混合体：门控只看版本/标志，所以结论成立，但将来 v1 若开始比
+    `kind`，helper 仍绿而真实 v1 会红——正是本轮修掉的那类"测试自己骗自己"。
+
+    第二轮复核指出两处仍不忠实，已补：① 顶层键曾是真实 v1 的**严格子集**——缺
+    `backfilled` / `backfilled_at` / `backfilled_by`（三个真 run 都有）、`backfill_note`
+    （daily-008 有）、`excluded` 也被写成空 `{}`（真 v1 是 `EXCLUDED_REASONS` 那份实字典）；
+    ② `backfilled=true` 这个变体（正是 F4 remedy 针对的 daily-008）零覆盖，故加参数。
+
+    **说清它不是什么**：这不等同"当前 `backfill()` 的产物"——今天 `backfill()` 写出的是
+    v2 + `inventory`；真实 v1 是 v1 时代补的。夹具与真实补录共享的只有「SEALED 在先、
+    走 `sealed_write_token`、`sealed_marker_sha256` 取 SEALED 字节」这三点。
     """
     files: list[dict] = []
     append_only: list[dict] = []
@@ -454,7 +463,7 @@ def _v1_manifest(root: Path, *, sealed_at: str, sealed_by: str) -> dict:
         files.append(entry)
         total += entry["size"]
     marker = root / run_seal.SEALED_NAME
-    return {
+    manifest = {
         "schema_version": run_seal.SCHEMA_VERSION_V1,
         "run_dir": str(root),
         "sealed_at": sealed_at,
@@ -464,14 +473,22 @@ def _v1_manifest(root: Path, *, sealed_at: str, sealed_by: str) -> dict:
         "file_count": len(files),
         "total_bytes": total,
         "append_only": append_only,
-        "excluded": {},
+        # 真 v1 的 excluded 是那份真实字典（含 6 条排除理由），不是空 {}
+        "excluded": dict(run_seal.EXCLUDED_REASONS),
         "sealed_marker_sha256": hashlib.sha256(marker.read_bytes()).hexdigest(),
         "note": "v1 形状的封存清单（测试夹具）",
         "publication_authorization": "not_authorized",
+        "backfilled": backfilled,
+        "backfilled_at": "2026-09-25T00:00:00+08:00" if backfilled else "",
+        "backfilled_by": "legacy" if backfilled else None,
     }
+    if backfilled:
+        manifest["backfill_note"] = (
+            "事后补录：只能证明补录之后未被改动，不能证明封存时刻的内容。")
+    return manifest
 
 
-def _v1_sealed_run(tmp_path: Path, name: str = "daily-963") -> Path:
+def _v1_sealed_run(tmp_path: Path, name: str = "daily-963", *, backfilled: bool = False) -> Path:
     """造一个真 v1 封存 run：磁盘上的清单确实是 v1、没有 anchor 块、没有锚点文件。
 
     不能写成 `write_manifest(v1)` + `seal()`：seal() 会重建清单，把 v1 冲掉——
@@ -493,7 +510,8 @@ def _v1_sealed_run(tmp_path: Path, name: str = "daily-963") -> Path:
     }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     runs_guard.refresh()
 
-    payload = _v1_manifest(root, sealed_at="2026-09-25T00:00:00+08:00", sealed_by="legacy")
+    payload = _v1_manifest(root, sealed_at="2026-09-25T00:00:00+08:00", sealed_by="legacy",
+                            backfilled=backfilled)
     with runs_guard.sealed_write_token(root, reason="test:v1-fixture", author="tester"):
         run_seal.write_manifest(root, payload)      # 会顺手写锚点 + 嵌 anchor 块
 
@@ -510,11 +528,20 @@ def _v1_sealed_run(tmp_path: Path, name: str = "daily-963") -> Path:
     # 字节忠实性（复核 F10）：条目键集合必须与真实 v1（daily-008）一致
     assert set(on_disk["files"][0]) == {"path", "size", "sha256"}, on_disk["files"][0]
     assert set(on_disk["append_only"][0]) == {"path", "size", "sha256"}, on_disk["append_only"][0]
+    # 顶层键必须是真实 v1 的**超集**而不是子集（第二轮复核：此前缺 backfilled 系字段、
+    # excluded 还写成空 {}）
+    for key in ("backfilled", "backfilled_at", "backfilled_by", "excluded", "total_bytes",
+                "file_count", "seal_ref", "sealed_marker_sha256", "publication_authorization"):
+        assert key in on_disk, f"夹具缺真实 v1 有的顶层键：{key}"
+    assert on_disk["excluded"], "excluded 不能是空字典（真 v1 是 EXCLUDED_REASONS 实字典）"
+    assert on_disk["backfilled"] is backfilled
+    if backfilled:
+        assert on_disk["backfill_note"], "补录过的 v1 必须带 backfill_note（daily-008 就有）"
     assert run_seal.read_anchor(root) is None
     return root
 
 
-def test_a_real_v1_sealed_run_is_intact_unanchored(tmp_path: Path) -> None:
+def test_a_real_v1_sealed_run_is_unanchored(tmp_path: Path) -> None:
     """基线：正常的 v1 run 不能被新口径误报 —— 逐字节一致但未锚定。"""
     root = _v1_sealed_run(tmp_path)
     report = run_seal.verify(root)
@@ -745,3 +772,20 @@ def test_seal_survives_a_non_utf8_run_path(tmp_path: Path) -> None:
     assert run_seal.load_manifest(root) is not None
     report = run_seal.verify(root)
     assert report["status"] in {"intact", run_seal.STATUS_UNANCHORED}, report
+
+
+def test_a_backfilled_v1_run_reports_unanchored_with_a_reachable_remedy(tmp_path: Path) -> None:
+    """第二轮复核 minor：`backfilled=true` 的 v1（daily-008 那种）此前零覆盖。
+
+    它正是 F4 remedy 针对的形态：清单已存在 → `--backfill` 只会 `already_present`，
+    真正出路是 unseal→reseal。
+    """
+    root = _v1_sealed_run(tmp_path, name="daily-979", backfilled=True)
+    assert run_seal.load_manifest(root)["backfilled"] is True
+
+    report = run_seal.verify(root)
+    assert report["status"] == run_seal.STATUS_UNANCHORED
+    assert report["backfilled"] is True
+    remedy = report["anchor"]["remedy"]
+    assert "already_present" in remedy and "unseal" in remedy
+    assert run_seal.backfill(root, author="t", reason="复核")["status"] == "already_present"

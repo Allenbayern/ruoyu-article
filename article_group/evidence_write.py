@@ -31,6 +31,7 @@ _THIS = Path(__file__).resolve()
 if str(_THIS.parents[1]) not in sys.path:  # pragma: no cover - 源码树内运行
     sys.path.insert(0, str(_THIS.parents[1]))
 
+from article_group.evidence_paths import json_text  # noqa: E402
 from article_group.run_state import sealed_reason  # noqa: E402
 
 
@@ -73,20 +74,11 @@ def _resolve_target(root: Path, path: str | Path) -> Path:
 
 
 def _json_line(entry: Mapping[str, Any]) -> str:
-    """变更日志一行的文本——**含非 UTF-8 路径时也不崩**（2026-09-25 复核点名）。
+    """变更日志一行的文本——含非 UTF-8 路径时也不崩。
 
-    路径里带着 surrogateescape 还原出来的孤立代理字符（`\\udcff`）时，
-    `ensure_ascii=False` 的文本无法用严格 utf-8 编码落盘，而这一行是在**目标文件已经
-    写下去之后**才写的——抛异常就等于"文件改了、账没记"，正好是 `run_seal.verify`
-    会记成"无账改动"的形态。此时退回 `ensure_ascii=True`：代理字符写成 `\\udcff`
-    转义，既能落盘、又能被 `json.loads` 原样读回（与 `run_seal._json_text` 同一取舍）。
+    实现在 `evidence_paths.json_text`（叶子模块，四个写手共用；同一段取舍不抄多份）。
     """
-    text = json.dumps(entry, ensure_ascii=False)
-    try:
-        text.encode("utf-8")
-    except UnicodeEncodeError:
-        text = json.dumps(entry, ensure_ascii=True)
-    return text + "\n"
+    return json_text(entry) + "\n"
 
 
 def _build_entry(

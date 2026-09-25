@@ -483,6 +483,34 @@ def render(conn: sqlite3.Connection, *, now: datetime | None = None) -> str:
     return "\n".join(lines)
 
 
+def _latest_moment(stamps: Iterable[str]) -> str:
+    """取最新的时间戳——按**解析后的时刻**比，不是按字符串。
+
+    字符串 `max` 是字典序：`2026-09-25T16:00:00+00:00` 其实比
+    `2026-09-25T23:00:00+08:00` 更晚（16:00Z = 次日 00:00+08），字典序却判后者更大，
+    于是快照的 `data_as_of` 会报成更早的那个（2026-09-25 第二轮复核 minor）。
+    生产 `_now()` 恒为 UTC，所以 CLI 走不到；`now=` 参数与手改库走得到。
+
+    返回**原始文本**（不是归一化后的形式）：全 UTC 的正常数据结果与改动前逐字节相同，
+    快照的确定性不受影响。解析不出来的值被忽略（宁可少给信息，不猜）。
+    """
+    best_moment: datetime | None = None
+    best_text = ""
+    for raw in stamps:
+        text = str(raw or "").strip()
+        if not text:
+            continue
+        try:
+            moment = datetime.fromisoformat(text)
+        except ValueError:
+            continue
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=timezone.utc)
+        if best_moment is None or moment > best_moment:
+            best_moment, best_text = moment, text
+    return best_text
+
+
 def export_jsonl(conn: sqlite3.Connection, out_path: Path) -> dict[str, int]:
     """把储备池导出为 JSONL 文本快照（`items` 与 `events` 各一行一条）。
 
@@ -503,7 +531,7 @@ def export_jsonl(conn: sqlite3.Connection, out_path: Path) -> dict[str, int]:
     meta = {
         "record": "meta",
         "schema_version": "backlog-export-v1",
-        "data_as_of": max((stamp for stamp in stamps if stamp), default=""),
+        "data_as_of": _latest_moment(stamps),
         "items": len(items),
         "events": len(events),
     }

@@ -485,3 +485,29 @@ def test_cli_export_writes_a_text_snapshot(tmp_path):
     assert main(["--db", str(db), "export", "--out", str(out)]) == 0
 
     assert out.is_file() and out.read_text(encoding="utf-8").strip()
+
+
+def test_export_meta_uses_true_time_order_across_timezones(conn, tmp_path):
+    """F4（第二轮复核）：`data_as_of` 此前用**字符串 max**，混时区会取错。
+
+    16:00Z 其实比 23:00+08:00（=15:00Z）更晚，字典序却判后者更大。
+    """
+    ingest(conn, [_row()], run_dir="x")
+    key = item_key_for(_row())
+    decide(conn, key, "backlog", by="controller", reason="r", now="2026-09-25T23:00:00+08:00")
+    conn.execute("UPDATE backlog_items SET last_seen_at = ? WHERE item_key = ?",
+                 ("2026-09-25T16:00:00+00:00", key))
+    conn.commit()
+
+    stats = export_jsonl(conn, tmp_path / "s.jsonl")
+
+    assert stats["data_as_of"] == "2026-09-25T16:00:00+00:00", stats
+
+
+def test_latest_moment_ignores_unparseable_values():
+    """解析不出来的值被忽略（宁可少给信息，不猜），全空则给空串。"""
+    from topic_backlog import _latest_moment
+
+    assert _latest_moment(["", "  ", "nonsense", "2026-09-25T00:00:00+00:00"]) \
+        == "2026-09-25T00:00:00+00:00"
+    assert _latest_moment(["", "nonsense"]) == ""

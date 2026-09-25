@@ -44,6 +44,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from article_group.evidence_paths import json_text
+
 SCHEMA_VERSION = "run-sealed-manifest-v2"
 SCHEMA_VERSION_V1 = "run-sealed-manifest-v1"
 #: 认识的清单版本：v1（只收文件/符号链接，旧口径）与 v2（条目类型感知）。
@@ -415,13 +417,24 @@ def write_anchor(run_dir: str | Path, payload: Mapping[str, Any]) -> dict[str, A
         except OSError:
             pass          # 回写失败不改结论：清单里的 anchor 块才是权威
     if replication == "failed":
+        # 第二轮复核 major：本机锚点**确实写成了**，所以清单该说"已锚到 run 之外"，
+        # 只把"离机那一步失败"记进 replication。此前返回 anchor_unavailable，于是同一份
+        # 报告里清单说"锚点不可用"、verify 走"文件在"的分支说 intact/退出 0——机器可读层
+        # 自相矛盾，人读行还丢掉了"仅本机快照可被本地改写掩盖"的警告。
         return {
-            "status": "anchor_unavailable",
-            "reason": f"本机锚点已写，离机复制失败：{detail}",
-            "remedy": f"检查 {ANCHOR_PUSH_ENV} 指向的仓库是否可达，修好后重跑封存",
+            "status": "anchored",
+            "kind": "local-snapshot",
             "path": str(path),
             "manifest_digest": digest,
             "replication": "failed",
+            "remote": _anchor_remote(),
+            "reason": f"本机锚点已写，离机复制失败：{detail}",
+            # 不说"修好后重跑封存"：`seal()` 幂等（已有 SEALED 就 already_sealed），
+            # 重跑既不重试复制、这条路在 verify 里也走不到（复核 minor）。
+            "remedy": f"本机锚点已生效（清单已绑定到 run 之外）；离机副本没成。"
+                      f"修好 {ANCHOR_PUSH_ENV} 指向的仓库后，要补推只能 unseal 再 reseal"
+                      f"——重新封存不会重试这一步。",
+            "note": "只有本机快照：同 uid 的写手可以同时改写本机锚点与清单来掩盖篡改。",
         }
     note = "清单自身已锚到 run 之外"
     if replication == "local-only":
@@ -534,12 +547,7 @@ def _json_text(payload: Mapping[str, Any], *, indent: int = 2) -> str:
     `\\udcff` 转义，既能落盘、又能被 `json.loads` **原样**读回，因此清单摘要保持稳定。
     正常内容仍走 `ensure_ascii=False`，中文照旧可读（清单是给人复核的）。
     """
-    text = json.dumps(payload, ensure_ascii=False, indent=indent)
-    try:
-        text.encode("utf-8")
-    except UnicodeEncodeError:
-        text = json.dumps(payload, ensure_ascii=True, indent=indent)
-    return text + "\n"
+    return json_text(payload, indent=indent) + "\n"
 
 
 def write_manifest(run_dir: str | Path, payload: dict[str, Any]) -> Path:
@@ -590,7 +598,16 @@ def _changelog_index(run_dir: Path) -> dict[str, dict[str, Any]]:
 
 
 def verify(run_dir: str | Path) -> dict[str, Any]:
-    """逐项重算清单，返回 {status, changes, …}（只读）。"""
+    """逐项重算清单，返回 {status, changes, …}（只读）。
+
+    **返回字典的键集契约**（第二轮复核 minor：此前各种 `unverifiable` 早返回形状不一）：
+
+    - 所有返回都带 `status` / `run_dir` / `changes`；
+    - 带结论或需要处置时带 `reason`，能给出去路时带 `remedy`；
+    - `anchor` **只有走到锚点判定的那条终态路径**才带（早返回的三条——
+      副本不适用、没有清单、版本不认识——没有锚点信息，也就无从带）。
+      调用方一律用 `.get()` 读，别假定键一定在。
+    """
     root = Path(run_dir)
     if (root / SANDBOX_MARKER).is_file():
         # 演练副本（scripts/run_sandbox.py）：SEALED 被改名为 SEALED.from-source，
@@ -617,6 +634,10 @@ def verify(run_dir: str | Path) -> dict[str, Any]:
             "status": "unverifiable",
             "run_dir": str(root),
             "reason": f"清单版本不认识：{manifest.get('schema_version')!r}",
+            # 补上 remedy（第二轮复核 minor：四种 unverifiable 早返回里只有这一条没有出路）
+            "remedy": f"本版本只认 {KNOWN_SCHEMA_VERSIONS}。清单可能是被改写过的，"
+                      "也可能是更新版本的工具写的：先确认这一轮没跑过更新的代码；"
+                      "若确认清单完好，用 --backfill 重写（只能证明重写之后未被改动）。",
             "changes": [],
         }
 
@@ -1029,10 +1050,17 @@ def _describe_anchor(anchor: Mapping[str, Any]) -> str:
         if replication == "pushed":
             remote = anchor.get("remote") or "?"
             return f"{head}；已离机复制（{remote}）"
+        # 除 pushed 之外**一律**按"没有离机副本"警告（第二轮复核 major）：
+        # local-only / failed / pending / unknown 的处境相同——本机锚点挡不住同 uid 写手。
+        # 此前只对字面量 local-only 打印警告，"配了推送但失败"就漏掉了同等警告。
         if replication == "local-only":
-            return f"{head}；**仅本机快照，未离机复制**——只改本机锚点仍能掩盖篡改，" \
-                   "要关上需设置 RUOYU_SEAL_ANCHOR_PUSH"
-        return f"{head}；离机复制状态：{replication}"
+            why = "未设置离机推送"
+        elif replication == "failed":
+            why = f"离机复制失败：{anchor.get('reason') or '见清单'}"
+        else:
+            why = f"离机复制状态未知（{replication}）"
+        return f"{head}；**仅本机快照，未离机复制**（{why}）——只改本机锚点仍能掩盖篡改，" \
+               "要真正关上需让 RUOYU_SEAL_ANCHOR_PUSH 可达并成功推送"
     if status == "unanchored":
         return f"锚点：未锚定 —— {anchor.get('reason', '')}"
     if status == "anchor_unavailable":

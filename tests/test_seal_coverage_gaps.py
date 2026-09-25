@@ -238,3 +238,128 @@ def test_a_non_utf8_run_is_anchored_and_verifies_intact(tmp_path: Path) -> None:
     assert report["status"] == "intact", report
     assert report["changes"] == []
     assert report["anchor"]["status"] == "anchored"
+
+
+# ── ⑦ 非 UTF-8 **内层**路径：三个写手都要能落盘（第二轮复核 minor） ──────────────
+#
+# 第二轮复核实测：非 UTF-8 的**内层**文件（不是 run 根）会让落 JSON 文本的地方抛
+# UnicodeEncodeError。`evidence_write` 那条已由提交 `7143710` 修掉；`step_log` 与
+# `run_state`（SEALED 标记）当时仍在直写。三处现在共用
+# `evidence_paths.json_text`（叶子模块），这一组把三条路径都钉住。
+
+
+def _run_with_non_utf8_inner_file(tmp_path: Path) -> tuple[Path, str]:
+    root = tmp_path / "runs" / "2026-09-25" / "daily-978"
+    (root / "delivery").mkdir(parents=True)
+    inner = os.fsdecode(b"art-\xff001.md")
+    (root / "delivery" / inner).write_text("# 正文\n", encoding="utf-8")
+    return root, f"delivery/{inner}"
+
+
+def test_step_log_records_a_non_utf8_inner_artifact(tmp_path: Path) -> None:
+    """步骤流水里的 artifacts 路径含非 UTF-8 字节时，写盘不能崩、且能原样读回。"""
+    import datetime as dt
+
+    from article_group import step_log
+
+    root, inner = _run_with_non_utf8_inner_file(tmp_path)
+    now = dt.datetime(2026, 9, 25, 12, 0, tzinfo=dt.timezone.utc)
+
+    entry = step_log.record_step(root, name="render", started_at=now, artifacts=[inner])
+
+    steps = step_log.read_steps(root)
+    assert len(steps) == 1, steps
+    assert [item["path"] for item in steps[0]["artifacts"]] == [inner]
+    assert entry["name"] == "render"
+
+
+def test_seal_writes_the_marker_for_a_non_utf8_inner_path(tmp_path: Path) -> None:
+    """SEALED 标记同样要能落盘（此前只因载荷不含路径而侥幸不崩）。"""
+    root, _inner = _run_with_non_utf8_inner_file(tmp_path)
+    seal(root, identity="owner")
+
+    marker = (root / run_seal.SEALED_NAME).read_text(encoding="utf-8")  # 严格 utf-8 必须可解
+    assert json.loads(marker)["sealed_by"] == "owner"
+    assert run_seal.verify(root)["status"] in {"intact", run_seal.STATUS_UNANCHORED}
+
+
+def test_all_json_writers_share_one_surrogate_safe_serializer() -> None:
+    """同一段取舍不许抄多份：四个写手必须指向同一个实现。"""
+    from article_group import evidence_write, run_state, step_log
+    from article_group.evidence_paths import json_text
+
+    assert run_seal.json_text is json_text
+    assert step_log.json_text is json_text
+    assert run_state.json_text is json_text
+    assert evidence_write._json_line({"a": 1}) == '{"a": 1}\n'
+
+
+# ── ⑧ 第二轮复核点名的另外三条分支 ────────────────────────────────────────────
+
+
+def test_a_real_clone_failure_is_recorded_as_a_local_snapshot(tmp_path: Path, monkeypatch) -> None:
+    """真实失败路径（不是 monkeypatch）：离机仓库根本不是一个 git 仓库时会把 clone 打挂。
+
+    断言新形状（第二轮复核 major）：本机锚点写成 → 清单说 **anchored/local-snapshot**、
+    `replication=failed`，人读行带「仅本机快照」警告——不能报成 intact 却什么都不说。
+    """
+    not_a_repo = tmp_path / "not-a-repo"
+    not_a_repo.mkdir()
+    monkeypatch.setenv(run_seal.ANCHOR_PUSH_ENV, str(not_a_repo))
+    root = _sealed_run(tmp_path, name="daily-980")
+
+    block = run_seal.load_manifest(root)["anchor"]
+    assert block["status"] == "anchored", block
+    assert block["kind"] == "local-snapshot", block
+    assert block["replication"] == "failed", block
+    assert run_seal.read_anchor(root) is not None, "本机锚点仍应留下"
+
+    report = run_seal.verify(root)
+    assert report["status"] == "intact"
+    text = run_seal._describe(report)
+    assert "仅本机快照" in text and "只改本机锚点仍能掩盖" in text, text
+
+
+def test_a_missing_kind_is_never_fabricated(tmp_path: Path) -> None:
+    """`kind` 两边都没有时不许打印一个数据里不存在的取值（复核 F1 的 `or "snapshot"` 面）。
+
+    注意：锚点文件没记 `kind` 但**清单块记了**时，回退用清单块的值是**特性**（封存当时的
+    事实），不算伪造。这里把两边都抹掉，才是在测"没有就别编"。
+    """
+    root = _sealed_run(tmp_path, name="daily-981")
+    anchor_path = run_seal.anchor_file_for(root)
+    record = json.loads(anchor_path.read_text(encoding="utf-8"))
+    record.pop("kind", None)
+    anchor_path.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    with runs_guard.sealed_write_token(root, reason="test:strip-kind", author="tester"):
+        payload = run_seal.load_manifest(root)
+        payload["anchor"].pop("kind", None)
+        (root / run_seal.MANIFEST_NAME).write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    report = run_seal.verify(root)
+    assert report["anchor"]["status"] == "anchored"
+    assert report["anchor"].get("kind") is None, report["anchor"]
+    text = run_seal._describe(report)
+    assert "snapshot" not in text, text          # 不许凭空造 kind
+    assert "仅本机快照" in text, text             # 但警告必须还在
+
+
+def test_unseal_then_reseal_is_a_reachable_remedy(tmp_path: Path) -> None:
+    """F4 remedy 声明的那条出路（unseal→reseal）要有测试——复核说它只有手测。"""
+    from article_group.run_state import unseal
+
+    root = _sealed_run(tmp_path, name="daily-982")
+    assert run_seal.verify(root)["status"] == "intact"
+    first = run_seal.read_anchor(root)["manifest_digest"]
+
+    unseal(root, reason="测试：补写锚点", identity="owner")
+    seal(root, identity="owner")
+
+    report = run_seal.verify(root)
+    assert report["status"] == "intact", report
+    assert report["anchor"]["status"] == "anchored"
+    # 摘要不必与第一次相同：重新封存会改 `sealed_at` 与 SEALED 标记字节，清单正文随之变。
+    # 这里要证的只是"这条出路真能走通"。
+    assert run_seal.read_anchor(root)["manifest_digest"] != first, "重封后清单正文应当变了"
+    assert first  # 保留第一次的读值，避免被优化掉

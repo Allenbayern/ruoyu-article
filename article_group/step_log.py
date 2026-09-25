@@ -26,6 +26,8 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from article_group.evidence_paths import json_text
+
 STEP_LOG_NAME = "step-log.jsonl"
 SCHEMA_VERSION = "run-step-log-v1"
 GAP_ALERT_SECONDS = 120
@@ -96,7 +98,9 @@ def record_step(
     if error:
         entry["error"] = error
     with step_log_path(root).open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        # 非 UTF-8 内层路径：`ensure_ascii=False` 在严格 utf-8 下会崩（同一取舍见
+        # evidence_paths.json_text）
+        handle.write(json_text(entry) + "\n")
     return entry
 
 

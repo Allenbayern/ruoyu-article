@@ -21,6 +21,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from article_group.evidence_paths import json_text
+
 SEALED_NAME = "SEALED"
 SEALED_SCHEMA_VERSION = "run-sealed-v1"
 
@@ -69,7 +71,7 @@ def seal(
         "publication_authorization": "not_authorized",
     }
     path = sealed_path(root)
-    marker_text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+    marker_text = json_text(payload, indent=2) + "\n"
 
     from article_group import run_seal
 
