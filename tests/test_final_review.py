@@ -64,7 +64,7 @@ def _write_preview_evidence(
         "schema_version": "preview-route-audit-v2",
         "preview_mode": mode,
         "canonical_http_required": mode == "canonical_http",
-        "local_preview_status": "READY" if mode == "local_codex" else "NOT_APPLICABLE",
+        "local_preview_status": "READY" if mode == "local_dsh" else "NOT_APPLICABLE",
         "manifest": manifest,
         "http_audit_status": "PASS" if http_status == 200 else "FAIL",
     }
@@ -79,7 +79,7 @@ def _write_preview_evidence(
             }
             for route, entry in manifest.items()
         }
-    filename = "preview-local-evidence.json" if mode == "local_codex" else "preview-http-evidence.json"
+    filename = "preview-local-evidence.json" if mode == "local_dsh" else "preview-http-evidence.json"
     _write_json(batch / "review" / filename, payload)
 
 
@@ -1028,7 +1028,7 @@ def test_markdown_surface_scoring_card_binds_current_draft(tmp_path: Path) -> No
 def test_markdown_surface_rejects_preview_metadata(tmp_path: Path) -> None:
     batch = _make_markdown_batch(tmp_path)
     payload = json.loads((batch / "batch.json").read_text(encoding="utf-8"))
-    payload["preview_mode"] = "local_codex"
+    payload["preview_mode"] = "local_dsh"
     _write_json(batch / "batch.json", payload)
 
     report = evaluate_batch(batch)
@@ -1070,18 +1070,18 @@ def test_explicit_local_preview_mode_does_not_require_canonical_http(tmp_path: P
     batch = _make_batch(tmp_path)
     batch_json = batch / "batch.json"
     payload = json.loads(batch_json.read_text(encoding="utf-8"))
-    payload["preview_mode"] = "local_codex"
+    payload["preview_mode"] = "local_dsh"
     batch_json.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     html_paths = {
         article_id: batch / "review" / f"ruoyu-{article_id}-2026-08-16.html"
         for article_id in ("art-001", "art-002")
     }
-    _write_preview_evidence(batch, html_paths, mode="local_codex")
+    _write_preview_evidence(batch, html_paths, mode="local_dsh")
 
     report = evaluate_batch(batch)
 
     assert report["verdict"] == PUBLISHABLE
-    assert report["preview_mode"] == "local_codex"
+    assert report["preview_mode"] == "local_dsh"
 
 
 def test_explicit_canonical_preview_mode_blocks_non_200_route(tmp_path: Path) -> None:

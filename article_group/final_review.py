@@ -36,6 +36,7 @@ from article_group.human_attestation import validate_human_attestation
 from article_group.independent_review import evaluate_independent_review
 from article_group.portfolio_gate import check_cross_batch, collect_history, interpret_history_input
 from article_group.preview_contract import (
+    is_local_preview,
     resolve_preview_mode,
     validate_batch_preview_mode,
     validate_preview_evidence,
@@ -1407,7 +1408,7 @@ def evaluate_batch(batch_dir: str | Path) -> dict:
     if preview_mode is not None:
         evidence_name = (
             "preview-local-evidence.json"
-            if preview_mode == "local_codex"
+            if is_local_preview(preview_mode)
             else "preview-http-evidence.json"
         )
         evidence_path = root / "review" / evidence_name

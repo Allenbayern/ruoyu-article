@@ -103,7 +103,7 @@ def test_review_surface_rejects_unknown_values_and_html_preview_mixing():
     ]
     errors = validate_batch_review_surface({
         "review_surface": "markdown_dsh",
-        "preview_mode": "local_codex",
+        "preview_mode": "local_dsh",
     })
     assert "preview_mode_forbidden_for_markdown_surface" in errors
 

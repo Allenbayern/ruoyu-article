@@ -8,8 +8,11 @@ from pathlib import Path
 from typing import Any
 
 
-PREVIEW_MODES = ("local_codex", "canonical_http")
-DEFAULT_PREVIEW_MODE = "local_codex"
+PREVIEW_MODES = ("local_dsh", "canonical_http")
+DEFAULT_PREVIEW_MODE = "local_dsh"
+# 历史产物里写的是 "local_codex"（2026-09-25 契约值迁移之前）。**历史产物不重写**，
+# 所以读端照样认它，折到现值再判——和 review_surface 的 `markdown_codex` 同一波迁移。
+LEGACY_PREVIEW_MODES = {"local_codex": DEFAULT_PREVIEW_MODE}
 
 
 def _sha256(data: bytes) -> str:
@@ -22,13 +25,29 @@ def _css_bytes(data: bytes) -> bytes:
     return "\n".join(match.strip() for match in matches).encode("utf-8")
 
 
+def normalize_preview_mode(value: object) -> object:
+    """把历史值折到现值；不是字符串、或不是历史值时**原样返回**（只映射，不校验）。"""
+    if isinstance(value, str):
+        return LEGACY_PREVIEW_MODES.get(value.strip(), value)
+    return value
+
+
+def is_local_preview(value: object) -> bool:
+    """是不是本机预览模式（**历史值也算**）。
+
+    从产物里读出来再跟本机模式比的地方都该用它，否则读旧 run 会把"本机预览"读成
+    "不是本机预览"，门禁随即按另一种模式去看它的证据。
+    """
+    return normalize_preview_mode(value) == DEFAULT_PREVIEW_MODE
+
+
 def resolve_preview_mode(value: object) -> str:
     """Return the effective preview mode, defaulting legacy callers locally."""
     if value is None:
         return DEFAULT_PREVIEW_MODE
     if not isinstance(value, str) or not value.strip():
         raise ValueError("invalid_preview_mode")
-    mode = value.strip()
+    mode = normalize_preview_mode(value.strip())
     if mode not in PREVIEW_MODES:
         raise ValueError(f"invalid_preview_mode:{mode}")
     return mode
@@ -37,13 +56,16 @@ def resolve_preview_mode(value: object) -> str:
 def validate_batch_preview_mode(
     batch: dict[str, Any], *, require_explicit: bool = False
 ) -> list[str]:
-    """Validate a batch's optional/required preview-mode declaration."""
+    """Validate a batch's optional/required preview-mode declaration.
+
+    历史 batch 里的 `local_codex` 照样合法（折到现值再判）。
+    """
     if "preview_mode" not in batch:
         return ["preview_mode_missing"] if require_explicit else []
     value = batch.get("preview_mode")
     if not isinstance(value, str) or not value.strip():
         return ["preview_mode_invalid"]
-    mode = value.strip()
+    mode = normalize_preview_mode(value.strip())
     if mode not in PREVIEW_MODES:
         return [f"preview_mode_invalid:{mode}"]
     return []
@@ -161,11 +183,13 @@ def validate_preview_evidence(
 ) -> list[str]:
     """Validate a mode-specific packet against the current frozen HTML files."""
     errors: list[str] = []
+    # 调用方给的 mode 也可能是历史写法（旧命令行 / 旧记录里的字段），同样折到现值再判。
+    mode = normalize_preview_mode(mode)
     if mode not in PREVIEW_MODES:
         return [f"preview_mode_invalid:{mode}"]
     if not isinstance(payload, dict):
         return ["preview_evidence_invalid"]
-    if payload.get("preview_mode") != mode:
+    if normalize_preview_mode(payload.get("preview_mode")) != mode:
         errors.append("preview_evidence_mode_mismatch")
 
     manifest = payload.get("manifest")
@@ -208,7 +232,7 @@ def validate_preview_evidence(
     for target in sorted(delivery_targets - bound_targets):
         errors.append(f"preview_route_missing_current_delivery:{target.name}")
 
-    if mode == "local_codex":
+    if is_local_preview(mode):
         if payload.get("canonical_http_required") is not False:
             errors.append("preview_local_canonical_http_must_not_be_required")
         if payload.get("local_preview_status") not in {"READY", "PASS"}:

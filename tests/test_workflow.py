@@ -145,7 +145,7 @@ def test_markdown_review_surface_rejects_preview_mode():
     batch["run_profile"] = "two_article_daily"
     batch["run_profile_contract_version"] = "run-profile-v1"
     batch["review_surface"] = "markdown_dsh"
-    batch["preview_mode"] = "local_codex"
+    batch["preview_mode"] = "local_dsh"
     batch["articles"] = batch["articles"][:2]
     batch["articles"][1]["slot"] = "B"
 
@@ -171,7 +171,7 @@ def test_new_profile_contract_preserves_preview_mode_in_manifest(tmp_path: Path)
     batch = valid_batch()
     batch["run_profile"] = "two_article_daily"
     batch["run_profile_contract_version"] = "run-profile-v1"
-    batch["preview_mode"] = "local_codex"
+    batch["preview_mode"] = "local_dsh"
     batch["articles"] = batch["articles"][:2]
     batch["articles"][1]["slot"] = "B"
     materialize_artifacts(batch, tmp_path)
@@ -179,7 +179,7 @@ def test_new_profile_contract_preserves_preview_mode_in_manifest(tmp_path: Path)
     target = build_controlled_run(batch, tmp_path)
     payload = __import__("json").loads(target.read_text(encoding="utf-8"))
 
-    assert payload["preview_mode"] == "local_codex"
+    assert payload["preview_mode"] == "local_dsh"
 
 
 def test_invalid_preview_mode_blocks_new_profile_batch():

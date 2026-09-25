@@ -18,9 +18,12 @@ if str(ROOT) not in sys.path:
 
 from article_group.preview_contract import (
     DEFAULT_PREVIEW_MODE,
+    LEGACY_PREVIEW_MODES,
     PREVIEW_MODES,
     browser_preview_advisory,
     build_route_manifest,
+    is_local_preview,
+    normalize_preview_mode,
     validate_http_response,
 )
 
@@ -29,9 +32,11 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--preview-mode",
-        choices=PREVIEW_MODES,
+        # 历史写法也收（2026-09-25 契约值迁移前是 local_codex）：既有命令行不该因为
+        # 一次改名就报 argparse 用法错误。解析后统一折到现值。
+        choices=PREVIEW_MODES + tuple(LEGACY_PREVIEW_MODES),
         default=DEFAULT_PREVIEW_MODE,
-        help="Preview contract: local Codex preview by default, or explicit canonical HTTP delivery",
+        help="Preview contract: local preview by default, or explicit canonical HTTP delivery",
     )
     parser.add_argument(
         "--route",
@@ -95,6 +100,7 @@ def _audit_url(entry: dict[str, object], url: str) -> dict[str, Any]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    args.preview_mode = normalize_preview_mode(args.preview_mode)
     try:
         route_paths = _pairs(args.route, "route")
         url_paths = _pairs(args.url, "url")
@@ -121,7 +127,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if not url_paths:
         http_audit_status = "NOT_REQUIRED"
-    elif args.preview_mode == "local_codex":
+    elif is_local_preview(args.preview_mode):
         http_audit_status = (
             "OPTIONAL_PASS"
             if all(not item["errors"] for item in http_checks.values())
@@ -143,7 +149,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "preview_mode": args.preview_mode,
         "canonical_http_required": args.preview_mode == "canonical_http",
         "local_preview_status": (
-            "READY" if args.preview_mode == "local_codex" else "NOT_APPLICABLE"
+            "READY" if is_local_preview(args.preview_mode) else "NOT_APPLICABLE"
         ),
         "manifest": manifest,
         "http_audit_status": http_audit_status,

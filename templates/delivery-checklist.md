@@ -60,7 +60,7 @@
 - html_delivery_state: `not_requested | generated | withheld`
 - [ ] When `review_surface=markdown_dsh`, `html_delivery_state=not_requested` is normal and no HTML, freeze manifest, route audit, or preview service is required.
 - [ ] When `review_surface=html_delivery`, HTML generation/freeze and the historical local/canonical preview contract are explicitly declared and independently bound.
-- legacy_preview_mode: `local_codex | canonical_http` (only for `review_surface=html_delivery`)
+- legacy_preview_mode: `local_dsh | canonical_http` (only for `review_surface=html_delivery`; 2026-09-25 前的历史产物写的是 `local_codex`，读端照样认)
 - legacy_preview_evidence_ref:
 - mobile_browser_screenshot_advisory_ref:
 - [ ] Images have source and usage-boundary records.

@@ -163,7 +163,7 @@ def test_preflight_requires_explicit_profile_for_new_contract():
     batch.update({
         "run_profile_contract_version": "run-profile-v1",
         "run_profile": "three_slot_controlled",
-        "preview_mode": "local_codex",
+        "preview_mode": "local_dsh",
     })
 
     assert preflight_batch(batch, RUN_DIR)["status"] == "PASS"
@@ -180,13 +180,13 @@ def test_preflight_reports_local_preview_mode_for_new_contract():
     batch.update({
         "run_profile_contract_version": "run-profile-v1",
         "run_profile": "three_slot_controlled",
-        "preview_mode": "local_codex",
+        "preview_mode": "local_dsh",
     })
 
     report = preflight_batch(batch, RUN_DIR)
 
     assert report["status"] == "PASS"
-    assert report["preview_mode"] == "local_codex"
+    assert report["preview_mode"] == "local_dsh"
     assert report["preview_errors"] == []
     assert report["review_surface"] == "html_delivery"
     assert report["review_surface_errors"] == []
@@ -227,7 +227,7 @@ def test_preflight_rejects_markdown_surface_with_legacy_preview_mode():
         "run_profile_contract_version": "run-profile-v1",
         "run_profile": "three_slot_controlled",
         "review_surface": "markdown_dsh",
-        "preview_mode": "local_codex",
+        "preview_mode": "local_dsh",
     })
 
     report = preflight_batch(batch, RUN_DIR)
@@ -242,7 +242,7 @@ def test_preflight_keeps_legacy_missing_preview_mode_compatible():
     report = preflight_batch(batch, RUN_DIR)
 
     assert report["status"] == "PASS"
-    assert report["preview_mode"] == "local_codex"
+    assert report["preview_mode"] == "local_dsh"
     assert report["preview_errors"] == []
     assert report["review_surface"] == "html_delivery"
     assert report["review_surface_errors"] == []
