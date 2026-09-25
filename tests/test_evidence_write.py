@@ -246,3 +246,71 @@ def test_write_evidence_with_prejoined_relative_path_stays_inside_run(
     assert (root / "SEALED").is_file()
     assert not (root / "runs").exists()          # 不再产生嵌套目录
     assert entry["path"] == "SEALED"
+
+
+# ---- 非 UTF-8 路径：不许"文件写了、账没记"（2026-09-25 复核点名的既有缺陷） ----
+#
+# `write_evidence` 的顺序是 落盘 → 记账，而记账用 `ensure_ascii=False` + 严格 utf-8。
+# 路径里带 surrogateescape 留下的孤立代理字符时，记账那一步会抛 UnicodeEncodeError
+# ——**在目标文件已经写下去之后**。后果正是本仓最忌讳的形态：变更日志少一行，
+# 而 `run_seal.verify` 会把这次写入记成"无账改动"。
+
+
+def _non_utf8_run(tmp_path: Path) -> tuple[Path, str]:
+    """造一个路径含非 UTF-8 字节的 run，返回 (run_root, 有损子路径名)。"""
+    import os
+
+    root = Path(os.fsdecode(os.fsencode(str(tmp_path)) + b"/daily-\xffev"))
+    (root / "review").mkdir(parents=True)
+    name = os.fsdecode(b"art-\xff001.md")
+    return root, name
+
+
+def test_write_evidence_logs_a_non_utf8_path_instead_of_dying_after_the_write(tmp_path: Path):
+    """记账必须成功（且能被原样读回），不能"文件已落盘、日志行丢失"。"""
+    root, name = _non_utf8_run(tmp_path)
+    target = root / "review" / name
+
+    entry = write_evidence(target, "正文\n", run_dir=root, reason="test:non-utf8", author="tester")
+
+    assert target.is_file(), "目标文件应已写入"
+    assert entry["path"], entry
+    logged = [item for item in read_changelog(root) if item["after_sha256"] == entry["after_sha256"]]
+    assert logged, f"写入没有留下账目：{read_changelog(root)}"
+    # 账目里的路径要能被读回（ASCII 转义落盘、json.loads 还原代理字符）
+    assert logged[0]["path"] == entry["path"]
+
+
+def test_write_evidence_serializes_the_ledger_line_before_touching_the_file(tmp_path: Path):
+    """顺序保证：序列化不了就**什么都别写**，不能留下"改了但没账"的状态。
+
+    用一个必然无法序列化的 payload 触发（故意传不可 JSON 化的路径对象），
+    断言目标文件没有被创建、日志也没有新增。
+    """
+    root, _name = _non_utf8_run(tmp_path)
+    target = root / "review" / "art-001.md"
+    before = read_changelog(root)
+
+    with pytest.raises(TypeError):
+        _write_with_unserializable_path(root, target)
+
+    assert not target.exists(), "序列化失败却已经把文件写下去了"
+    assert read_changelog(root) == before
+
+
+def _write_with_unserializable_path(root: Path, target: Path) -> None:
+    """走 write_evidence 的记账路径，但塞一个 JSON 序列化不了的 path 值。"""
+    import article_group.evidence_write as ew
+
+    original = ew._build_entry
+
+    def _broken(*args, **kwargs):
+        entry = original(*args, **kwargs)
+        entry["path"] = object()          # json.dumps 会抛 TypeError
+        return entry
+
+    ew._build_entry = _broken
+    try:
+        ew.write_evidence(target, "正文\n", run_dir=root, reason="test:bad", author="tester")
+    finally:
+        ew._build_entry = original
