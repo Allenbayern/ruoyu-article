@@ -27,7 +27,9 @@
 要真正锚定，需要 run 之外的锚点。本模块现在会把清单正文摘要写到 run 之外
 （`RUOYU_SEAL_ANCHOR_DIR`，默认 `/home/allen/seal-anchors`），并在设置了
 `RUOYU_SEAL_ANCHOR_PUSH=ssh://mac-backup/Users/Allen/Backups/seal-ledger.git` 时复制到离机仓库。
-离机复制失败不阻断封存，但清单会如实记 `anchor_unavailable`。
+离机复制失败不阻断封存：此时**本机锚点确实写成了**，所以清单如实记
+`anchored` / `kind=local-snapshot` / `replication=failed`（只有**写不进去**才记
+`anchor_unavailable`），`verify` 也会打「仅本机快照」的警告。
 **只改本机锚点仍能掩盖**；`verify=intact` 不能挡住「本机锚点和清单一起被改」的写手。
 """
 from __future__ import annotations
@@ -322,7 +324,8 @@ def _anchor_remote() -> str:
 
 
 def _replicate_anchor(path: Path, *, ident: str) -> tuple[str, str]:
-    """把本机锚点文件提交并推到离机仓库。失败不抛——调用方记 anchor_unavailable。"""
+    """把本机锚点文件提交并推到离机仓库。失败不抛——调用方按 `replication=failed` 如实记录
+    （本机锚点仍然有效，只是没有离机副本）。"""
     remote = _anchor_remote()
     if not remote:
         return "local-only", ""
@@ -373,7 +376,13 @@ def write_anchor(run_dir: str | Path, payload: Mapping[str, Any]) -> dict[str, A
     """把清单摘要写到 run 之外，返回要嵌进清单的 `anchor` 块。
 
     离线策略（controller 2026-09-24 定）：锚点写不进去或离机复制失败都不阻断封存，
-    但要在清单里如实记 `anchor_unavailable`——不做假装已锚定。
+    但清单必须如实区分这两种情形——**别假装已锚定**：
+
+    - 锚点**写不进去** → `anchor_unavailable`；
+    - 锚点写成了、只是**离机复制失败** → `anchored` / `kind=local-snapshot` /
+      `replication=failed`（此前这里也返回 `anchor_unavailable`，于是清单说"锚点不可用"、
+      而 `verify` 走"锚点文件在"的分支报 `intact`，机器可读层自相矛盾，人读行也丢掉了
+      「仅本机快照」的警告——第三轮复核 major）。
     """
     digest = _manifest_digest(payload)
     path = anchor_file_for(run_dir)
@@ -600,13 +609,16 @@ def _changelog_index(run_dir: Path) -> dict[str, dict[str, Any]]:
 def verify(run_dir: str | Path) -> dict[str, Any]:
     """逐项重算清单，返回 {status, changes, …}（只读）。
 
-    **返回字典的键集契约**（第二轮复核 minor：此前各种 `unverifiable` 早返回形状不一）：
+    **返回字典的键集契约**（第二轮复核 minor；第三轮复核 F7 更正了本文的枚举）：
 
     - 所有返回都带 `status` / `run_dir` / `changes`；
-    - 带结论或需要处置时带 `reason`，能给出去路时带 `remedy`；
-    - `anchor` **只有走到锚点判定的那条终态路径**才带（早返回的三条——
-      副本不适用、没有清单、版本不认识——没有锚点信息，也就无从带）。
-      调用方一律用 `.get()` 读，别假定键一定在。
+    - 给出结论或需要处置时带 `reason`；**能给出去路时**带 `remedy`（现在
+      `unverifiable` 的每一条都有出路，见下）；
+    - `anchor` **只有走到锚点判定的终态路径**才带。`unverifiable` 的早返回共 **6 条**
+      （副本不适用 / 没有清单 / 版本不认识 / v2 缺 inventory 标志 / v1 带 inventory 标志 /
+      树扫不动），它们的形状**不完全相同**（前三条与"树扫不动"没有锚点信息，也就无从带
+      `anchor`；不是每条都带 `reason` 之外的同一组键）。调用方一律用 `.get()` 读，
+      **别假定键一定在**——这一点是契约本身，不是实现细节。
     """
     root = Path(run_dir)
     if (root / SANDBOX_MARKER).is_file():
@@ -652,6 +664,8 @@ def verify(run_dir: str | Path) -> dict[str, Any]:
                 "status": "unverifiable",
                 "run_dir": str(root),
                 "reason": "清单声明 v2 却缺 inventory 标志：可能被改写，拒绝给结论",
+                # 第三轮复核 F7：这条此前没有 remedy，操作者拿到结论却没有出路
+                "remedy": _contradictory_manifest_remedy(root),
                 "changes": [],
             }
         all_kinds = True
@@ -664,6 +678,7 @@ def verify(run_dir: str | Path) -> dict[str, Any]:
                 "status": "unverifiable",
                 "run_dir": str(root),
                 "reason": "清单声明 v1 却带着 v2 的 inventory 标志：两个信号矛盾，拒绝给结论",
+                "remedy": _contradictory_manifest_remedy(root),
                 "changes": [],
             }
         all_kinds = False          # 真 v1：只比文件/符号链接
@@ -816,6 +831,12 @@ def verify(run_dir: str | Path) -> dict[str, Any]:
                 "replication": replication,
                 "remote": recorded.get("remote") or block.get("remote") or "",
             }
+            # 第三轮复核 F4：**离机失败的原因要带到报告里**。此前这里不带 `reason`，于是
+            # `_describe_anchor` 的 `anchor.get("reason")` 永远取不到，人读行永远退化成
+            # 「离机复制失败：见清单」——操作者拿到结论却拿不到 clone 的报错原文。
+            if replication != "pushed":
+                anchor_note["reason"] = (recorded.get("reason") or block.get("reason") or "")
+                anchor_note["note"] = recorded.get("note") or block.get("note") or ""
     elif anchor_state == "store_unreadable":
         # 连 stat 都做不了 ⇒ 不是"未锚定"，是**查不了**：不许给任何完整性结论。
         anchor_note = {
@@ -998,6 +1019,19 @@ def _unanchored_remedy(run_dir: str | Path) -> str:
             "\"文件与清单一致，但清单自身没被证明没被改写\"，交付时如实注明。")
 
 
+def _contradictory_manifest_remedy(run_dir: str | Path) -> str:
+    """清单的版本与标志互相矛盾时给出的出路（第三轮复核 F7：这两支此前没有 remedy）。
+
+    拒绝给结论是对的（矛盾信号不能安静降级），但操作者需要一条能走的路：先**从 run 之外**
+    核对（本机锚点文件或离机副本里的那份摘要），确认清单是否被动过；确认无误再用
+    `--backfill` 重写——注意重写只能证明"重写之后"未被改动。
+    """
+    return ("清单的版本与 inventory 标志互相矛盾，无法判定该走哪套口径。先**脱离本机**核对："
+            f"比对锚点记录（{anchor_file_for(run_dir)}）或离机副本里的清单摘要，确认清单是否被改写。"
+            "若确认只是历史遗留的形状问题，可用 --backfill 重写清单——"
+            "但那只能证明重写之后未被改动，不能证明封存时刻的内容。")
+
+
 def _describe(report: dict[str, Any]) -> str:
     status = report.get("status")
     if status == "not_applicable":
@@ -1050,16 +1084,21 @@ def _describe_anchor(anchor: Mapping[str, Any]) -> str:
         if replication == "pushed":
             remote = anchor.get("remote") or "?"
             return f"{head}；已离机复制（{remote}）"
-        # 除 pushed 之外**一律**按"没有离机副本"警告（第二轮复核 major）：
+        # 除 pushed 之外**一律**按"不能当作已有离机副本"警告（第二轮复核 major）：
         # local-only / failed / pending / unknown 的处境相同——本机锚点挡不住同 uid 写手。
         # 此前只对字面量 local-only 打印警告，"配了推送但失败"就漏掉了同等警告。
+        #
+        # 措辞按第三轮复核 #4 收紧：不要把"未知/未完成"说成"未离机复制"这个事实
+        # （此前 pending 时头部断"未离机复制"、括号里又说"状态未知"，自相矛盾）。
         if replication == "local-only":
-            why = "未设置离机推送"
+            why = "未设置离机推送，没有离机副本"
         elif replication == "failed":
-            why = f"离机复制失败：{anchor.get('reason') or '见清单'}"
+            why = f"离机复制失败（{anchor.get('reason') or '见清单'}），没有离机副本"
+        elif replication == "pending":
+            why = "离机复制尚未完成（离机账本里那份滞后一步），此刻不能当作已有离机副本"
         else:
-            why = f"离机复制状态未知（{replication}）"
-        return f"{head}；**仅本机快照，未离机复制**（{why}）——只改本机锚点仍能掩盖篡改，" \
+            why = f"离机复制状态无法判定（{replication}），不能当作已有离机副本"
+        return f"{head}；**仅本机快照**（{why}）——只改本机锚点仍能掩盖篡改，" \
                "要真正关上需让 RUOYU_SEAL_ANCHOR_PUSH 可达并成功推送"
     if status == "unanchored":
         return f"锚点：未锚定 —— {anchor.get('reason', '')}"

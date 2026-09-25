@@ -29,7 +29,7 @@ from pathlib import Path
 import pytest
 
 from article_group import preview_site, run_seal, runs_guard
-from article_group.run_state import seal
+from article_group.run_state import seal, seal_articles
 from tests.test_preview_site import _make_run as _make_preview_run
 from tests.test_preview_site import build as build_preview
 from tests.test_preview_site import publish as publish_preview
@@ -273,14 +273,45 @@ def test_step_log_records_a_non_utf8_inner_artifact(tmp_path: Path) -> None:
     assert entry["name"] == "render"
 
 
-def test_seal_writes_the_marker_for_a_non_utf8_inner_path(tmp_path: Path) -> None:
-    """SEALED 标记同样要能落盘（此前只因载荷不含路径而侥幸不崩）。"""
-    root, _inner = _run_with_non_utf8_inner_file(tmp_path)
+def test_seal_records_a_non_utf8_inner_file_in_the_manifest(tmp_path: Path) -> None:
+    """非 UTF-8 的**内层文件**路径要能进清单（run_seal 的面），封存全程不崩。
+
+    第三轮复核 F2 更正了这条用例的**声称**：它原先叫"SEALED 标记同样要能落盘"，
+    可 SEALED 载荷只含 `sealed_at/by/articles`，**根本不含这个文件路径**——把
+    `run_state` 的序列化换回改动前的实现，这条照样通过（空转）。这里改成断言它
+    真正该断言的东西：**清单里记下了这个路径**。
+    """
+    root, inner = _run_with_non_utf8_inner_file(tmp_path)
     seal(root, identity="owner")
 
-    marker = (root / run_seal.SEALED_NAME).read_text(encoding="utf-8")  # 严格 utf-8 必须可解
-    assert json.loads(marker)["sealed_by"] == "owner"
+    manifest = run_seal.load_manifest(root)
+    assert inner in [item["path"] for item in manifest["files"]], inner
     assert run_seal.verify(root)["status"] in {"intact", run_seal.STATUS_UNANCHORED}
+    # 清单本身必须是严格 utf-8 可解的字节（代理字符被转义，不是裸写）
+    (root / run_seal.MANIFEST_NAME).read_text(encoding="utf-8")
+
+
+def test_seal_marker_survives_a_non_utf8_article_id(tmp_path: Path) -> None:
+    """**真正**覆盖 `run_state` 的非 UTF-8 修复（第三轮复核 F2）。
+
+    SEALED 载荷里唯一可能带非 UTF-8 的是 `articles[].article_id`——它来自
+    `delivery/<稿件目录名>`（`seal_articles` 取 `item.parent.name`）。此前那条用例用的是
+    *文件名*，进不了载荷，所以对 `run_state` 的修复完全空转。
+    """
+    root = tmp_path / "runs" / "2026-09-25" / "daily-983"
+    article_id = os.fsdecode(b"art-\xff001")          # 非 UTF-8 的稿件**目录**名
+    (root / "delivery" / article_id).mkdir(parents=True)
+    (root / "delivery" / article_id / "delivery.md").write_text("# 正文\n", encoding="utf-8")
+
+    articles = seal_articles(root)
+    assert articles and articles[0]["article_id"] == article_id, articles  # 前提：载荷真带上了它
+
+    seal(root, identity="owner", articles=articles)
+
+    raw = (root / run_seal.SEALED_NAME).read_bytes()
+    raw.decode("utf-8")                                # 严格 utf-8：不许裸写代理字符
+    payload = json.loads(raw.decode("utf-8"))
+    assert payload["articles"][0]["article_id"] == article_id, "代理字符必须原样读回"
 
 
 def test_all_json_writers_share_one_surrogate_safe_serializer() -> None:
@@ -345,21 +376,71 @@ def test_a_missing_kind_is_never_fabricated(tmp_path: Path) -> None:
     assert "仅本机快照" in text, text             # 但警告必须还在
 
 
-def test_unseal_then_reseal_is_a_reachable_remedy(tmp_path: Path) -> None:
-    """F4 remedy 声明的那条出路（unseal→reseal）要有测试——复核说它只有手测。"""
+def test_unseal_then_reseal_is_a_reachable_remedy(tmp_path: Path, monkeypatch) -> None:
+    """remedy 声明的那条出路（unseal→reseal）要能走通，且**离机副本真的补上**。
+
+    第三轮复核 F6 更正：原版只证实"能跑通"，`assert first` 还是恒真占位。真正要证的是
+    failed → 修好远端 → 补推 → **离机仓库里能读到摘要，且与清单一致**。
+    """
     from article_group.run_state import unseal
 
-    root = _sealed_run(tmp_path, name="daily-982")
-    assert run_seal.verify(root)["status"] == "intact"
-    first = run_seal.read_anchor(root)["manifest_digest"]
+    remote = _bare_ledger(tmp_path)
+    real_replicate = run_seal._replicate_anchor
+    flag = {"down": True}
 
-    unseal(root, reason="测试：补写锚点", identity="owner")
+    def replicate(*args, **kwargs):
+        if flag["down"]:
+            return ("failed", "远端暂时不可达")
+        return real_replicate(*args, **kwargs)      # 第二次走**真实**推送
+
+    monkeypatch.setenv(run_seal.ANCHOR_PUSH_ENV, str(remote))
+    monkeypatch.setattr(run_seal, "_replicate_anchor", replicate)
+
+    root = _sealed_run(tmp_path, name="daily-982")
+    block = run_seal.load_manifest(root)["anchor"]
+    assert (block["status"], block["replication"]) == ("anchored", "failed"), block
+
+    flag["down"] = False                             # "修好远端"
+    unseal(root, reason="测试：补推锚点", identity="owner")
     seal(root, identity="owner")
 
     report = run_seal.verify(root)
     assert report["status"] == "intact", report
-    assert report["anchor"]["status"] == "anchored"
-    # 摘要不必与第一次相同：重新封存会改 `sealed_at` 与 SEALED 标记字节，清单正文随之变。
-    # 这里要证的只是"这条出路真能走通"。
-    assert run_seal.read_anchor(root)["manifest_digest"] != first, "重封后清单正文应当变了"
-    assert first  # 保留第一次的读值，避免被优化掉
+    assert (report["anchor"]["status"], report["anchor"]["replication"]) \
+        == ("anchored", "pushed"), report["anchor"]
+
+    # 端到端的关键一步：离机仓库里真有这份锚点，且摘要与**清单现算的**摘要一致
+    name = run_seal.anchor_file_for(root).name
+    shown = subprocess.run(["git", "-C", str(remote), "show", f"main:anchors/{name}"],
+                           capture_output=True, text=True, check=True)
+    local_digest = run_seal.read_anchor(root)["manifest_digest"]
+    assert json.loads(shown.stdout)["manifest_digest"] == local_digest
+    assert local_digest == run_seal._manifest_digest(run_seal.load_manifest(root))
+
+
+def test_every_non_pushed_replication_gets_the_local_snapshot_warning() -> None:
+    """除 `pushed` 之外，每一种复制状态都必须给出「仅本机快照」警告（第三轮 coverage #4）。
+
+    并且措辞不许自相矛盾：`pending`/未知时不能说成"未离机复制"这个**事实**。
+    """
+    for replication, expect in (
+        ("local-only", "没有离机副本"),
+        ("failed", "离机复制失败"),
+        ("pending", "尚未完成"),
+        ("unknown", "无法判定"),
+    ):
+        text = run_seal._describe_anchor({
+            "status": "anchored", "kind": "local-snapshot", "replication": replication,
+            "reason": "（测试原因）",
+        })
+        assert "仅本机快照" in text, (replication, text)
+        assert "只改本机锚点仍能掩盖" in text, (replication, text)
+        assert expect in text, (replication, text)
+        # 警告里必须带上"不能当作已有离机副本"，别把未知说成确定
+        assert "离机副本" in text, (replication, text)
+
+    pushed = run_seal._describe_anchor({
+        "status": "anchored", "kind": "offhost-snapshot",
+        "replication": "pushed", "remote": "ssh://x/y.git",
+    })
+    assert "已离机复制" in pushed and "仅本机快照" not in pushed, pushed

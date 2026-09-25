@@ -25,7 +25,10 @@ from pathlib import Path
 from typing import Any
 
 __all__ = [
-    "json_text","rebase_moved_run_path", "run_relative_reference"]
+    "json_text",
+    "rebase_moved_run_path",
+    "run_relative_reference",
+]
 
 
 _RUN_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")

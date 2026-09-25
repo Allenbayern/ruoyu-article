@@ -433,9 +433,14 @@ def _v1_manifest(root: Path, *, sealed_at: str, sealed_by: str, backfilled: bool
     `kind`，helper 仍绿而真实 v1 会红——正是本轮修掉的那类"测试自己骗自己"。
 
     第二轮复核指出两处仍不忠实，已补：① 顶层键曾是真实 v1 的**严格子集**——缺
-    `backfilled` / `backfilled_at` / `backfilled_by`（三个真 run 都有）、`backfill_note`
-    （daily-008 有）、`excluded` 也被写成空 `{}`（真 v1 是 `EXCLUDED_REASONS` 那份实字典）；
-    ② `backfilled=true` 这个变体（正是 F4 remedy 针对的 daily-008）零覆盖，故加参数。
+    `backfilled` / `backfilled_at`（三个真 run 都有）、`backfilled_by` 与 `backfill_note`
+    （**只有 daily-008 这种补录过的才有**）、`excluded` 也被写成空 `{}`（真 v1 是
+    `EXCLUDED_REASONS` 那份实字典）；② `backfilled=true` 这个变体（正是 F4 remedy 针对的
+    daily-008）零覆盖，故加参数。
+
+    第三轮复核再抓一处：`backfilled_by` 原先**恒写**（非补录时也写 `None`），而真实
+    daily-009/010 **没有这个键**——夹具因此是真实 v1 的**超集**，超集断言抓不到。
+    现在它只在补录时写。
 
     **说清它不是什么**：这不等同"当前 `backfill()` 的产物"——今天 `backfill()` 写出的是
     v2 + `inventory`；真实 v1 是 v1 时代补的。夹具与真实补录共享的只有「SEALED 在先、
@@ -480,9 +485,12 @@ def _v1_manifest(root: Path, *, sealed_at: str, sealed_by: str, backfilled: bool
         "publication_authorization": "not_authorized",
         "backfilled": backfilled,
         "backfilled_at": "2026-09-25T00:00:00+08:00" if backfilled else "",
-        "backfilled_by": "legacy" if backfilled else None,
     }
+    # 第三轮复核 F8：`backfilled_by` **只在补录时写**。真实 daily-009/010（backfilled=false）
+    # 根本没有这个键——原 `by` 是 `None`，但那是我 `.get()` 看不出「键不存在」与「值是 null」
+    # 的区别造成的错觉。写死它会让夹具成为真实 v1 的**超集**，而超集断言抓不到这种差异。
     if backfilled:
+        manifest["backfilled_by"] = "legacy"
         manifest["backfill_note"] = (
             "事后补录：只能证明补录之后未被改动，不能证明封存时刻的内容。")
     return manifest
@@ -530,13 +538,19 @@ def _v1_sealed_run(tmp_path: Path, name: str = "daily-963", *, backfilled: bool 
     assert set(on_disk["append_only"][0]) == {"path", "size", "sha256"}, on_disk["append_only"][0]
     # 顶层键必须是真实 v1 的**超集**而不是子集（第二轮复核：此前缺 backfilled 系字段、
     # excluded 还写成空 {}）
-    for key in ("backfilled", "backfilled_at", "backfilled_by", "excluded", "total_bytes",
+    for key in ("backfilled", "backfilled_at", "excluded", "total_bytes",
                 "file_count", "seal_ref", "sealed_marker_sha256", "publication_authorization"):
         assert key in on_disk, f"夹具缺真实 v1 有的顶层键：{key}"
     assert on_disk["excluded"], "excluded 不能是空字典（真 v1 是 EXCLUDED_REASONS 实字典）"
     assert on_disk["backfilled"] is backfilled
+    # 第三轮复核 F8：这两个键**只在补录过的 v1 上存在**（真 daily-009/010 没有）。
+    # 这里正反都断言，才钉得住"超集"与"多键"两种偏差。
     if backfilled:
         assert on_disk["backfill_note"], "补录过的 v1 必须带 backfill_note（daily-008 就有）"
+        assert on_disk["backfilled_by"] == "legacy"
+    else:
+        assert "backfill_note" not in on_disk, "没补录过的 v1 不该有 backfill_note"
+        assert "backfilled_by" not in on_disk, "没补录过的 v1 不该有 backfilled_by（真实 daily-009/010 也没有）"
     assert run_seal.read_anchor(root) is None
     return root
 
@@ -621,7 +635,10 @@ def test_anchored_report_carries_the_real_replication_facts(tmp_path: Path) -> N
 
     text = run_seal._describe(report)
     assert "local-snapshot" in text, text
-    assert "未离机复制" in text, text
+    # 第三轮复核 #4 收紧措辞：不再把"没有离机副本"笼统说成"未离机复制"，
+    # 而是说清为什么（这里是"未设置离机推送"）。意图不变：必须警告没有离机副本。
+    assert "仅本机快照" in text and "没有离机副本" in text, text
+    assert "只改本机锚点仍能掩盖" in text, text
     assert "RUOYU_SEAL_ANCHOR_PUSH" in text, text
     # 不许再把一个数据里不存在的取值（"snapshot"）印给操作者
     assert "（snapshot）" not in text and "snapshot：" not in text, text

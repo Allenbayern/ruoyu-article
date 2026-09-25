@@ -491,8 +491,12 @@ def test_export_meta_uses_true_time_order_across_timezones(conn, tmp_path):
     """F4（第二轮复核）：`data_as_of` 此前用**字符串 max**，混时区会取错。
 
     16:00Z 其实比 23:00+08:00（=15:00Z）更晚，字典序却判后者更大。
+
+    **三个时间戳必须全部由参数给定**（第三轮复核 F1）：此前 `ingest` 不传 `now=`，
+    它会写真实时钟的 `occurred_at`，而断言写死 16:00Z——于是 2026-09-25T16:00Z 之后
+    这条用例必红并持续红。测试不许依赖墙钟。
     """
-    ingest(conn, [_row()], run_dir="x")
+    ingest(conn, [_row()], run_dir="x", now="2026-09-25T02:00:00+00:00")
     key = item_key_for(_row())
     decide(conn, key, "backlog", by="controller", reason="r", now="2026-09-25T23:00:00+08:00")
     conn.execute("UPDATE backlog_items SET last_seen_at = ? WHERE item_key = ?",
@@ -502,6 +506,9 @@ def test_export_meta_uses_true_time_order_across_timezones(conn, tmp_path):
     stats = export_jsonl(conn, tmp_path / "s.jsonl")
 
     assert stats["data_as_of"] == "2026-09-25T16:00:00+00:00", stats
+    # 并确认这条断言真能抓到旧行为：字符串 max 会取 23:00+08 那个
+    assert max("2026-09-25T23:00:00+08:00", "2026-09-25T16:00:00+00:00") \
+        == "2026-09-25T23:00:00+08:00"
 
 
 def test_latest_moment_ignores_unparseable_values():

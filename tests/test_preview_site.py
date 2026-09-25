@@ -1329,8 +1329,12 @@ def test_a_failed_push_keeps_the_local_snapshot_warning_in_the_report(tmp_path, 
     text = run_seal._describe(report)
     assert "仅本机快照" in text, text
     assert "只改本机锚点仍能掩盖" in text, text
-    # 补救提示不能说"重跑封存"——seal() 幂等，重跑不会重试锚点
-    assert "重跑封存" not in text, text
+    # 第三轮复核 F4：离机失败的**原因**要能被人读层看到，而不是退化成"见清单"
+    assert "simulated unreachable" in text, text
+    # 第三轮复核 F5：原先是 `assert "重跑封存" not in text`——恒真（intact 路径根本不打印
+    # remedy），等于没测。改成断言**真正承载这条文案的地方**：清单 anchor 块的 remedy。
+    assert "重跑封存" not in manifest_block["remedy"], manifest_block["remedy"]
+    assert "unseal" in manifest_block["remedy"], manifest_block["remedy"]
 
 
 def test_check_remote_does_not_run_during_verify(tmp_path, monkeypatch):
