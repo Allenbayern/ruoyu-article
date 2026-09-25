@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -496,8 +497,37 @@ def test_unseal_cli_leaves_a_trace_and_reopens_the_run(tmp_path: Path) -> None:
     assert entries[-1]["author"] == "owner"
 
 
+def _extract_command(remedy: str) -> str:
+    """从 remedy 里抠出「可执行命令」那一段（`可执行命令：python -m article_group.run_seal …`）。"""
+    for line in remedy.splitlines():
+        marker = "可执行命令："
+        if marker in line:
+            return line.split(marker, 1)[1].strip()
+    raise AssertionError(f"remedy 里没有可执行命令：{remedy!r}")
+
+
+def _runnable(command: str, reason: str, author: str) -> str:
+    """把占位符换成真实值，并把 `python` 换成当前解释器（本机 `python` 不在 PATH）。
+
+    这是**执行环境**的替换，不是绕过命令本身的引用问题：引用正确与否由 `sh -n`
+    那一关单独钉住。
+    """
+    return (command
+            .replace("python -m", f"{shlex.quote(sys.executable)} -m", 1)
+            .replace(f"'{run_seal.UNSEAL_REASON_PLACEHOLDER}'", shlex.quote(reason))
+            .replace(f"'{run_seal.UNSEAL_AUTHOR_PLACEHOLDER}'", shlex.quote(author)))
+
+
 def test_the_remedy_prints_a_copy_pasteable_unseal_command(tmp_path: Path, monkeypatch) -> None:
-    """remedy 不能只说"unseal 再 reseal"——要给出能直接抄的命令（F9 的本意）。
+    """remedy 给的命令要**真能粘进 shell 跑**（F9 的本意；第四轮复核 R1 加严）。
+
+    此前这条用例只做子串匹配（`"--unseal" in remedy`），于是打印出的命令**粘贴即报错**
+    也照样绿：run 路径没引用（带空格就拆成两个参数）、`--author <你的身份>` 里的尖括号
+    被 shell 当重定向（实测 `Syntax error: end of file unexpected`，退出 2）。
+
+    现在分两步钉住，两步都不可省：
+    1. **逐字粘贴**（含占位符）交给 `sh -n` 做语法检查——必须 0；
+    2. 占位符换成真实值后**真的执行**，断言退出 0 且 SEALED 确实被改名留痕。
 
     要走到未锚定态：让锚点**写不进去**（封存时记 `anchor_unavailable`、磁盘上也没有锚点）。
     """
@@ -508,5 +538,138 @@ def test_the_remedy_prints_a_copy_pasteable_unseal_command(tmp_path: Path, monke
     report = run_seal.verify(root)
     assert report["status"] == run_seal.STATUS_UNANCHORED, report
     remedy = report["anchor"]["remedy"]
-    assert "--unseal" in remedy and "--reason" in remedy and "--author" in remedy, remedy
-    assert "python -m article_group.run_seal" in remedy, remedy
+    command = _extract_command(remedy)
+
+    # ① 逐字粘贴（占位符原样）不许是语法错误
+    parsed = subprocess.run(["sh", "-n", "-c", command], capture_output=True, text=True)
+    assert parsed.returncode == 0, f"逐字粘贴就有语法错：{parsed.stderr}\n{command}"
+
+    # ② 换成真实值后必须真的跑通
+    executed = subprocess.run(
+        ["sh", "-c", _runnable(command, "第四轮复核：验证 remedy 可粘贴", "owner")],
+        capture_output=True, text=True, cwd=REPO_ROOT,
+    )
+    assert executed.returncode == 0, f"remedy 的命令跑不通：\n{executed.stdout}\n{executed.stderr}"
+    assert not (root / run_seal.SEALED_NAME).exists(), "命令跑通了却没撤销封存？"
+
+
+def test_the_remedy_command_survives_a_run_path_with_spaces(tmp_path: Path, monkeypatch) -> None:
+    """run 路径带空格时 remedy 依然可执行（R1 的具体反例：不引用会拆成两个参数）。"""
+    monkeypatch.setattr(run_seal, "write_anchor",
+                        lambda *_a, **_k: {"status": "anchor_unavailable", "reason": "模拟写不进去"})
+    root = _sealed_run(tmp_path, name="daily 990 有空格")
+
+    command = _extract_command(run_seal.verify(root)["anchor"]["remedy"])
+    parsed = subprocess.run(["sh", "-n", "-c", command], capture_output=True, text=True)
+    assert parsed.returncode == 0, parsed.stderr
+
+    executed = subprocess.run(
+        ["sh", "-c", _runnable(command, "带空格的路径", "owner")],
+        capture_output=True, text=True, cwd=REPO_ROOT,
+    )
+    assert executed.returncode == 0, \
+        f"带空格的 run 路径把命令打挂了：\n{executed.stdout}\n{executed.stderr}"
+    assert not (root / run_seal.SEALED_NAME).exists()
+
+
+def test_the_failed_push_remedy_names_the_real_run(tmp_path: Path, monkeypatch) -> None:
+    """R2：离机复制失败时的 remedy 也要给**带真实路径**的可执行命令，而不是字面量 `<run>`。"""
+    not_a_repo = tmp_path / "not-a-repo"
+    not_a_repo.mkdir()
+    monkeypatch.setenv(run_seal.ANCHOR_PUSH_ENV, str(not_a_repo))
+    root = _sealed_run(tmp_path, name="daily-989")
+
+    block = run_seal.load_manifest(root)["anchor"]
+    assert (block["status"], block["replication"]) == ("anchored", "failed"), block
+
+    command = _extract_command(block["remedy"])
+    assert str(root) in command, f"remedy 没带真实 run 路径（还是占位符？）：{command}"
+    assert "<run>" not in command, command
+    parsed = subprocess.run(["sh", "-n", "-c", command], capture_output=True, text=True)
+    assert parsed.returncode == 0, parsed.stderr
+
+
+# ── ⑩ 第三轮 F7 的两条 remedy / unseal 对账 / 护栏（第四轮复核 R3/R4/R6/R7） ──────
+
+
+def test_a_v1_manifest_carrying_the_v2_flag_also_carries_a_remedy(tmp_path: Path) -> None:
+    """R3：这一支加了 remedy 却没人断言——删掉它整套测试仍是绿的。
+
+    复核实测：`REVERT=contradictory_remedy_absent` 之后 `-k inventory` 仍 `1 passed`。
+    """
+    run = _make_preview_run(tmp_path)
+    build_preview(run)
+    payload = run_seal.build_manifest(run, sealed_at="2026-09-24T00:00:00+08:00", sealed_by="t")
+    payload["schema_version"] = run_seal.SCHEMA_VERSION_V1
+    payload["inventory"] = run_seal.INVENTORY_ALL_ENTRIES
+    run_seal.write_manifest(run, payload)
+
+    result = run_seal.verify(run)
+    assert result["status"] == "unverifiable", result
+    remedy = result.get("remedy", "")
+    assert remedy, "版本/标志矛盾这一支没有 remedy——操作者拿到结论却没有出路"
+    assert str(run_seal.anchor_file_for(run)) in remedy, remedy
+    assert "--backfill" in remedy, remedy
+
+
+def test_a_v2_manifest_without_the_flag_also_carries_a_remedy(tmp_path: Path) -> None:
+    """R3 的另一支：v2 声明却缺 inventory 标志。"""
+    run = _make_preview_run(tmp_path)
+    build_preview(run)
+    run_seal.write_manifest(
+        run, run_seal.build_manifest(run, sealed_at="2026-09-24T00:00:00+08:00", sealed_by="t"))
+    manifest_path = run / run_seal.MANIFEST_NAME
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    payload.pop("inventory", None)
+    manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = run_seal.verify(run)
+    assert result["status"] == "unverifiable", result
+    remedy = result.get("remedy", "")
+    assert remedy, "缺 inventory 标志这一支没有 remedy"
+    assert str(run_seal.anchor_file_for(run)) in remedy, remedy
+    assert "--backfill" in remedy, remedy
+
+
+def test_verify_after_unseal_does_not_report_an_unauthorized_change(tmp_path: Path) -> None:
+    """R4：授权撤销封存之后，verify 不该把 SEALED 的消失算成「无账的可疑改动」。
+
+    `unseal` 是按 `SEALED.revoked.<stamp>` 记的账，而 verify 看到的是 `SEALED` 不见了，
+    路径对不上——于是 CLI 说「已记账」、机器可读层说「未授权」，两句话互相矛盾。
+    """
+    root = _sealed_run(tmp_path, name="daily-991")
+    assert run_seal.verify(root)["status"] == "intact"
+
+    code = run_seal.main(["--run-root", str(root), "--unseal",
+                          "--reason", "锚点写坏了，要重封", "--author", "owner"])
+    assert code == run_seal.EXIT_INTACT
+
+    report = run_seal.verify(root)
+    marker_changes = [item for item in report["changes"] if item["path"] == run_seal.SEALED_NAME]
+    assert marker_changes, f"SEALED 不见了却不在 changes 里：{report['changes']}"
+    assert all(item["kind"] == "missing" for item in marker_changes), marker_changes
+    assert report["unauthorized_changes"] == [], report["unauthorized_changes"]
+    assert all(item["authorized"] for item in report["changes"]), report["changes"]
+
+
+def test_unseal_author_guard_is_casefolded_and_rejects_the_placeholder(tmp_path: Path) -> None:
+    """R6：`AGENT`（大小写变体）与 remedy 自己印的 `<你的身份>` 都必须被拒。"""
+    for index, bad in enumerate(("AGENT", "Agent", "<你的身份>")):
+        root = _sealed_run(tmp_path, name=f"daily-992-{index}")
+        with pytest.raises(SystemExit) as exc:
+            run_seal.main(["--run-root", str(root), "--unseal",
+                           "--reason", "要重封", "--author", bad])
+        assert "必须显式给 --author" in str(exc.value), bad
+        assert (root / run_seal.SEALED_NAME).is_file(), f"{bad} 被拒时不许动 SEALED"
+
+
+def test_unseal_refuses_to_silently_swallow_other_flags(tmp_path: Path) -> None:
+    """R7：`--unseal --backfill` 此前静默短路，操作者会以为 backfill 也跑了。"""
+    root = _sealed_run(tmp_path, name="daily-993")
+    with pytest.raises(SystemExit) as exc:
+        run_seal.main(["--run-root", str(root), "--unseal", "--backfill",
+                       "--reason", "要重封", "--author", "owner"])
+    assert "不能同时使用" in str(exc.value)
+    assert (root / run_seal.SEALED_NAME).is_file(), "拒绝时不许动 SEALED"
+    assert run_seal.verify(root)["status"] == "intact"
+

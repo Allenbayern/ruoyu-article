@@ -40,6 +40,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from collections.abc import Mapping, Sequence
@@ -443,8 +444,7 @@ def write_anchor(run_dir: str | Path, payload: Mapping[str, Any]) -> dict[str, A
             "remedy": f"本机锚点已生效（清单已绑定到 run 之外）；离机副本没成。"
                       f"修好 {ANCHOR_PUSH_ENV} 指向的仓库后，要补推只能撤销封存再重封"
                       f"——重新封存不会重试这一步。\n"
-                      f"    可执行命令：python -m article_group.run_seal --run-root <run> "
-                      f"--unseal --reason \"<为什么要重封>\" --author <你的身份>",
+                      f"    可执行命令：{_unseal_command(run_dir)}",
             "note": "只有本机快照：同 uid 的写手可以同时改写本机锚点与清单来掩盖篡改。",
         }
     note = "清单自身已锚到 run 之外"
@@ -608,19 +608,40 @@ def _changelog_index(run_dir: Path) -> dict[str, dict[str, Any]]:
     return index
 
 
+def _revoked_marker_entry(ledger: Mapping[str, dict[str, Any]]) -> dict[str, Any] | None:
+    """`unseal` 把 `SEALED` 改名成 `SEALED.revoked.<stamp>` 后**按新名字**记账。
+
+    verify 看到的是 `SEALED` 不见了（`kind=missing`），路径对不上，于是把自己授权的
+    那次撤销报成 `unauthorized_changes`（第四轮复核 R4：CLI 说"已记账"，机器可读层
+    却说不授权，两句话互相矛盾）。
+
+    这里把改名记账映射回 `SEALED`，**只用于 `missing` 这一种变更**：改名能解释
+    "标记不见了"，但解释不了"标记还在却被改过"——后者若也认这条账，就等于用一个
+    改名记录给一次内容改写背书。
+    """
+    prefix = f"{SEALED_NAME}.revoked."
+    latest: dict[str, Any] | None = None
+    for path, entry in ledger.items():
+        if str(path).startswith(prefix):
+            latest = entry
+    return latest
+
+
 def verify(run_dir: str | Path) -> dict[str, Any]:
     """逐项重算清单，返回 {status, changes, …}（只读）。
 
-    **返回字典的键集契约**（第二轮复核 minor；第三轮复核 F7 更正了本文的枚举）：
+    **返回字典的键集契约**（第二轮复核 minor；第三轮复核 F7 更正了本文的枚举，
+    第四轮复核 R5 又更正了一次计数）：
 
     - 所有返回都带 `status` / `run_dir` / `changes`；
     - 给出结论或需要处置时带 `reason`；**能给出去路时**带 `remedy`（现在
       `unverifiable` 的每一条都有出路，见下）；
-    - `anchor` **只有走到锚点判定的终态路径**才带。`unverifiable` 的早返回共 **6 条**
-      （副本不适用 / 没有清单 / 版本不认识 / v2 缺 inventory 标志 / v1 带 inventory 标志 /
-      树扫不动），它们的形状**不完全相同**（前三条与"树扫不动"没有锚点信息，也就无从带
-      `anchor`；不是每条都带 `reason` 之外的同一组键）。调用方一律用 `.get()` 读，
-      **别假定键一定在**——这一点是契约本身，不是实现细节。
+    - `anchor` **只有走到锚点判定的终态路径**才带。早返回共 **6 条**：**1 条
+      `not_applicable`**（演练副本）+ **5 条 `unverifiable`**（没有清单 / 版本不认识 /
+      v2 缺 inventory 标志 / v1 带 inventory 标志 / 树扫不动）。原文把 6 条都算成
+      `unverifiable`，那是个 off-by-one。它们的形状**不完全相同**（前三条与"树扫不动"
+      没有锚点信息，也就无从带 `anchor`；不是每条都带 `reason` 之外的同一组键）。
+      调用方一律用 `.get()` 读，**别假定键一定在**——这一点是契约本身，不是实现细节。
     """
     root = Path(run_dir)
     if (root / SANDBOX_MARKER).is_file():
@@ -883,8 +904,11 @@ def verify(run_dir: str | Path) -> dict[str, Any]:
         }
 
     ledger = _changelog_index(root)
+    revoked_entry = _revoked_marker_entry(ledger)
     for change in changes:
         entry = ledger.get(change["path"])
+        if entry is None and change["path"] == SEALED_NAME and change.get("kind") == "missing":
+            entry = revoked_entry
         change["authorized"] = entry is not None
         if entry is not None:
             change["ledger"] = {
@@ -1006,6 +1030,29 @@ def backfill(run_dir: str | Path, *, author: str = "agent", reason: str = "") ->
     return {"status": "backfilled", **{key: payload[key] for key in ("backfilled_at", "file_count")}}
 
 
+UNSEAL_REASON_PLACEHOLDER = "<为什么要重封>"
+UNSEAL_AUTHOR_PLACEHOLDER = "<你的身份>"
+
+
+def _unseal_command(run_dir: str | Path) -> str:
+    """拼一条**粘进 shell 就能跑**的 unseal 命令（第四轮复核 R1/R2）。
+
+    要害全在**引用**，不在措辞：
+
+    - run 路径可能带空格（`runs/2026-09-25/foo bar`），不引用会被 shell 拆成两个参数，
+      实测报 `unrecognized arguments: run 2026`；
+    - 占位符里的尖括号在 shell 里是**重定向**，`--author <你的身份>` 不引用会直接
+      `Syntax error: end of file unexpected`（退出 2）。
+
+    所以路径走 `shlex.quote`，两个占位符用单引号包住——粘进去**至少语法成立**，
+    把占位符换成真实值即可执行。此处不把占位符换成真实值是有意的：模型/工具都不知道
+    操作者的身份与理由，编一个出来就是伪造署名。
+    """
+    return (f"python -m article_group.run_seal --run-root {shlex.quote(str(run_dir))} "
+            f"--unseal --reason '{UNSEAL_REASON_PLACEHOLDER}' "
+            f"--author '{UNSEAL_AUTHOR_PLACEHOLDER}'")
+
+
 def _unanchored_remedy(run_dir: str | Path) -> str:
     """未锚定时的**正确**补救路径（2026-09-25 复核 F4）。
 
@@ -1018,9 +1065,9 @@ def _unanchored_remedy(run_dir: str | Path) -> str:
             "--backfill 不会重写已有清单（它只给\"封存时还没有清单\"的 run 补录，"
             "这里会返回 already_present）；要拿到锚点必须撤销封存后重新 seal——"
             "代价是失去封存的当时性。\n"
-            f"    可执行命令：python -m article_group.run_seal --run-root {run_dir} "
-            f"--unseal --reason \"<为什么要重封>\" --author <你的身份>\n"
-            "    改完用收尾流程重新 seal。也可接受本状态：退出码 3 表示"
+            f"    可执行命令：{_unseal_command(run_dir)}\n"
+            "    把两个尖括号占位符换成真实的理由与身份后即可执行；"
+            "改完用收尾流程重新 seal。也可接受本状态：退出码 3 表示"
             "\"文件与清单一致，但清单自身没被证明没被改写\"，交付时如实注明。")
 
 
@@ -1136,10 +1183,15 @@ def _cli_unseal(args: argparse.Namespace) -> int:
         raise SystemExit(
             "拒绝撤销封存：必须给 --reason。撤销会留下 SEALED.revoked.* 与变更日志，"
             "但**封存的当时性会失去**——理由要能被人读懂。")
-    if str(args.author).strip() in {"", "agent"}:
+    author = str(args.author).strip()
+    # 第四轮复核 R6：此前只挡字面量 "agent"，于是 `AGENT`（大小写变体）和
+    # `<你的身份>`（**我们自己在 remedy 里印的占位符**）都能过——一个明确但无意义的
+    # 身份满足了一道"要有人担责"的护栏，等于没挡。占位符尤其糟糕：操作者直接粘命令
+    # 会把署名写成占位符本身，而这里本该拒绝它。
+    if author.casefold() in {"", "agent"} or any(char in author for char in "<>"):
         raise SystemExit(
-            "拒绝撤销封存：必须显式给 --author <身份>（不能用默认的 agent）——"
-            "撤销是一件要有人担责的动作。")
+            "拒绝撤销封存：必须显式给 --author <身份>（不能用默认的 agent、"
+            "也不能用 remedy 里印的 '<你的身份>' 占位符）——撤销是一件要有人担责的动作。")
     if not is_sealed(root):
         raise SystemExit(f"拒绝撤销封存：{root} 当前不是已封存状态，无需撤销。")
 
@@ -1168,6 +1220,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--check-remote", action="store_true",
                         help="额外对照离机锚点（会联网；verify 本身不联网）")
     args = parser.parse_args(argv)
+
+    # 第四轮复核 R7：这三个 flag 各自是一次**独立动作**（撤销封存 / 补录清单 / 对照离机
+    # 副本），此前 `--unseal` 直接 return，静默吃掉同时给出的其它 flag——操作者会以为
+    # `--backfill` 也跑了。用显式冲突检查而不是 argparse 互斥组：argparse 的用法错误
+    # 退出码是 2，而 2 在本工具里已经是"有漂移"的语义，不能混。
+    selected = [name for name, given in (
+        ("--unseal", args.unseal), ("--backfill", args.backfill), ("--check-remote", args.check_remote),
+    ) if given]
+    if len(selected) > 1:
+        raise SystemExit(
+            f"拒绝执行：{' 与 '.join(selected)} 不能同时使用——它们各自是一次独立动作"
+            "（撤销封存 / 补录清单 / 对照离机副本），同时给出会让人以为都做了。"
+            "一次只给一个。")
 
     if args.unseal:
         return _cli_unseal(args)
