@@ -1319,3 +1319,62 @@ def test_the_recorded_remote_is_the_effective_push_target(
     listed = subprocess.run(["git", "-C", str(real), "ls-tree", "-r", "--name-only", "main"],
                             capture_output=True, text=True, check=True).stdout
     assert run_seal.anchor_file_for(root).name in listed, listed
+
+
+# ── ⑰ 第八轮复核 major：no-op push 不许记 pushed + 跨进程锁 ─────────────────────
+
+
+def test_a_noop_push_is_not_recorded_as_pushed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`git push` 返回 0 但**什么都没推**（"Everything up-to-date"）时，不许记 `pushed`。
+
+    第八轮复核 major 的实测形态：换账本那一支的 `rmtree` 会删掉**另一个 seal 进程**正在用的
+    工作副本，那个进程随后的 `git push origin main:main` 退化成 no-op 且 rc=0，于是清单与锚点
+    文件双双写 `offhost-snapshot / replication=pushed`——而它的锚点在**新旧账本里都不存在**。
+    读回核对（`_confirm_anchor_on_ledger`）把这一类整片堵死：先把 push 打桩成"rc=0 但不推"，
+    断言落 `failed` 而不是 `pushed`。
+    """
+    remote = _bare_ledger(tmp_path)
+    monkeypatch.setenv(run_seal.ANCHOR_PUSH_ENV, str(remote))
+
+    def noop_push(work: Path, *, env) -> subprocess.CompletedProcess:
+        return subprocess.CompletedProcess(
+            args=["git", "push"], returncode=0, stdout="Everything up-to-date\n", stderr="")
+
+    monkeypatch.setattr(run_seal, "_push_ledger", noop_push)
+
+    root = _sealed_run(tmp_path, name="daily-997")
+    block = run_seal.load_manifest(root)["anchor"]
+    assert block["replication"] == "failed", block
+    assert "读回" in block.get("reason", ""), block
+    assert run_seal.read_anchor(root)["replication"] == "failed", run_seal.read_anchor(root)
+
+
+def test_the_ledger_push_takes_a_cross_process_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`_replicate_anchor` 必须持跨进程锁：拿不到锁就**有界等待后如实失败**，不并行下去。
+
+    第八轮复核 major 的 ②：换账本的 `rmtree` 不能毁掉别的进程正在用的工作副本。这里在同一个
+    进程里持锁（`flock` 按 open file description 计，同进程的第二个 fd 同样会阻塞），断言调用
+    在超时后落 `failed`；锁一释放，同样一次调用就能真的推上去——证明那次失败只因为没拿到锁。
+    """
+    remote = _bare_ledger(tmp_path)
+    monkeypatch.setenv(run_seal.ANCHOR_PUSH_ENV, str(remote))
+    monkeypatch.setattr(run_seal, "LEDGER_LOCK_TIMEOUT_SECONDS", 1)
+
+    anchor_dir = run_seal._anchor_dir()
+    anchor_dir.mkdir(parents=True, exist_ok=True)
+    blocked = anchor_dir / "daily-999.anchor.json"
+    blocked.write_text('{"schema_version": "seal-anchor-v1", "manifest_digest": "z"}\n', encoding="utf-8")
+
+    with run_seal._ledger_lock(anchor_dir):
+        replication, detail, _note = run_seal._replicate_anchor(blocked, ident=blocked.name)
+        assert replication == "failed", (replication, detail)
+        assert "锁" in detail, detail
+
+    free = anchor_dir / "daily-998.anchor.json"
+    free.write_text('{"schema_version": "seal-anchor-v1", "manifest_digest": "y"}\n', encoding="utf-8")
+    replication, detail, _note = run_seal._replicate_anchor(free, ident=free.name)
+    assert replication == "pushed", (replication, detail)

@@ -46,6 +46,7 @@ run 之外的锚点文件、**不碰 run 内任何字节、不推离机**，并�
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as _dt
 import hashlib
 import json
@@ -55,6 +56,12 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
+
+try:  # pragma: no cover - 非 POSIX 平台没有 fcntl，此时退化成"不跨进程串行化"
+    import fcntl
+except ImportError:  # pragma: no cover
+    fcntl = None  # type: ignore[assignment]
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -103,6 +110,10 @@ DEFAULT_ANCHOR_REMOTE = "ssh://mac-backup/Users/Allen/Backups/seal-ledger.git"
 #: 老 `git init --bare` 建出来的远端默认分支是 `master`，工作副本的 upstream 就会跟错，
 #: 第二条锚点的 `git pull` 直接失败（2026-09-25 实跑击中，见 `_align_ledger_worktree`）。
 LEDGER_BRANCH = "main"
+#: 离机推送的**跨进程锁**：换账本时会 `rmtree` 工作副本，不能删掉别的 seal 进程正在用的那份
+#: （第八轮复核 major）。锁文件放在锚点库里，`flock` 随进程退出自动释放。
+LEDGER_LOCK_NAME = ".seal-ledger-work.lock"
+LEDGER_LOCK_TIMEOUT_SECONDS = 90
 #: 离机推送的**持久化配置**（环境变量优先，见 `_anchor_remote()`）。默认路径可被
 #: `RUOYU_SEAL_ANCHOR_PUSH_CONFIG` 覆盖——测试与演练用得上，生产不需要。
 ANCHOR_PUSH_CONFIG_ENV = "RUOYU_SEAL_ANCHOR_PUSH_CONFIG"
@@ -515,9 +526,107 @@ def _pending_commit_count(work: Path, *, old_remote: str, env: Mapping[str, str]
         return -1, (counted.stderr or "rev-list failed")[-200:]
 
 
+def _push_ledger(work: Path, *, env: Mapping[str, str]) -> subprocess.CompletedProcess:
+    """把工作副本的 `main` 推到账本。**单独抽出来**是为了让"no-op push 也算成功"能被打桩测到
+    （第八轮复核要求的确定性用例）。"""
+    return subprocess.run(
+        ["git", "-C", str(work), "push", "origin", f"{LEDGER_BRANCH}:{LEDGER_BRANCH}"],
+        capture_output=True, text=True, timeout=30, env=dict(env),
+    )
+
+
+def _ledger_lock(anchor_dir: Path):
+    """跨进程串行化离机推送（`flock`）。
+
+    为什么需要（第八轮复核 major）：换账本那一支会 `rmtree` 工作副本，而**另一个 seal 进程**
+    可能正停在自己的 commit 与 push 之间——目录被删后它的 push 退化成 "Everything up-to-date"
+    而 rc=0，它于是把"已离机"写进清单，锚点却在新旧账本里都不存在。锁把写手串起来，
+    删缓存的窗口里不可能有别人在用。`flock` 随进程退出自动释放（异常退出也释放），不会留死锁；
+    等待有上限，超时就如实失败而不是无限等。
+    """
+    @contextlib.contextmanager
+    def _locked():
+        anchor_dir.mkdir(parents=True, exist_ok=True)
+        lock_path = anchor_dir / LEDGER_LOCK_NAME
+        handle = lock_path.open("w", encoding="utf-8")
+        try:
+            if fcntl is not None:
+                deadline = time.monotonic() + LEDGER_LOCK_TIMEOUT_SECONDS
+                while True:
+                    try:
+                        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except OSError:
+                        if time.monotonic() >= deadline:
+                            raise TimeoutError(
+                                f"等待离机推送锁超时（{LEDGER_LOCK_TIMEOUT_SECONDS}s）：{lock_path}"
+                            )
+                        time.sleep(0.2)
+            yield
+        finally:
+            try:
+                if fcntl is not None:
+                    fcntl.flock(handle, fcntl.LOCK_UN)
+            finally:
+                handle.close()
+    return _locked()
+
+
+def _confirm_anchor_on_ledger(
+    work: Path, *, name: str, digest: str, env: Mapping[str, str]
+) -> str:
+    """推完**读回核对**：账本 tip 的树里必须真有这个锚点、且摘要一致。返回错误文本（空 = 通过）。
+
+    为什么不能只看 `git push` 的返回码（第八轮复核 major 实测）：工作副本被并发换账本/删除后，
+    `push` 会退化成 **"Everything up-to-date" 且 rc=0**，于是清单与锚点文件双双写
+    `replication=pushed`，而锚点在**新旧账本里都不存在**——正是本项目最忌讳的"机器可读层假象"。
+    代价只是两次只读 git 调用加一次 fetch。
+    """
+    def git(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", "-C", str(work), *args],
+                              capture_output=True, text=True, timeout=30, env=dict(env))
+
+    listed = git("ls-remote", "origin", f"refs/heads/{LEDGER_BRANCH}")
+    tip = listed.stdout.split()[0] if listed.returncode == 0 and listed.stdout.split() else ""
+    if not tip:
+        return (f"推完读回失败：账本上没有 refs/heads/{LEDGER_BRANCH}"
+                f"（{(listed.stderr or listed.stdout or '').strip()[:200]}）")
+    fetched = git("fetch", "origin",
+                  f"+refs/heads/{LEDGER_BRANCH}:refs/remotes/origin/{LEDGER_BRANCH}")
+    if fetched.returncode != 0:
+        return f"推完读回失败：取不回账本的 {LEDGER_BRANCH}（{(fetched.stderr or '').strip()[:200]}）"
+    shown = git("show", f"refs/remotes/origin/{LEDGER_BRANCH}:anchors/{name}")
+    if shown.returncode != 0:
+        return (f"推完读回：账本 tip（{tip[:12]}）的树里**没有** anchors/{name}——"
+                "push 说成功但锚点不在账本上（典型原因：工作副本被并发换账本/删除）")
+    try:
+        remote_digest = str(json.loads(shown.stdout).get("manifest_digest", ""))
+    except (json.JSONDecodeError, AttributeError):
+        return f"推完读回：账本上的 anchors/{name} 不是 JSON（摘要无法核对）"
+    if digest and remote_digest != digest:
+        return (f"推完读回：账本上的 anchors/{name} 摘要与本机不一致"
+                f"（账本 {remote_digest[:12]}… vs 本机 {digest[:12]}…）")
+    return ""
+
+
 def _replicate_anchor(path: Path, *, ident: str) -> tuple[str, str, str]:
-    """把本机锚点文件提交并推到离机仓库。失败不抛——调用方按 `replication=failed` 如实记录
-    （本机锚点仍然有效，只是没有离机副本）。
+    """把本机锚点文件提交并推到离机仓库（**持跨进程锁**）。失败不抛。
+
+    锁的意义（第八轮复核 major）：换账本那一支会 `rmtree` 工作副本，而另一个 seal 进程可能正
+    停在自己的 commit 与 push 之间。锁把写手串起来，删缓存的窗口里不可能有别人在用。
+    """
+    remote = _anchor_remote()
+    if not remote:
+        return "local-only", "", ""
+    try:
+        with _ledger_lock(path.parent):
+            return _replicate_anchor_locked(path, ident=ident, remote=remote)
+    except TimeoutError as exc:
+        return "failed", str(exc), ""
+
+
+def _replicate_anchor_locked(path: Path, *, ident: str, remote: str) -> tuple[str, str, str]:
+    """`_replicate_anchor()` 的实体（**调用方必须已持锁**）。
 
     返回 `(replication, detail, note)`：
 
@@ -526,9 +635,6 @@ def _replicate_anchor(path: Path, *, ident: str) -> tuple[str, str, str]:
     - `note`：**不阻断**但必须如实留痕的异常（换账本时丢弃了未推送提交、分叉冲突挪到 rescue
       分支…），由 `write_anchor` 记进清单 `anchor.replication_note`。空串 = 没有。
     """
-    remote = _anchor_remote()
-    if not remote:
-        return "local-only", "", ""
     work = path.parent / ".seal-ledger-work"
     env = {**os.environ, "GIT_AUTHOR_NAME": "ruoyu-seal-anchor",
            "GIT_AUTHOR_EMAIL": "seal-anchor@localhost",
@@ -582,18 +688,26 @@ def _replicate_anchor(path: Path, *, ident: str) -> tuple[str, str, str]:
         )
         if commit.returncode != 0 and "nothing to commit" not in (commit.stdout + commit.stderr):
             return "failed", (commit.stderr or commit.stdout)[-400:], note
-        push = subprocess.run(
-            ["git", "-C", str(work), "push", "origin", f"{LEDGER_BRANCH}:{LEDGER_BRANCH}"],
-            capture_output=True, text=True, timeout=30, env=env,
-        )
+        push = _push_ledger(work, env=env)
         if push.returncode != 0:
             return "failed", (push.stderr or push.stdout or "push failed")[-400:], note
+        # 推完**读回核对**才敢记 pushed（第八轮复核 major）：`git push` 返回 0 不等于锚点真的
+        # 到了账本上——工作副本被并发换账本/删除时，push 会退化成 "Everything up-to-date" 而 rc=0。
+        unconfirmed = _confirm_anchor_on_ledger(
+            work, name=path.name,
+            digest=str(json.loads(path.read_text(encoding="utf-8")).get("manifest_digest", "")),
+            env=env,
+        )
+        if unconfirmed:
+            return "failed", unconfirmed, note
         # 清单里记 **git 解析后的真实推送 URL**，不是配置串：全局 `url.*.insteadOf` /
         # `pushInsteadOf` 重写在 worktree 之外生效，只记配置串会写出与实际落点不符的 remote
         # （第七轮复核 minor 2 实测）。
         effective = subprocess.run(["git", "-C", str(work), "remote", "get-url", "--push", "origin"],
                                    capture_output=True, text=True, timeout=15, env=env)
         recorded = (effective.stdout or "").strip() or remote
+    except TimeoutError as exc:
+        return "failed", str(exc), ""
     except (OSError, subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
         return "failed", f"{type(exc).__name__}: {exc}", ""
     return "pushed", recorded, note
