@@ -1370,11 +1370,115 @@ def test_the_ledger_push_takes_a_cross_process_lock(
     blocked.write_text('{"schema_version": "seal-anchor-v1", "manifest_digest": "z"}\n', encoding="utf-8")
 
     with run_seal._ledger_lock(anchor_dir):
-        replication, detail, _note = run_seal._replicate_anchor(blocked, ident=blocked.name)
+        replication, detail, _note = run_seal._replicate_anchor(blocked, ident=blocked.name, digest="z")
         assert replication == "failed", (replication, detail)
         assert "锁" in detail, detail
 
     free = anchor_dir / "daily-998.anchor.json"
     free.write_text('{"schema_version": "seal-anchor-v1", "manifest_digest": "y"}\n', encoding="utf-8")
-    replication, detail, _note = run_seal._replicate_anchor(free, ident=free.name)
+    replication, detail, _note = run_seal._replicate_anchor(free, ident=free.name, digest="y")
     assert replication == "pushed", (replication, detail)
+
+
+# ── ⑱ 第九轮复核的 3 条 minor：note 不许被 except 吞、锁上限、摘要 fail-closed ──────
+
+
+def test_the_switch_note_survives_a_readback_exception(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """读回那几步抛异常时，**换账本那条 note 不许被 except 吞掉**（第九轮复核 minor 1）。
+
+    note 是"工作副本被换账本、丢了 N 条未推送提交（rmtree 不可恢复）"这件事唯一的机器可读留痕；
+    此前 `except` 分支返回 `""`，于是清单 `anchor.replication_note` 与本机锚点文件都不再记录它。
+    """
+    ledger_a = tmp_path / "ledger-a.git"
+    ledger_b = tmp_path / "ledger-b.git"
+    for path in (ledger_a, ledger_b):
+        subprocess.run(["git", "init", "--bare", "-b", "main", str(path)],
+                       check=True, capture_output=True)
+    monkeypatch.setenv(run_seal.ANCHOR_PUSH_ENV, str(ledger_a))
+    first = _sealed_run(tmp_path, name="daily-994")
+    assert run_seal.load_manifest(first)["anchor"]["replication"] == "pushed"
+
+    # 造一条未推送提交（推送被远端钩子拒绝），换账本时它会被计入 note
+    hook = ledger_a / "hooks" / "pre-receive"
+    hook.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    hook.chmod(0o755)
+    pending = _sealed_run(tmp_path, name="daily-995")
+    assert run_seal.load_manifest(pending)["anchor"]["replication"] == "failed"
+    hook.unlink()
+
+    def boom(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired(cmd=["git", "ls-remote"], timeout=30)
+
+    monkeypatch.setattr(run_seal, "_confirm_anchor_on_ledger", boom)
+    monkeypatch.setenv(run_seal.ANCHOR_PUSH_ENV, str(ledger_b))
+    switched = _sealed_run(tmp_path, name="daily-996")
+    block = run_seal.load_manifest(switched)["anchor"]
+    assert block["replication"] == "failed", block
+    note = block.get("replication_note", "")
+    assert "改指到" in note, block
+    assert "丢弃了 1 条" in note, block
+    # 本机锚点文件同样要留住这条 note（异常路径不许只写清单）
+    assert "改指到" in str(run_seal.read_anchor(switched).get("replication_note", ""))
+
+
+def test_the_ledger_lock_timeout_covers_the_worst_case_hold() -> None:
+    """锁等待上限必须 ≥ 单次持锁的最坏时长（第九轮复核 minor 2）。
+
+    否则"两条不同 run 推同一账本"这种**合法并发**里，后到者会在持有者还活着的时候被判失败。
+    最坏时长 = 各 subprocess 的 `timeout=` 之和（见常量注释里的推导）。
+    """
+    worst_case_hold = 30 + 30 + 30 + 30 + 15 + 30 + 3 * 30   # clone/fetch/rebase/checkout/commit/push/读回×3
+    assert run_seal.LEDGER_LOCK_TIMEOUT_SECONDS >= worst_case_hold, (
+        run_seal.LEDGER_LOCK_TIMEOUT_SECONDS, worst_case_hold)
+
+
+def test_the_readback_requires_a_matching_digest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """读回必须以**调用方给的摘要**为准，且摘要缺失时 fail-closed（第九轮复核 minor 3）。
+
+    此前读回回头重读那个**可变**的锚点文件：摘要缺失时 `if digest and …` 短路，校验退化成
+    "账本树里有同名文件"（fail-open）；文件非 UTF-8 时还会抛未捕获的 UnicodeDecodeError。
+    现在摘要由 `write_anchor()` 传入（它本来就算好了），空摘要直接判失败。
+    """
+    remote = _bare_ledger(tmp_path)
+    monkeypatch.setenv(run_seal.ANCHOR_PUSH_ENV, str(remote))
+
+    def noop_push(work: Path, *, env) -> subprocess.CompletedProcess:
+        return subprocess.CompletedProcess(
+            args=["git", "push"], returncode=0, stdout="Everything up-to-date\n", stderr="")
+
+    monkeypatch.setattr(run_seal, "_push_ledger", noop_push)
+    anchor_dir = run_seal._anchor_dir()
+    anchor_dir.mkdir(parents=True, exist_ok=True)
+
+    # 先在账本上放一个**同名**文件（内容无关），好让读回的 `git show <tip>:anchors/<name>` 走得通
+    name = "daily-992.anchor.json"
+    seed_repo = tmp_path / "seed"
+    subprocess.run(["git", "clone", str(remote), str(seed_repo)], check=True, capture_output=True)
+    (seed_repo / "anchors").mkdir(parents=True, exist_ok=True)
+    # 刻意**不带** manifest_digest：这样"摘要缺失时短路放行"的老行为会露出马脚
+    (seed_repo / "anchors" / name).write_text(
+        '{"schema_version": "seal-anchor-v1"}\n', encoding="utf-8")
+    for args in (["add", "--", f"anchors/{name}"],
+                 ["-c", "user.name=s", "-c", "user.email=s@x", "commit", "-m", "seed"],
+                 ["push", "origin", "main:main"]):
+        subprocess.run(["git", "-C", str(seed_repo), *args], check=True, capture_output=True)
+
+    # ① 摘要为空 → fail-closed（不许退化成"树里有同名文件"就放行）
+    local = anchor_dir / name
+    local.write_text('{"schema_version": "seal-anchor-v1"}\n', encoding="utf-8")
+    replication, detail, _note = run_seal._replicate_anchor(local, ident=name, digest="")
+    assert replication == "failed", (replication, detail)
+    assert "摘要" in detail, detail
+
+    # ② 摘要与账本上同名 blob 不一致 → failed（no-op push 不许冒充）
+    (seed_repo / "anchors" / name).write_text(
+        '{"schema_version": "seal-anchor-v1", "manifest_digest": "seed"}\n', encoding="utf-8")
+    for args in (["add", "--", f"anchors/{name}"],
+                 ["-c", "user.name=s", "-c", "user.email=s@x", "commit", "-m", "seed with digest"],
+                 ["push", "origin", "main:main"]):
+        subprocess.run(["git", "-C", str(seed_repo), *args], check=True, capture_output=True)
+    replication, detail, _note = run_seal._replicate_anchor(local, ident=name, digest="mine")
+    assert replication == "failed", (replication, detail)
+    assert "摘要与本机不一致" in detail, detail

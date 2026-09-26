@@ -113,7 +113,10 @@ LEDGER_BRANCH = "main"
 #: 离机推送的**跨进程锁**：换账本时会 `rmtree` 工作副本，不能删掉别的 seal 进程正在用的那份
 #: （第八轮复核 major）。锁文件放在锚点库里，`flock` 随进程退出自动释放。
 LEDGER_LOCK_NAME = ".seal-ledger-work.lock"
-LEDGER_LOCK_TIMEOUT_SECONDS = 90
+#: 锁等待上限必须**大于单次持锁的最坏时长**，否则"两条不同 run 推同一账本"这种合法并发会被
+#: 误判成失败（第九轮复核 minor 2 实测 90s 不够）。最坏时长按下面各处的 `timeout=` 常量相加：
+#: clone 30 + fetch 30 + rebase 30 + checkout 30 + commit 15 + push 30 + 读回(ls-remote/fetch/show) 3×30 ≈ 255s。
+LEDGER_LOCK_TIMEOUT_SECONDS = 300
 #: 离机推送的**持久化配置**（环境变量优先，见 `_anchor_remote()`）。默认路径可被
 #: `RUOYU_SEAL_ANCHOR_PUSH_CONFIG` 覆盖——测试与演练用得上，生产不需要。
 ANCHOR_PUSH_CONFIG_ENV = "RUOYU_SEAL_ANCHOR_PUSH_CONFIG"
@@ -603,13 +606,15 @@ def _confirm_anchor_on_ledger(
         remote_digest = str(json.loads(shown.stdout).get("manifest_digest", ""))
     except (json.JSONDecodeError, AttributeError):
         return f"推完读回：账本上的 anchors/{name} 不是 JSON（摘要无法核对）"
-    if digest and remote_digest != digest:
+    if not digest:
+        return f"推完读回：本机摘要缺失或为空，无法核对 anchors/{name}"
+    if remote_digest != digest:
         return (f"推完读回：账本上的 anchors/{name} 摘要与本机不一致"
                 f"（账本 {remote_digest[:12]}… vs 本机 {digest[:12]}…）")
     return ""
 
 
-def _replicate_anchor(path: Path, *, ident: str) -> tuple[str, str, str]:
+def _replicate_anchor(path: Path, *, ident: str, digest: str) -> tuple[str, str, str]:
     """把本机锚点文件提交并推到离机仓库（**持跨进程锁**）。失败不抛。
 
     锁的意义（第八轮复核 major）：换账本那一支会 `rmtree` 工作副本，而另一个 seal 进程可能正
@@ -620,12 +625,12 @@ def _replicate_anchor(path: Path, *, ident: str) -> tuple[str, str, str]:
         return "local-only", "", ""
     try:
         with _ledger_lock(path.parent):
-            return _replicate_anchor_locked(path, ident=ident, remote=remote)
+            return _replicate_anchor_locked(path, ident=ident, remote=remote, digest=digest)
     except TimeoutError as exc:
         return "failed", str(exc), ""
 
 
-def _replicate_anchor_locked(path: Path, *, ident: str, remote: str) -> tuple[str, str, str]:
+def _replicate_anchor_locked(path: Path, *, ident: str, remote: str, digest: str) -> tuple[str, str, str]:
     """`_replicate_anchor()` 的实体（**调用方必须已持锁**）。
 
     返回 `(replication, detail, note)`：
@@ -636,12 +641,14 @@ def _replicate_anchor_locked(path: Path, *, ident: str, remote: str) -> tuple[st
       分支…），由 `write_anchor` 记进清单 `anchor.replication_note`。空串 = 没有。
     """
     work = path.parent / ".seal-ledger-work"
+    # note 必须在 try **之前**初始化：异常分支也要把它带出去（第九轮复核 minor 1——换账本
+    # 丢了多少条未推送提交，是这条事件唯一的机器可读留痕，不许被 except 吞掉）。
+    note = ""
     env = {**os.environ, "GIT_AUTHOR_NAME": "ruoyu-seal-anchor",
            "GIT_AUTHOR_EMAIL": "seal-anchor@localhost",
            "GIT_COMMITTER_NAME": "ruoyu-seal-anchor",
            "GIT_COMMITTER_EMAIL": "seal-anchor@localhost"}
     try:
-        note = ""
         # 换账本（工作副本的 origin 与**当前配置**不一致）时**不搬家**：
         # 把旧账本的历史 rebase 到新账本之上，只要新账本已有**同名不同内容**的锚点就必然
         # add/add 冲突 → 之后每条 run 都卡死（第七轮复核 minor 1 实测）。锚点文件名只由
@@ -693,11 +700,7 @@ def _replicate_anchor_locked(path: Path, *, ident: str, remote: str) -> tuple[st
             return "failed", (push.stderr or push.stdout or "push failed")[-400:], note
         # 推完**读回核对**才敢记 pushed（第八轮复核 major）：`git push` 返回 0 不等于锚点真的
         # 到了账本上——工作副本被并发换账本/删除时，push 会退化成 "Everything up-to-date" 而 rc=0。
-        unconfirmed = _confirm_anchor_on_ledger(
-            work, name=path.name,
-            digest=str(json.loads(path.read_text(encoding="utf-8")).get("manifest_digest", "")),
-            env=env,
-        )
+        unconfirmed = _confirm_anchor_on_ledger(work, name=path.name, digest=digest, env=env)
         if unconfirmed:
             return "failed", unconfirmed, note
         # 清单里记 **git 解析后的真实推送 URL**，不是配置串：全局 `url.*.insteadOf` /
@@ -707,9 +710,9 @@ def _replicate_anchor_locked(path: Path, *, ident: str, remote: str) -> tuple[st
                                    capture_output=True, text=True, timeout=15, env=env)
         recorded = (effective.stdout or "").strip() or remote
     except TimeoutError as exc:
-        return "failed", str(exc), ""
-    except (OSError, subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
-        return "failed", f"{type(exc).__name__}: {exc}", ""
+        return "failed", str(exc), note
+    except (OSError, ValueError, UnicodeDecodeError, subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
+        return "failed", f"{type(exc).__name__}: {exc}", note
     return "pushed", recorded, note
 
 
@@ -766,7 +769,7 @@ def write_anchor(run_dir: str | Path, payload: Mapping[str, Any]) -> dict[str, A
         }
     # 容错解包：`_replicate_anchor` 现返回三元组 `(replication, detail, note)`，但历史/外部
     # 桩（测试里 monkeypatch 的假实现）可能只给两元组——不许因此把封存打崩。
-    replication, detail, *rest = _replicate_anchor(path, ident=path.name)
+    replication, detail, *rest = _replicate_anchor(path, ident=path.name, digest=digest)
     replication_note = str(rest[0]) if rest and rest[0] else ""
     if replication_note:
         # 不阻断但必须留痕的异常（换账本丢缓存、分叉冲突挪 rescue）：记进锚点文件与清单，
