@@ -4,10 +4,13 @@
 
 ## 当前状态
 
-- 受控批次已完成至 **controlled-014**：在对抗性审查 Gate（Sol 独立审查 → 限定范围修复 → 复审 → 控制器验收）下产出三篇可发布级成稿。交付物为带来源封条（provenance seal）的冻结单文件 HTML；**不对外发布**。
-- 403 个离线测试全部通过（校验器、CLI、来源捕获、发现雷达、合规门禁）。
-- 未实现也未授权：cron、来源注册表、发布器集成、图片管线、发布路径。
+- 生产形态是**日更流水线**（`scripts/daily_engine.py` + `article_group/run_profile.py`）：默认 `two_article_daily`（A/B），controller 指定时 `three_article_daily`（A/B/C，2026-09-21 起），历史三槽对照用 `three_slot_controlled`。
+- 最近完成封存的批次是 `runs/2026-09-20/daily-010`（`SEALED` + `SEALED.manifest.json`；全库现有 3 个封存批次，另两个是 `daily-008`、`daily-009`）。此后 `daily-011` 起（含 `runs/2026-09-26/daily-liuhuan-zhenhuan`、`runs/2026-09-27/daily-national-day-boxoffice`）已产出 `delivery/` 交付稿但**尚未封存**。`runs/` 不进版本库，只留契约、脚本与测试。
+- 2115 个离线测试全部通过（校验器、CLI、来源捕获、发现雷达、合规门禁、封存校验；2026-09-26 实测 `uv run python3 -m pytest -q`）。
+- 2026-09-25：**标识层 codex → dsh 改名**，写端用新值、读端兼容旧值——`review_surface=markdown_dsh`、`preview_mode=local_dsh`、`schema_version` 族 `dsh-*`、L2 复核产物 `dsh-l2-review`；入口 `article_group/dsh_review.py`（历史名 `article_group/codex_review.py` 保留可用）。
+- 2026-09-25：封存升级为**全量清单 + run 之外锚点**（`article_group/run_seal.py`）——封存时逐文件 size/sha256 记入 `SEALED.manifest.json`（含 `SEALED` 标记自身哈希），`verify` 分类改动/新增/缺失/符号链接变化/append-only 被重写并与 `evidence-changelog.jsonl` 对账；锚点默认写本机 `RUOYU_SEAL_ANCHOR_DIR`（`/home/allen/seal-anchors`），配 `RUOYU_SEAL_ANCHOR_PUSH` 或 `~/.dsh/seal-anchor-push.conf` 时复制到离机账本（本机已启用），老批次用 `--reanchor` 事后补锚（报 `anchored_retroactive`，退出 3，**绝不报 `intact`**）。**已知限制**：本清单防误写，不防蓄意的进程外改写（清单自身不在自己的 `files` 里）。
 - 2026-08-11：契约系统落地——`article_group/case_contract.py`（事实/反馈词汇与技法引用校验）、`article_group/bilibili_capture.py`（B站长文公开证据捕获）、`v2_contract/`（任务卡/流转影子校验器，冻结 V2 词表）、`templates/evidence-pack.md` P1 冻结。自宿主糖果梦热榜（tgmeng）作为第二个只读发现雷达接入（影视榜 + AI 聚合糖果指数）。
+- 未实现也未授权：cron/定时器、来源注册表、发布器集成、图片管线、对外发布路径。
 
 ## 目录结构
 
@@ -177,12 +180,12 @@ uv run python -m article_group.sync_compliance \
 
 ## 交付纪律
 
-- 新批次必须显式声明 `run_profile`：默认日更使用 `two_article_daily`（A/B 两篇），历史三槽对照使用 `three_slot_controlled`（A/B/C）；不得用旧三槽校验器临时绕过 profile。
+- 新批次必须显式声明 `run_profile`：默认日更使用 `two_article_daily`（A/B 两篇），controller 指定时可切 `three_article_daily`（A/B/C，日更口径），历史三槽对照使用 `three_slot_controlled`（A/B/C）；不得用旧三槽校验器临时绕过 profile。
 - Markdown 为规范稿，也是新批次默认的阅读、复核、真人 attestation 与交接对象；`article-plain.txt` 是面向不解析 Markdown 平台的复制粘贴交付物。
 - 用户侧的最终交付目标是 `CONTENT_READY`：当前 Markdown 已完成事实、结构、标题、可读性和平台风险检查，可以直接交给真人复制发布；这不等于系统已经发布。
 - `R8 review-ready`、`controlled-run-manifest.json`、真人 attestation 和 controller acceptance 属于后台治理/审计层。若用户只要成品文章，不要求发布，这些治理项不应阻塞 `CONTENT_READY` 交付；只有需要正式推进发布治理时才继续处理。
-- 新批次必须声明 `review_surface=markdown_codex`，并生成 `review/markdown-review-evidence.json`，绑定当前 Markdown 的路径、字节数、SHA-256 和 CJK 字数；正常路径不生成、不保留 HTML，也不依赖预览服务。
-- HTML 冻结与预览只在明确选择 `review_surface=html_delivery` 的历史/专门交付中启用；此时继续使用 `preview_mode=local_codex | canonical_http` 及原有逐路由哈希/HTTP 200 契约。
+- 新批次必须声明 `review_surface=markdown_dsh`，并生成 `review/markdown-review-evidence.json`，绑定当前 Markdown 的路径、字节数、SHA-256 和 CJK 字数；正常路径不生成、不保留 HTML，也不依赖预览服务。（2026-09-25 改名前的 `markdown_codex` 仍被读端接受，新写端一律用 `markdown_dsh`。）
+- HTML 冻结与预览只在明确选择 `review_surface=html_delivery` 的历史/专门交付中启用；此时继续使用 `preview_mode=local_dsh | canonical_http` 及原有逐路由哈希/HTTP 200 契约（旧值 `local_codex` 读端兼容）。
 - 批次验收要求控制器审查新证据；M2 还要求独立人工编辑 attestation、动态事实 publication-time revalidation 和 controller acceptance 分层落盘。终审由独立方（Sol 路由）在对抗性审查 Gate 下执行，控制器做出每项验收决定。仓库内任何内容都不授权对外发布。
 
 ## 交付预览页（preview site）
