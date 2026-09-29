@@ -275,6 +275,21 @@ _SENSORY_ANCHOR = re.compile(
     r"撕|剪|砸|摔|掐|咬|推开|抱住|跪下|奔跑|翻墙|悬梁|"
     r"血|伤口|泪|刀|剑|剪刀|画卷|屏风|灵位|衣带|和服|雪|雨夜|火|镜子|铃"
 )
+# 5h) 微信低创作度与狗血套路拦截（2026-09-29 复盘）：
+#     微信公众号 2026 推荐算法对“非真人自动化创作/低创作度”专项治理中，
+#     重点拦截“情绪对立拉踩套话”、“低俗擦边引流词”、“僵化AI章节脚手架”。
+#     涉事文章真实命中了“扯下整个内娱的遮羞布”、“被打回原形”、“19禁床戏”等模式词。
+#     Severity: error — 必须在出稿前物理拦截，杜绝触发平台风控降权。
+_LOW_CREATIVITY_PATTERNS: list[tuple[str, str, str]] = [
+    (r"(?:扯下|撕开|揭开|扯掉|撕扯掉)[^。！？]{0,16}?遮羞布", "clickbait:遮羞布套话", "低创营销套话：'扯下/撕开…遮羞布'（微信反作弊重点标记拉踩模板）"),
+    (r"被打回原形", "clickbait:打回原形", "低创营销套话：'被打回原形'（微信降权套路词）"),
+    (r"(?:底裤)?扒得干干净净|扒光(?:了)?(?:演技)?底裤", "clickbait:扒底裤套话", "低创营销套话：'扒得干干净净/扒光底裤'"),
+    (r"打脸(?:了)?半个娱乐圈", "clickbait:打脸娱乐圈", "低创营销套话：'打脸半个娱乐圈'"),
+    (r"19禁床戏|大尺度床戏|全网狂搜的[\"“']?19禁", "clickbait:低俗引流", "低创低俗引流：'19禁床戏/大尺度'（触发微信低俗擦边降权）"),
+    (r"###?\s*【(?:引子|冷板凳|嚼馊肉|结语|尾声|概述|背景)】", "aigc:刻板章节标牌", "AI机械脚手架：'【引子】'等刻板小标题，须改为自然叙事段落"),
+    (r"【(?:热榜上的|日薪|半永久|老戏骨|政策铁笼|买方市场)[^】]+】", "aigc:刻板标签标牌", "AI机械脚手架：'【...】'式分节标签，微信算法标记为批量自动化套路排版"),
+]
+
 SENSORY_ANCHOR_MIN = 3
 ABSTRACT_NOUN_MAX = 6
 
@@ -309,6 +324,7 @@ _STANCE_RULES = _compile(_EQUIVOCAL_PR_TONE)
 _MOTIVE_RULES = _compile(_MIND_READING)
 _QUOTE_RULES = _compile(_QUOTED_SPEECH_RISK)
 _ANACHRONISM_RULES = _compile(_ANACHRONISM)
+_LOW_CREATIVITY_RULES = _compile(_LOW_CREATIVITY_PATTERNS)
 
 # 归因豁免（2026-09-23 实测修正）：辩护/免责类句子如果是被明确归因给他人的
 # （"辩护的核心逻辑是…"/"剧粉认为…"/"支持者据此认为…"），那是报道对立面，
@@ -435,6 +451,7 @@ def scan_style(text: str) -> list[dict[str, str]]:
     hits.extend(_scan_rules(text, _SOURCE_RULES, "error"))
     hits.extend(_scan_rules(text, _TONE_RULES, "error"))
     hits.extend(_scan_rules(text, _PIPELINE_RULES, "error"))
+    hits.extend(_scan_rules(text, _LOW_CREATIVITY_RULES, "error"))
     # 立场红线（2026-09-23）：和稀泥/公关辩护腔是 error —— 没有立场的稿子不进
     # 复核，直接在本地打回（周也篇"不知所云"复盘）。免责/辩护类命中若被明确
     # 归因给他人（报道对立面），则豁免：见 _ATTRIBUTABLE_STANCE_LABELS。
