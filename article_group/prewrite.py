@@ -837,6 +837,89 @@ def validate_sensory_anchors(
     return errors
 
 
+OPENING_HOOK_MAX_CJK = 35
+OPENING_CLICHE_PREFIXES = (
+    "近年来", "随着", "在当今", "回顾", "不可否认", "总所周知", "众所周知"
+)
+
+
+def validate_opening_hook(
+    evidence_pack: object,
+    markdown_text: str,
+    *,
+    article_id: str = "unknown",
+) -> list[str]:
+    """Verify declared opening hook satisfies length/cliche limits and is reflected in the body."""
+    if not isinstance(evidence_pack, dict):
+        return []
+    hook = evidence_pack.get("opening_hook")
+    if hook is None:
+        return []
+    if not isinstance(hook, str) or not hook.strip():
+        return [f"article_{article_id}_opening_hook_empty"]
+    hook_clean = hook.strip()
+    cjk_count = len(re.findall(r"[\u4e00-\u9fff]", hook_clean))
+    if cjk_count > OPENING_HOOK_MAX_CJK:
+        return [f"article_{article_id}_opening_hook_too_long_{cjk_count}"]
+    if any(hook_clean.startswith(p) for p in OPENING_CLICHE_PREFIXES):
+        return [f"article_{article_id}_opening_hook_contains_cliche"]
+
+    lines = markdown_text.splitlines()
+    first_para = ""
+    in_frontmatter = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped == "---":
+            in_frontmatter = not in_frontmatter
+            continue
+        if in_frontmatter:
+            continue
+        if stripped.startswith("#") or not stripped:
+            continue
+        first_para = stripped
+        break
+
+    first_clean = re.sub(r"\s+", "", first_para)
+    hook_pure = re.sub(r"[^\u4e00-\u9fff\d]", "", hook_clean)
+    if hook_pure and hook_pure not in first_clean:
+        tokens = [t for t in re.findall(r"[\u4e00-\u9fff]{2,4}", hook_pure)]
+        if tokens and not any(t in first_clean for t in tokens):
+            return [f"article_{article_id}_opening_hook_not_reflected_in_first_paragraph"]
+    return []
+
+
+def validate_realistic_stakes(
+    evidence_pack: object,
+    markdown_text: str,
+    *,
+    article_id: str = "unknown",
+    minimum: int = 1,
+) -> list[str]:
+    """Verify declared realistic stakes (ordinary person's rice bowl / family cost / penalty) appear in body."""
+    if not isinstance(evidence_pack, dict):
+        return []
+    declared = evidence_pack.get("realistic_stakes")
+    if declared is None:
+        return []
+    if not isinstance(declared, list):
+        return [f"article_{article_id}_realistic_stakes_must_be_a_list"]
+    errors: list[str] = []
+    body = re.sub(r"\s+", "", markdown_text)
+    usable: list[str] = []
+    for index, stake in enumerate(declared):
+        if not isinstance(stake, str) or not stake.strip():
+            errors.append(f"article_{article_id}_realistic_stake_{index}_empty")
+            continue
+        st = stake.strip()
+        usable.append(st)
+        tokens = [t for t in re.findall(r"[\u4e00-\u9fff]{2,4}|\d+", st)]
+        if tokens and not any(t in body for t in tokens):
+            errors.append(f"article_{article_id}_realistic_stake_{index}_not_in_body")
+    if len(usable) < minimum:
+        errors.append(f"article_{article_id}_realistic_stakes_below_minimum_{len(usable)}_{minimum}")
+    return errors
+
+
 def assess_material_sufficiency(
     *,
     evidence_atom_ids: list[str],
@@ -940,6 +1023,12 @@ def validate_article_stage(
     if evidence_pack is not None:
         errors.extend(
             validate_sensory_anchors(evidence_pack, markdown_text, article_id=aid)
+        )
+        errors.extend(
+            validate_opening_hook(evidence_pack, markdown_text, article_id=aid)
+        )
+        errors.extend(
+            validate_realistic_stakes(evidence_pack, markdown_text, article_id=aid)
         )
     claim_ids = {
         cm.get("claim_id", "")
