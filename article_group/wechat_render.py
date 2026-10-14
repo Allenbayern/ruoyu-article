@@ -243,6 +243,16 @@ def render_markdown(
     timeout: int = TIMEOUT_SECONDS,
 ) -> tuple[str, str]:
     """Render Markdown to a WeChat-style fragment. Returns (html, renderer_used)."""
+    if renderer_cmd == "local" or renderer_cmd.startswith("local:"):
+        from article_group.wechat_local_converter import convert_markdown_to_wechat_html
+        local_theme = theme if theme != DEFAULT_THEME else "ruoyu-cinema"
+        if renderer_cmd.startswith("local:"):
+            _, _, custom_theme = renderer_cmd.partition(":")
+            if custom_theme:
+                local_theme = custom_theme
+        output = convert_markdown_to_wechat_html(markdown, theme=local_theme, drop_h1=False)
+        return output, f"local:{local_theme}"
+
     with tempfile.TemporaryDirectory(prefix="wxrender-") as tmp:
         workdir = Path(tmp)
         md_name = "article.md"

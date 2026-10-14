@@ -51,7 +51,12 @@ from article_group.review_surface import (
     validate_batch_review_surface,
     validate_markdown_review_evidence,
 )
-from article_group.run_profile import MAX_CJK_CHARS, MIN_CJK_CHARS, validate_batch_profile
+from article_group.run_profile import (
+    MAX_CJK_CHARS,
+    MIN_CJK_CHARS,
+    SOFT_MAX_CJK_CHARS,
+    validate_batch_profile,
+)
 from article_group.run_contract import (
     is_strict_run_contract,
     validate_article_first_run_lane,
@@ -1463,10 +1468,19 @@ def evaluate_batch(batch_dir: str | Path) -> dict:
             if int(art.get("error_count", 0) or 0) > 0:
                 return _blocked("gate:style_gate", file=sf.name, article=art.get("index"))
             char_count = int(art.get("char_count", 0) or 0)
-            if char_count and not MIN_CJK_CHARS <= char_count <= MAX_CJK_CHARS:
+            # 2026-10-14 controller 裁决：取消硬上限，1500 字下限保持硬阻断不变；
+            # 超过 2800 仅出提醒（advisory），防灌水交给 L2 复核。
+            if char_count and char_count < MIN_CJK_CHARS:
+                return _blocked(
+                    "gate:style_gate",
+                    file=sf.name,
+                    article=art.get("index"),
+                    detail=f"char_count={char_count} below minimum {MIN_CJK_CHARS}",
+                )
+            if char_count and char_count > SOFT_MAX_CJK_CHARS:
                 human_items.append(
-                    f"{sf.name}: char_count={char_count} outside "
-                    f"{MIN_CJK_CHARS}-{MAX_CJK_CHARS}"
+                    f"{sf.name}: char_count={char_count} exceeds "
+                    f"advisory limit {SOFT_MAX_CJK_CHARS} (advisory)"
                 )
             for hit in art.get("hits") or []:
                 if isinstance(hit, dict) and hit.get("severity") == "warning":

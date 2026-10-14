@@ -13,8 +13,10 @@ def test_run_profile_module_exists_and_validates_two_article_daily_contract():
     assert profile.slot_labels == ("A", "B")
     # 2026-09-23 controller ruling（取代 2026-09-16 的下限口径）：1000 字出头的
     # 成稿被判单薄，下限 900→1500（= 编辑目标下限），上限维持 2800。
+    # 2026-10-14 controller ruling：取消硬上限，2800 作为提醒阈值 (soft_max_cjk_chars)。
     assert profile.min_cjk_chars == 1500
     assert profile.max_cjk_chars == 2800
+    assert profile.soft_max_cjk_chars == 2800
     batch = {
         "run_profile": "two_article_daily",
         "articles": [{"article_id": "art-001", "slot": "A"}, {"article_id": "art-002", "slot": "B"}],
@@ -60,6 +62,7 @@ def test_three_article_daily_profile_matches_daily_gates():
     assert profile.slot_labels == ("A", "B", "C")
     assert profile.min_cjk_chars == 1500
     assert profile.max_cjk_chars == 2800
+    assert profile.soft_max_cjk_chars == 2800
 
     batch = {
         "run_profile": "three_article_daily",

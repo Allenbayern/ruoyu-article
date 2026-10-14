@@ -1,14 +1,10 @@
 """human_fingerprints: Dynamic Few-Shot Registry based on Ulysses Corpus.
 
-Inherits the 6 human style fingerprints from Vault Canonical:
+Inherits the human style fingerprints from Vault Canonical:
 `Obsidian Vault/20_Hermes/10_Content_Production/02_Article_Group/人工创作特征注入规范与解说小子文风迁移指南.md`
-Derived from 6 verified Ulysses master commentaries by Allen:
-- 《三大队》 (Crime / Investigative / Cold realism)
-- 《第二十条》 (Social realism / Legal ethics / Civilian anger)
-- 《老狐狸》 (Business / Class / Financial ledger)
-- 《迷宫游戏》 (Suspense / Urban thriller / Microscopic props)
-- 《窗边的小豆豆》 (Innocence vs Rigid institution / Empathy)
-- 《香魂女 / 湘女萧萧》 (Rural patriarchal / Female tragedy / Tangible stakes)
+Derived from 12 verified master commentaries by Allen:
+- 《香魂女》《湘女萧萧》《窗边的小豆豆》《诸神之战》《三大队》《第二十条》
+- 《飞来的仙鹤》《黑蝴蝶》《老狐狸》《现世活宝》《迷宫游戏》《落山风》
 """
 
 from __future__ import annotations
@@ -72,7 +68,7 @@ GENRE_SAMPLES: dict[str, GenreFingerprintSample] = {
     "business_workplace": GenreFingerprintSample(
         genre_key="business_workplace",
         genre_name="商战利益 / 阶层博弈 / 行业黑幕",
-        works=["老狐狸"],
+        works=["老狐狸", "现世活宝"],
         opening_hook_example="“我有个工人，女的，在仓库里面呐赚外快养孩子，300块钱就可以丄她。嘿嘿，丄她什么意思你知道吗？”",
         aside_sharpness_example="满嘴的产业升级、颠覆生态，翻开底裤一看，全是指望着靠压榨外包临时工的加班费来冲平财报上的亏损。这特么不叫商业奇迹，叫奉旨讨饭。",
         realistic_ledger_example="交租金的时候，漂亮的房东秘书告诉他们，楼下面馆的大爷快要搬走了，你想换楼下吗？我想自己买个房子了。三十年的房贷，利率只要浮动0.5%，每个月就得多掏半个月的菜钱。",
@@ -91,7 +87,7 @@ GENRE_SAMPLES: dict[str, GenreFingerprintSample] = {
     "female_literary": GenreFingerprintSample(
         genre_key="female_literary",
         genre_name="女性命运 / 乡土民俗 / 心理文艺",
-        works=["香魂女", "窗边的小豆豆"],
+        works=["香魂女", "湘女萧萧", "落山风", "窗边的小豆豆", "飞来的仙鹤", "黑蝴蝶"],
         opening_hook_example="一只公鸡，替一个三岁的男孩拜堂成亲。",
         aside_sharpness_example="媒婆嘴里把瘫子吹成了文曲星转世，说白了，看上的不过是那五亩水浇地和香油坊一年到头结结实实的纯进项。男人的嘴，骗人的鬼。",
         realistic_ledger_example="一万五千块钱的彩礼，在那个年代能买下一座带三间瓦房的小油坊。年轻姑娘的半辈子，就在公公婆婆的算盘珠子里，换成了弟弟娶媳妇的现钱。",
@@ -107,6 +103,25 @@ GENRE_SAMPLES: dict[str, GenreFingerprintSample] = {
 结尾极简动作：
 “炉膛里的柴火噼啪爆了一声，火星溅在青石砖上，灭了。她没有抬头，继续用粗布擦着桌上的油腻。”""",
     ),
+    "epic_fantasy": GenreFingerprintSample(
+        genre_key="epic_fantasy",
+        genre_name="奇幻大片 / 宏大史诗 / 荒诞神话",
+        works=["诸神之战"],
+        opening_hook_example="哈迪斯遭弟弟宙斯忽悠，用自己的血肉创造了一个能够打败泰坦神的强大怪兽，克拉肯。",
+        aside_sharpness_example="看样子宙斯为了节约成本，想打一场代理人战争呀。可委屈的哈迪斯，真会好心替他收拾烂摊子吗？这么大的便宜大概率是诈骗！",
+        realistic_ledger_example="老百姓饭都吃不饱了你指望他爱谁啊。靠凡人的祈祷和香火维持神力，现在神仙自己先把桌子掀了，还指望别人下跪求饶？",
+        sensory_prop_example="倒塌的百米大理石神像、断手流出的黑色血液、巨蝎外壳打磨的坚硬盾牌、装在麻袋里滴血的美杜莎头颅。",
+        ending_beat_example="神剑插在倒塌神殿的石缝里，落日把影子拉得极长。海风灌进破碎的城门，这一次，没人再去捡起地上的香炉。",
+        few_shot_prompt="""【文风范例：奇幻大片 / 宏大史诗】
+开篇倒反天罡：
+“兄弟三人靠抽签决定地盘，老六宙斯掌管天空，二哥波塞冬掌管海洋，大阿哥哈迪斯倒霉去了冥界。说白了，不就是怕他手里那只大怪兽嘛。”
+旁白大白话拆台：
+“台上讲神圣正义，台下男女通吃当爹又当妈。凡人饭都吃不上了，还指望拿命给你们烧香进贡？这不是神恩，这是奉旨讨饭。”
+微观道具推动：
+“黑色的蝎子壳盾牌泛着冷光，麻袋里沉甸甸的人头还在渗血。没有天神的庇佑，凡人就拿着这两件破玩意儿，硬生生把神仙的台子给砸了。”
+结尾冷酷收刀：
+“海浪退回深渊，留下满滩死鱼烂虾。他转身跨上战马，连头都没回一下。”""",
+    ),
 }
 
 
@@ -119,42 +134,64 @@ def get_genre_sample(topic_or_genre: str) -> GenreFingerprintSample:
         return GENRE_SAMPLES["business_workplace"]
     if any(k in query for k in ("female", "woman", "女性", "情感", "文艺", "乡土", "命运", "伦理")):
         return GENRE_SAMPLES["female_literary"]
+    if any(k in query for k in ("fantasy", "myth", "epic", "诸神", "神话", "奇幻", "大片", "史诗")):
+        return GENRE_SAMPLES["epic_fantasy"]
     return GENRE_SAMPLES["social_realism"]
 
 
 def get_human_fingerprints_instruction(topic_or_genre: str = "") -> str:
     """Generate system-level human fingerprints instructions with matched few-shot sample."""
     sample = get_genre_sample(topic_or_genre)
-    return f"""### 【解说小子】人工创作特征注入硬性规范 (Ulysses Fingerprints)
-基于作者真实定稿提炼，严格消灭 AIGC 机器腔，注入活人创作质感：
+    return f"""### 【解说小子/影视长文】人工创作特征注入硬性规范 (12篇大师定稿指纹)
+基于作者真实定稿提炼，严格消灭 AIGC 机器腔，无论是短视频解说还是公众号深度长文，全量注入活人创作质感：
 
+#### 【九大已验证偏好（必须做到）】
 1. **开篇三秒夺魂 (Opening Hook)**：
-   - 严禁任何时代背景、行业现状、平庸引子（如“近年来”、“随着...发展”）。
+   - 严禁任何时代背景、行业现状、平庸引子（如“近年来”、“随着...发展”、“由某某执导”）。
    - 首句必须是极具物理张力、反常伦理或倒置结果的人物动作。
    - 范例：“{sample.opening_hook_example}”
 
 2. **旁白大白话拆台与冷幽默插刀 (Voice & Asides)**：
-   - 绝不端着，禁止公文腔与中庸端水。
-   - 旁白是坐在读者旁边的真实活人：遇到虚伪假大空，立即用民间大白话拆台，敢骂敢讽。
+   - 绝不端着，严禁公文腔与中庸端水。
+   - 旁白是坐在读者身边的真实活人：遇到虚伪假大空，立即用民间大白话拆台，敢骂敢讽。
    - 范例：“{sample.aside_sharpness_example}”
 
 3. **利益算盘打得极响 (Realistic Ledger)**：
-   - 拒绝凌空蹈虚的抽象口号，任何冲突必须算透普通人的切肤现实账本：【钱、饭碗、房贷、编制、家庭生计代价】。
+   - 拒绝凌空蹈虚的抽象口号，任何冲突与妥协必须算透普通人的切肤现实账本：【钱、饭碗、房贷、编制、家庭生计代价】。
    - 范例：“{sample.realistic_ledger_example}”
 
 4. **道具级叙事节拍器 (Sensory Anchors)**：
    - 情绪不靠形容词，靠 ≥3 个具象有阻力的微观物理物件推动（无拉片时用现实硬核凭证如发票、违约金条文、通报时间戳代替）。
    - 范例：“{sample.sensory_prop_example}”
 
-5. **语言长短呼吸感与排比排毒 (Rhythm)**：
-   - 严禁均质化长段与公文排比。彻底消灭“不是……而是……”、“不仅……而且……”、“归根结底”。
-   - 允许单句成段（如“真叫人心里发凉。”），制造强烈停顿。
+5. **对白是推进器不是点缀 (Dialogue as Engine)**：
+   - 只引关键半句原话，紧跟一句损性十足或一针见血的短旁白拆台，绝不铺陈无用对白。
 
-6. **结尾克制收刀 (Sharp Ending)**：
+6. **语言长短呼吸感与排比排毒 (Rhythm)**：
+   - 严禁均质化长段与公文排比。长句铺叙过程，短句只落结果、决定与转向。
+   - 允许单句成段（如“真叫人心里发凉。”、“这才是乱世里该有的模样。”），制造强烈停顿。
+
+7. **借地气俗语与反差比喻翻译人话 (Earthy Metaphors)**：
+   - 善用民间大白话、时代热梗与反差比喻（如“天然牛马圣体”、“公公的黄盘直接改绿盘了”、“老六老登”、“撞小渔船何必用航母”）。
+
+8. **场景接力推进长篇逻辑 (Scene Progression)**：
+   - 长文不靠空转主题撑字数，由一组组具体场景咬合（事件爆发 → 利益受损 → 秘密撞破 → 摊牌对峙 → 结局清算）。
+
+9. **结尾克制收刀 (Sharp Ending)**：
    - 严禁口号式升华，严禁文末“你怎么看/欢迎留言”等廉价互动。
    - 停在最后一个极简平淡的物理动作或接地气的叹息上。
    - 范例：“{sample.ending_beat_example}”
 
+#### 【七大绝对避免（违规必打回）】
+1. 不要在开头介绍片名、导演履历、获奖背景和历史时代说明。
+2. 不要使用“不是……而是……”、“不只是……更是……”等排比对仗机器腔。
+3. 不要每段都跳出来替读者总结深刻主题、人性反思或人生哲理。
+4. 不要在结尾强行升华正能量或添加廉价的评论区互动废话。
+5. 不要使用抽象的情绪形容词堆砌人群恐惧或人物绝望。
+6. 不要把人物对白改写成工整漂亮的文艺书面语。
+7. 不要在没有画面与拉片支撑时凭空捏造原片不存在的虚假道具。
+
 ---
 {sample.few_shot_prompt}
 """
+

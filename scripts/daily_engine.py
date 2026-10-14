@@ -794,6 +794,7 @@ def build_editorial_review_record(
 
 
 def reviews_and_delivery(bodies_map: dict[str, str]) -> None:
+    style_results_map: dict[str, Any] = {}
     for aid, body in bodies_map.items():
         base.write_text(f"drafts/{aid}/body_draft.md", body)
         base.title_records(aid, SOURCE_IDS[aid][0], TITLES[aid], f"review/{aid}/content-fidelity.json")
@@ -868,6 +869,7 @@ def reviews_and_delivery(bodies_map: dict[str, str]) -> None:
         ensure_independent_review_placeholder(aid, delivery_path)
         hook = STRONGEST_HOOKS[aid]
         style_result = validate_markdown_file(ROOT / delivery_path, hook=hook, run_root=ROOT)
+        style_results_map[aid] = style_result
         write_json(f"review/style-gate-markdown-{aid}.json", style_result)
         # 评分卡诚实化（2026-09-21）：分项分原是字面常量，却要过 final_review 的下限校验，
         # 等于对任何稿件恒真。现改为标注 card_kind=template_unmeasured + 附真实可测信号；
@@ -899,7 +901,7 @@ def reviews_and_delivery(bodies_map: dict[str, str]) -> None:
                     "markdown_sha256": digest(ROOT / f"delivery/{aid}/delivery.md"),
                     "size": (ROOT / f"delivery/{aid}/delivery.md").stat().st_size,
                     "cjk_chars": len(re.findall(r"[\u4e00-\u9fff]", (ROOT / f"delivery/{aid}/delivery.md").read_text(encoding="utf-8"))),
-                    "status": "PASS",
+                    "status": "PASS" if (style_results_map.get(aid, {}).get("pass") and not style_results_map.get(aid, {}).get("error_total")) else "FAIL",
                 }
                 for aid in bodies_map
             },

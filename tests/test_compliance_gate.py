@@ -142,3 +142,23 @@ def test_single_low_confidence_scan_hint_does_not_enforce_fail():
 
     assert scan_social_redlines("案件有罪") == ["hint:judicial_predict:有罪"]
     assert validate_five_gates(candidate) == []
+
+
+def test_wechat_forbidden_terms_detection():
+    from article_group.compliance_gate import check_wechat_forbidden_terms, grade_five_gates
+
+    # Test title check
+    warnings = check_wechat_forbidden_terms(title="一文读懂AI新时代的炸裂突破", text="这是一篇普通的正文。")
+    assert any("title_forbidden_words" in w and "一文读懂" in w for w in warnings)
+    assert any("title_forbidden_words" in w and "炸裂" in w for w in warnings)
+
+    # Test body extreme words
+    warnings_body = check_wechat_forbidden_terms(title="正常标题", text="票房颠覆性碾压对手，跪求大家看看。")
+    assert any("content_extreme_words" in w and "碾压" in w for w in warnings_body)
+    assert any("content_extreme_words" in w and "颠覆" in w for w in warnings_body)
+    assert any("content_extreme_words" in w and "跪求" in w for w in warnings_body)
+
+    # Auto-grader flags conditional for sensational titles
+    cand = social_candidate("clickbait", title="保姆级教程：一文读懂票房内幕")
+    grades = grade_five_gates(cand)
+    assert grades["gate5_sensationalism"] == "CONDITIONAL"

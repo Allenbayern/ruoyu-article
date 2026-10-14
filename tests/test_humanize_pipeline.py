@@ -102,6 +102,7 @@ def test_deterministic_polish_cleans_ai_markers():
 
 值得一提的是，这部电影不仅视觉震撼，而且思想深刻。从某种意义上说，它赋予了角色全新的底层逻辑。
 这绝不是偶然，而是必然。毋庸置疑，它打造了全新的闭环。
+总而言之，说白了，这是一部好电影。
 
 对此，你怎么看？欢迎在评论区留言讨论！"""
 
@@ -117,7 +118,62 @@ def test_deterministic_polish_cleans_ai_markers():
     assert "聋哑女人转身跳下了楼" in polished
     assert "值得一提的是" not in polished
     assert "毋庸置疑" not in polished
+    assert "总而言之" not in polished
+    assert "说到底" not in polished  # 坚决不引入“说到底”等二次AI翻案词
+    assert "说白了" not in polished
     assert len(fixes) >= 3
+
+
+def test_deterministic_polish_lieflat_whitelist_rules():
+    raw_draft = """# 第二幕
+
+第一段讲述了基础的情节发展。
+
+听起来像一条功能描述，其实底下换掉了一样更根本的东西。
+一句话总结：排片量直接跌了百分之五十。
+制作团队完成了对渲染流程的优化。
+目前由于技术较为落后，剧组无法按期交付，必须通过技术升级来实现突破，并且对其进行全面排查。"""
+
+    polished, fixes = deterministic_polish(raw_draft)
+
+    # 1. 段首零回指自动补齐代词
+    assert "这听起来像一条功能描述" in polished
+    # 2. 正文提示性冒号切除
+    assert "一句话总结：" not in polished
+    assert "排片量直接跌了百分之五十" in polished
+    # 3. 动词名词化轻动词还原
+    assert "优化了渲染流程" in polished
+    # 4. 公文书面词口语化
+    assert "比较落后" in polished
+    assert "没法按期交付" in polished
+    assert "靠技术升级来实现突破" in polished
+    assert "对其做全面排查" in polished
+
+    assert any("零回指" in f for f in fixes)
+    assert any("空转提示性冒号" in f for f in fixes)
+    assert any("恢复动词活力" in f for f in fixes)
+    assert any("公文书面词口语化" in f for f in fixes)
+
+
+def test_deterministic_polish_protects_dialogue_quotes():
+    raw_draft = """# 第三幕
+
+旁白评论道：这绝不是单纯的商业探索，而是全行业的一次豪赌。
+
+程警官冷冷地说：“这不是意外，而是故意谋杀！”
+
+> 引用文献指出：这并非巧合，而是历史发展的必然规律。"""
+
+    polished, fixes = deterministic_polish(raw_draft)
+
+    # 1. 未被引号保护的旁白评论被打破排比
+    assert "这并非单纯的商业探索，核心在于全行业的一次豪赌" in polished
+
+    # 2. 引号内的人物对白必须受到保护，禁止篡改
+    assert "“这不是意外，而是故意谋杀！”" in polished
+
+    # 3. 引用块受到保护，禁止篡改
+    assert "> 引用文献指出：这并非巧合，而是历史发展的必然规律。" in polished
 
 
 def test_evaluate_zhuque_result():

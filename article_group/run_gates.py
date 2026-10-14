@@ -439,8 +439,26 @@ def run_all_gates(
     }
 
 
+def build_anti_ai_gate(text: str, *, threshold: float = 45.0) -> dict[str, Any]:
+    """Run heuristic anti-AI quality gate over reader-facing article prose."""
+    from .anti_ai_gate import check_anti_ai
+
+    passed, report = check_anti_ai(text, threshold=threshold)
+    return {
+        "gate": "anti_ai_gate",
+        "pass": passed,
+        "total_score": report["total_score"],
+        "verdict": report["verdict"],
+        "threshold": threshold,
+        "opening_passed": report["opening_passed"],
+        "hit_phrases": report["hit_phrases"],
+        "hit_vocab": report["hit_vocab"],
+    }
+
+
 __all__ = [
     "COMPLIANCE_GATE_REASON",
+    "build_anti_ai_gate",
     "build_assertion_coverage_gate",
     "build_compliance_gate_record",
     "build_compliance_not_run_record",

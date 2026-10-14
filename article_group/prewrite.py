@@ -994,11 +994,12 @@ def validate_article_stage(
         return errors
 
     # Chinese character count from the actual Markdown file
+    # 2026-10-14 controller 裁决：取消硬上限，1500 字下限保持硬阻断不变
     md_path = (run_root / article["markdown_path"]).resolve()
     char_count = _article_chinese_char_count(md_path)
-    if not MIN_CJK_CHARS <= char_count <= MAX_CJK_CHARS:
+    if char_count < MIN_CJK_CHARS:
         errors.append(
-            f"article_{aid}_character_count_{char_count}_out_of_{MIN_CJK_CHARS}_{MAX_CJK_CHARS}"
+            f"article_{aid}_character_count_{char_count}_below_{MIN_CJK_CHARS}"
         )
 
     # Title length

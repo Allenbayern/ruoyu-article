@@ -39,24 +39,30 @@ CONVERSATIONAL_ENDINGS = [
     r"如果你也喜欢(这篇文章)?.*$",
 ]
 
-# High-risk clichés and deterministic replacements
+# High-risk clichés and deterministic removals/replacements
+# Grounded in 2.83M corpus research:
+# - Cut empty signposts directly instead of replacing with flip formulas like '说到底'
+# - Direct positive assertions have lower AI-tell rates than defensive/reframe openers
 CLICHE_REPLACEMENTS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"值得一提的是[，,]?"), ""),
     (re.compile(r"不可否认的是[，,]?"), ""),
     (re.compile(r"不可否认[，,]?"), ""),
     (re.compile(r"毋庸置疑[，,]?"), ""),
-    (re.compile(r"综上所述[，,]?"), "说到底，"),
-    (re.compile(r"总而言之[，,]?"), "说到底，"),
-    (re.compile(r"总的来说[，,]?"), "归齐来看，"),
-    (re.compile(r"由此可见[，,]?"), "这么一看，"),
+    (re.compile(r"综上所述[，,]?"), ""),
+    (re.compile(r"总而言之[，,]?"), ""),
+    (re.compile(r"总的来说[，,]?"), ""),
+    (re.compile(r"由此可见[，,]?"), ""),
     (re.compile(r"众所周知[，,]?"), ""),
-    (re.compile(r"不难发现[，,]?"), "明眼人都能看出来，"),
-    (re.compile(r"显而易见[，,]?"), "很明显，"),
-    (re.compile(r"归根结底[，,]?"), "说到底，"),
-    (re.compile(r"从某种意义上(说|讲)[，,]?"), "往深了看，"),
-    (re.compile(r"在当今社会[，,]?"), "如今这年月，"),
-    (re.compile(r"不仅如此[，,]?"), "更要命的是，"),
-    (re.compile(r"毫无疑问[，,]?"), "不用怀疑，"),
+    (re.compile(r"不难发现[，,]?"), ""),
+    (re.compile(r"显而易见[，,]?"), ""),
+    (re.compile(r"归根结底[，,]?"), ""),
+    (re.compile(r"从某种意义上(说|讲)[，,]?"), ""),
+    (re.compile(r"在当今社会[，,]?"), "如今，"),
+    (re.compile(r"不仅如此[，,]?"), ""),
+    (re.compile(r"毫无疑问[，,]?"), ""),
+    (re.compile(r"说白了[，,]?"), ""),
+    (re.compile(r"说穿了[，,]?"), ""),
+    (re.compile(r"先说结论[，,：:]?"), ""),
 ]
 
 # PR corporate buzzwords to simplify
@@ -72,6 +78,40 @@ BUZZWORD_REPLACEMENTS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"颠覆性"), "翻天覆地"),
 ]
 
+# Formal bureaucratic words to conversational plain Chinese (ported from HelpWriting / shuorenhua)
+FORMAL_REPLACEMENTS: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"较为(?=[\u4e00-\u9fff])"), "比较"),
+    (re.compile(r"无法(?=[\u4e00-\u9fff])"), "没法"),
+    (re.compile(r"能够(?=[\u4e00-\u9fff])"), "能"),
+    (re.compile(r"从而(?=[\u4e00-\u9fff])"), "这样就能"),
+    (re.compile(r"通过(?=[\u4e00-\u9fff]{2,8}(?:来|去|实现|达成|完成))"), "靠"),
+    (re.compile(r"进行(?=(?:深入|全面|系统|重点)?(?:分析|排查|梳理|对比|交涉|调查|沟通|探讨))"), "做"),
+]
+
+
+def _mask_protected_spans(text: str) -> tuple[str, list[str]]:
+    """Protect dialogue, blockquotes, and code blocks from overzealous regex alterations."""
+    spans: list[str] = []
+
+    def repl(m: re.Match) -> str:
+        idx = len(spans)
+        spans.append(m.group(0))
+        return f"__RUOYU_PROTECTED_SPAN_{idx}__"
+
+    # Protect code blocks, quoted speech, and markdown quotes
+    pattern = re.compile(
+        r"```[\s\S]*?```|[“\"][^”\"\n]{1,250}[”\"]|[「\'][^」\'\n]{1,250}[」\']|^>.*$",
+        re.M,
+    )
+    masked = pattern.sub(repl, text)
+    return masked, spans
+
+
+def _unmask_protected_spans(text: str, spans: list[str]) -> str:
+    for idx, span in enumerate(spans):
+        text = text.replace(f"__RUOYU_PROTECTED_SPAN_{idx}__", span)
+    return text
+
 
 def deterministic_polish(
     text: str,
@@ -81,14 +121,16 @@ def deterministic_polish(
     fixes: list[str] = []
     lines = text.splitlines()
 
-    # 1. Strip conversational endings from tail paragraphs
+    # 1. Strip conversational endings from tail paragraphs (preserving dialogue quotes)
     new_lines = []
     for line in lines:
         cleaned_line = line
-        for pat in CONVERSATIONAL_ENDINGS:
-            if re.search(pat, cleaned_line):
-                cleaned_line = re.sub(pat, "", cleaned_line).rstrip()
-                fixes.append(f"切除文末互动套话: {pat}")
+        # If line is pure dialogue quote, do not strip tail conversational endings
+        if not re.match(r"^\s*[“\"「\'].*[”\"」\']\s*$", cleaned_line):
+            for pat in CONVERSATIONAL_ENDINGS:
+                if re.search(pat, cleaned_line):
+                    cleaned_line = re.sub(pat, "", cleaned_line).rstrip()
+                    fixes.append(f"切除文末互动套话: {pat}")
         new_lines.append(cleaned_line)
     lines = new_lines
 
@@ -115,14 +157,18 @@ def deterministic_polish(
             cliche_match = re.match(r"^(近年来|随着.{1,20}的(发展|深入|推进|不断)|在.{1,20}的背景下|在当今|回顾.{1,10})[,，]?", first_para)
             if cliche_match:
                 stripped_para = first_para[cliche_match.end():].lstrip()
-                lines[first_para_idx] = f"{declared_hook}——{stripped_para}"
+                lines[first_para_idx] = f"{declared_hook}。{stripped_para}" if not declared_hook.endswith(("。", "！", "？", "…")) else f"{declared_hook}{stripped_para}"
                 fixes.append("替换首段宏观背景套话为极端动作破题钩子")
             elif declared_hook not in first_para and not any(t in first_para for t in re.findall(r"[\u4e00-\u9fff]{2,4}", declared_hook)):
                 lines[first_para_idx] = f"{declared_hook}\n\n{first_para}"
                 fixes.append("在首段前置注入动作破题钩子")
 
+    # Mask protected spans before body-level regex replacements
+    raw_body = "\n".join(lines)
+    masked_body, protected_spans = _mask_protected_spans(raw_body)
+    polished_text = masked_body
+
     # 3. Apply cliché and buzzword replacements in body
-    polished_text = "\n".join(lines)
     for pat, rep in CLICHE_REPLACEMENTS:
         matches = pat.findall(polished_text)
         if matches:
@@ -135,16 +181,66 @@ def deterministic_polish(
             polished_text = pat.sub(rep, polished_text)
             fixes.append(f"平替公关黑话 [{pat.pattern}] -> '{rep}' ({len(matches)}处)")
 
-    # 4. Break symmetric parallelisms: '不是...而是...'
-    # When found, split into two punchy sentences
+    for pat, rep in FORMAL_REPLACEMENTS:
+        matches = pat.findall(polished_text)
+        if matches:
+            polished_text = pat.sub(rep, polished_text)
+            fixes.append(f"公文书面词口语化 [{pat.pattern}] -> '{rep}' ({len(matches)}处)")
+
+    # 4. Break symmetric parallelisms: '不是...而是...' in unquoted commentary
     parallel_match = re.findall(r"不是([^，。；]+)[，,]而是([^，。；]+)", polished_text)
     if parallel_match:
         polished_text = re.sub(
             r"不是([^，。；]+)[，,]而是([^，。；]+)",
-            r"这绝非\1。真正的刀刃，恰恰卡在\2。",
+            r"这并非\1，核心在于\2。",
             polished_text,
         )
         fixes.append(f"打破对仗排比 (不是...而是...) ({len(parallel_match)}处)")
+
+    # 5. Eliminate in-body signpost colons (e.g. '核心是：' -> cut signpost,正面直陈)
+    signpost_colon_pat = re.compile(
+        r"(?:一句话(?:总结|说|概括)|简单说|说白了|总结|小结|结论|原因(?:如下|在于)?|问题(?:是|在于)?|本质(?:是|上)?|具体(?:来说|如下)?)[：:]"
+    )
+    sc_matches = signpost_colon_pat.findall(polished_text)
+    if sc_matches:
+        polished_text = signpost_colon_pat.sub("", polished_text)
+        fixes.append(f"清理正文空转提示性冒号 ({len(sc_matches)}处)")
+
+    # 6. Restore de-verbalized noun phrases (完成了对X的优化 -> 优化了X)
+    deverbal_matches = re.findall(r"完成(了)?对([^，。\n]{1,15})的(优化|改造|调整|升级)", polished_text)
+    if deverbal_matches:
+        polished_text = re.sub(
+            r"完成(了)?对([^，。\n]{1,15})的(优化|改造|调整|升级)",
+            r"\3\1\2",
+            polished_text,
+        )
+        fixes.append(f"恢复动词活力 (完成了对...的优化 -> 优化了...) ({len(deverbal_matches)}处)")
+
+    # 7. Fix paragraph-opening zero-anaphor comments (non-first body paragraphs)
+    paras = polished_text.split("\n\n")
+    fixed_paras = []
+    zero_anaphor_pat = re.compile(
+        r"^([ \t]*)(听起来|看起来|看上去|听上去|值得注意|不难看出|更重要的是|关键在于|问题在于)([^，。\n]{0,20}[，。])"
+    )
+    for p_idx, para in enumerate(paras):
+        st = para.strip()
+        if p_idx > 0 and st and not st.startswith(("#", "|", "```", ">", "-", "*", "1.")):
+            m = zero_anaphor_pat.match(para)
+            if m and not re.match(r"^[ \t]*(这|那|其|此|该|它)", para):
+                indent = m.group(1)
+                term = m.group(2)
+                rest = para[m.end(2):]
+                if term in ("听起来", "看起来", "看上去", "听上去"):
+                    fixed_paras.append(f"{indent}这{term}{rest}")
+                else:
+                    fixed_paras.append(f"{indent}这一点{term}{rest}")
+                fixes.append(f"补齐非首段零回指评论主语: '{term}' -> '这{term}'")
+                continue
+        fixed_paras.append(para)
+    polished_text = "\n\n".join(fixed_paras)
+
+    # Restore protected dialogue and quote spans
+    polished_text = _unmask_protected_spans(polished_text, protected_spans)
 
     return polished_text, fixes
 
@@ -205,9 +301,14 @@ def call_zhuque_check(text: str, split: bool = False, force: bool = True) -> dic
     web_cli = "/home/allen/.agents/skills/zhuque-detector/scripts/zhuque_cli.py"
     python_env = "/home/allen/Projects/ruoyu-film-daily/.venv-tools/bin/python"
     if os.path.exists(web_cli) and os.path.exists(python_env):
+        import tempfile
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".md", prefix="zhuque_input_")
         try:
-            cmd = [python_env, web_cli, "detect", "--text", text]
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+                f.write(text)
+
+            cmd = [python_env, web_cli, "detect", "--file", tmp_path]
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
             out = proc.stdout
             conf_match = re.search(r"AI 生成综合置信度[：:]\s*`?([\d.]+)%`?", out)
             conf = float(conf_match.group(1)) / 100.0 if conf_match else 0.10
@@ -250,6 +351,9 @@ def call_zhuque_check(text: str, split: bool = False, force: bool = True) -> dic
             }
         except Exception as e:
             return {"error": f"web_cli_fallback_failed: {e}"}
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
 
     return {"error": "all_zhuque_methods_failed"}
 
@@ -314,10 +418,10 @@ def perform_surgical_repair(
         # If sentence exists in text, perform targeted breaking and colloquial tone injection
         if target_s in repaired_text:
             replacement = target_s
-            # Break compound punctuation
+            # Break compound punctuation cleanly without AI tone clichés like "说白了"
             if "，" in replacement:
                 parts = replacement.split("，", 1)
-                replacement = f"{parts[0]}。说白了，{parts[1]}"
+                replacement = f"{parts[0]}。{parts[1]}"
             elif "、" in replacement:
                 replacement = replacement.replace("、", "还有")
 

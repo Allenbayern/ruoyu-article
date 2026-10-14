@@ -300,7 +300,8 @@ def validate_batch(batch: dict[str, Any], artifact_root: Path | None = None) -> 
                     continue
                 if field == "markdown_path":
                     character_count = _chinese_character_count(text)
-                    if not MIN_CJK_CHARS <= character_count <= MAX_CJK_CHARS:
+                    # 2026-10-14 controller 裁决：取消硬上限，1500 字下限保持硬阻断不变
+                    if character_count < MIN_CJK_CHARS:
                         errors.append(
                             f"markdown_character_count_out_of_range:{article_id}:{character_count}"
                         )

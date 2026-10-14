@@ -11,12 +11,16 @@ from typing import Any
 # 2026-09-16 controller ruling（历史）：字数要求允许 ±100 误差（下限 1000→900，
 # 上限 2700→2800），篇幅以素材为准。
 #
-# 2026-09-23 controller ruling（现行，取代上一条的下限口径）：1000 字出头的
+# 2026-09-23 controller ruling（历史）：1000 字出头的
 # 成稿在 taboo-topics-001 被连续判为"单薄、不够阅读性"，controller 明确要求
 # "增加些字数和阅读性"。下限由 900 提升到 1500（= 编辑目标下限），上限维持
 # 2800。反灌水原则不变：扩写必须来自横向维度（历史对照、同侪反差、行业机制、
 # 一手材料），不是同义反复凑字；素材确实撑不到 1500 字时，由 run profile 或
 # controller 显式放宽，而不是让门禁沉默放行（`RunProfile` 的两个字段即可覆盖）。
+#
+# 2026-10-14 controller ruling（现行）：文章字数取消硬上限——超过 2800 CJK 字
+# 只出提醒（advisory），不再判失败/阻断；1500 字下限保持硬阻断不变。防灌水
+# 交给 L2 复核。2800 作为提醒阈值（`SOFT_MAX_CJK_CHARS`）保留。
 TARGET_MIN_CJK_CHARS = 1500
 TARGET_MAX_CJK_CHARS = 2200
 # 弹性只保留在上限侧：下限弹性会让"薄稿"重新溜过门禁。
@@ -24,7 +28,8 @@ LOW_FLEX_MARGIN = 0
 HIGH_FLEX_MARGIN = 600
 CHAR_COUNT_FLEX_MARGIN = HIGH_FLEX_MARGIN  # 兼容既有引用（历史上是双侧弹性）
 MIN_CJK_CHARS = TARGET_MIN_CJK_CHARS + LOW_FLEX_MARGIN
-MAX_CJK_CHARS = TARGET_MAX_CJK_CHARS + HIGH_FLEX_MARGIN
+SOFT_MAX_CJK_CHARS = TARGET_MAX_CJK_CHARS + HIGH_FLEX_MARGIN  # 2800，超长提醒阈值 (advisory)
+MAX_CJK_CHARS = SOFT_MAX_CJK_CHARS  # 兼容既有 import 与引用，现作为提醒阈值别名
 
 
 @dataclass(frozen=True)
@@ -34,6 +39,8 @@ class RunProfile:
     slot_labels: tuple[str, ...]
     min_cjk_chars: int = MIN_CJK_CHARS
     max_cjk_chars: int = MAX_CJK_CHARS
+    soft_max_cjk_chars: int = SOFT_MAX_CJK_CHARS
+
 
 
 RUN_PROFILES: dict[str, RunProfile] = {

@@ -37,6 +37,7 @@
 - potential_primary_atom:
 - human_anchor:
 - conflict_emotion_gap:
+- killer_stance: （核心立论 ≥12字，严禁端水和稀泥；自检：靶子是谁/反差是什么/给读者什么结论）
 - reader_intent:
 - why_now:
 - risk_tags:

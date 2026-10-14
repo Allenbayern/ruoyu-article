@@ -10,6 +10,7 @@ import pytest
 
 from article_group.git_hygiene import validate_infra_ready
 from article_group.run_gates import (
+    build_anti_ai_gate,
     build_assertion_coverage_gate,
     build_compliance_gate_record,
     build_compliance_not_run_record,
@@ -359,3 +360,26 @@ def test_source_manifest_integrity_is_not_run_without_manifest(tmp_path: Path):
     report = check_source_manifest_integrity(tmp_path)
     assert report["status"] == "not_run", report
     assert report["reason"] == "source_manifest_missing"
+
+
+def test_build_anti_ai_gate_passes_and_fails():
+    bad_prose = (
+        "近年来，随着影视行业的高速发展，我们迎来了新时代。\n\n"
+        "首先，不可否认的是，该剧不仅在制作上精良，而且在主题上聚焦底层逻辑，打造了爆款闭环。\n"
+        "其次，毋庸置疑的是，演员的演技具有里程碑的意义。\n"
+        "最后，综上所述，由此可见，这是一部革命性的伟大作品。"
+    )
+    bad_res = build_anti_ai_gate(bad_prose, threshold=45.0)
+    assert bad_res["gate"] == "anti_ai_gate"
+    assert bad_res["pass"] is False
+    assert bad_res["opening_passed"] is False
+
+    good_prose = (
+        "上映第四天，票房直接腰斩到了 1800 万。张艺谋在首映礼上叹了一口气。\n\n"
+        "院线经理没再给面子，直接把黄金场次砍掉了七成。说白了，观众早就腻味了这种既要家国情怀又要流量明星的四不像配方——\n"
+        "你花三个亿做特效，转头却给女主角安排了一场在爆炸现场补口红的戏？离谱。\n"
+        "如果连最基础的物理常识都能在绿幕前被轻易抹平，所谓的工业化，不过是一场昂贵的自嗨。"
+    )
+    good_res = build_anti_ai_gate(good_prose, threshold=45.0)
+    assert good_res["pass"] is True
+    assert good_res["verdict"] == "PASS"

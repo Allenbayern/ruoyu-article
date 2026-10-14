@@ -112,9 +112,10 @@ Full write-up: `docs/dsh/editorial-redlines-2026-09-23.md`.
   framing sentences are never exempt. Known limit, not hidden: a skilfully vague draft can
   still slip the regex — the real defence is the selection-stage stance below.
 - **Length floor is 1500 CJK, not 900** (2026-09-23 controller ruling, superseding the
-  2026-09-16 lower-bound ruling; upper bound stays 2800). Elasticity remains on the upper
-  side only. The anti-padding rule is unchanged: expand along real dimensions (historical
+  2026-09-16 lower-bound ruling; 2026-10-14 controller 裁决：无硬上限，超过 2800 仅提醒；下限 1500 不变).
+  The anti-padding rule is unchanged: expand along real dimensions (historical
   contrast, peer contrast, industry mechanism, first-hand material) — never 同义反复凑字.
+  防灌水交给 L2 复核。
   Genuinely thin material must be released explicitly via `RunProfile.min_cjk_chars` or a
   controller decision, not by letting the gate pass silently. `style_gate.depth_floor_check`
   surfaces the same floor at draft self-check time.
@@ -133,6 +134,9 @@ Full write-up: `docs/dsh/editorial-redlines-2026-09-23.md`.
   acquire anachronistic props; (3) no asserting inner motives without first-hand material;
   (4) balancing-only pieces are `needs_changes`; (5) declared anchors/numbers must be visible
   in the body, and an abstract-only treatment is `needs_changes`.
+- **全量默认对齐解说文风偏好档案 (2026-10-10 更新)**：所有文章生产（无论是单篇直出还是完整管线运行），**默认且必须**继承 12 篇定稿母本提炼的统一文风（9大喜欢+7大避免）。严禁八股影评引子与对仗机器腔。**此为默认行为，不需要用户在每次任务中由用户显式声明或提示。**
+- **微信长文默认套用「若雨随影 2026-10-12 定稿摸鱼绿杂志风模板」(2026-10-13 强制，2026-10-14 纯净首屏与5篇推荐升级)**：所有文章交付时默认且必须调用 `article_group/moyu_green_renderer.py`（规范见 `docs/dsh/moyu-green-wechat-spec-2026-10-12.md`）生成 `wechat/body.html`、`wechat/preview.html`、`wechat/delivery.md` 并通过 `validate_moyu_green_html` 红线校验。**交付规格严格固定为**：① **纯净首屏模式（Mode B）**：彻底移除正文顶部二次重复的大封面卡片（`include_cover_card=False` 默认生效），首屏由名片区与正文故事直接切入，避免与微信原生标题机械重复吃屏；② **往期推荐固定为 5 篇**（由原 2 篇扩充为 5 篇阶梯式推荐）；③ 关注引导建议在微信后台插入官方原生公众号名片卡实现真点击。**交付时仅提供 DSH 侧边栏本地文件直达（绝对路径）链接，不需要输出或发布 8899 静态服务在线预览页。此为默认交付行为，无需用户每次重复下达排版指令。**
+- **正文不配 AI 生成插图（controller 2026-10-13 定，强制）**：影视长文/公众号文章**正文不得使用 AI 生成插图**——AI 配图会被平台与读者判定为低质。推论四条：① **「图注数 = 0」是合法交付形态**，不得因"没有配图"判 fail 或列为 major；② `scripts/dsh_dna_auto_engine.py` 的配图密度红线（`chars_per_img > 450`）对零图稿不适用，零图既不加分也不记 violation；③ 真正必须拦的是**图注死链**——正文出现 `![...](images/x.jpg)` 而 run 内不存在该文件时 blocking（是存在性检查，不是最低配图数）；④ 需要视觉元素时走**非生成式**路径（已登记来源的真实剧照/官方物料，或纯排版手段如封面大卡、金句卡），封面图仍按 Vault《DSH 出图规范》的"非生成式增强、禁止生成式重绘人脸"执行。已生产的 AI 插图不得接入交付物，撤出时用 `evidence_write.append_changelog` 逐张销账留痕。
 
 ### Pre-draft uncertainty review sheet (repo-operational, 2026-09-25)
 

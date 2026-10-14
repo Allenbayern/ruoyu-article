@@ -508,3 +508,38 @@ def test_declaring_too_few_sensory_anchors_is_an_error():
     pack = {"sensory_anchors": ["屏风暗室"]}
     errors = validate_sensory_anchors(pack, "屏风暗室", article_id="art-002")
     assert "article_art-002_sensory_anchors_below_minimum_1_3" in errors
+
+
+def test_validate_draft_artifacts_character_count_allows_over_2800(tmp_path: Path):
+    """2026-10-14 controller 裁决：3500 字草稿不再报错，1400 字草稿仍报错。"""
+    from article_group.prewrite import validate_article_stage
+    import json
+
+    article = {
+        "article_id": "art-001",
+        "slot": "A",
+        "markdown_path": "drafts/art-001.md",
+        "evidence_pack_path": "evidence/art-001.json",
+        "writing_brief_path": "briefs/art-001.md",
+        "title": "测试文章标题不超三十字",
+        "claim_coverage": "complete",
+        "claim_mappings": [{"claim": "核心断言", "section": "第一节"}],
+        "concrete_support_types": ["primary_source", "data_point"],
+    }
+    (tmp_path / "evidence").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "briefs").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "drafts").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "evidence" / "art-001.json").write_text(json.dumps({}), encoding="utf-8")
+    (tmp_path / "briefs" / "art-001.md").write_text("# brief", encoding="utf-8")
+
+    # 1400 字：必须报错
+    (tmp_path / "drafts" / "art-001.md").write_text("# 标题\n\n核心断言\n\n" + "正" * 1394, encoding="utf-8")
+    errors_1400 = validate_article_stage(article, {"核心断言"}, tmp_path)
+    assert any("character_count" in err for err in errors_1400)
+
+    # 3500 字：不应因字数报错
+    (tmp_path / "drafts" / "art-001.md").write_text("# 标题\n\n核心断言\n\n" + "正" * 3494, encoding="utf-8")
+    errors_3500 = validate_article_stage(article, {"核心断言"}, tmp_path)
+    assert not any("character_count" in err for err in errors_3500)
+
+

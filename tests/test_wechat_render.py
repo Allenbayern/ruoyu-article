@@ -352,3 +352,15 @@ def test_no_cache_forces_a_rerender(tmp_path):
     assert forced["cache"]["enabled"] is False
     assert forced["cache"]["misses"] == 1
     assert _render_calls(counter) == 2
+
+
+def test_render_with_local_engine(tmp_path):
+    root = _run_with_deliveries(tmp_path, ARTICLE)
+    report = render_run(root, renderer_cmd="local")
+    assert report["status"] == "ok"
+    assert len(report["articles"]) == 1
+    entry = report["articles"][0]
+    assert entry["renderer_cmd"] == "local:ruoyu-cinema"
+    html_page = (root / entry["copy_page_path"]).read_text(encoding="utf-8")
+    assert "姜文为什么一部比一部拧巴" in html_page
+    assert "copyArticle()" in html_page

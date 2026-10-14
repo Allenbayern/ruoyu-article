@@ -207,6 +207,30 @@ def test_markdown_review_evidence_rejects_cjk_count_outside_flexible_band(tmp_pa
     assert any(error.startswith("markdown_evidence_cjk_count_out_of_range:art-001:") for error in errors)
 
 
+def test_markdown_review_evidence_accepts_articles_above_soft_max(tmp_path: Path):
+    """2026-10-14 controller 裁决：3500 字稿件不再报 cjk_count_out_of_range 错误。"""
+    _write_markdown(tmp_path, "drafts/art-001.md", "# 标题\n\n" + "事实" * 1750 + "\n")
+    articles = [_article("art-001", "drafts/art-001.md")]
+    payload = build_markdown_review_evidence(tmp_path, articles)
+
+    errors = validate_markdown_review_evidence(payload, tmp_path, articles)
+
+    assert not any(error.startswith("markdown_evidence_cjk_count_out_of_range") for error in errors)
+
+
+def test_markdown_review_evidence_still_rejects_1400_chars(tmp_path: Path):
+    """2026-10-14 controller 裁决：1400 字（低于 1500）仍阻断报错。"""
+    _write_markdown(tmp_path, "drafts/art-001.md", "# 标\n\n" + "事" * 1399 + "\n")
+    articles = [_article("art-001", "drafts/art-001.md")]
+    payload = build_markdown_review_evidence(tmp_path, articles)
+
+    errors = validate_markdown_review_evidence(payload, tmp_path, articles)
+
+    assert any(error.startswith("markdown_evidence_cjk_count_out_of_range:art-001:1400") for error in errors)
+
+
+
+
 def test_markdown_review_evidence_rejects_one_draft_bound_to_two_articles(tmp_path: Path):
     _write_markdown(tmp_path, "drafts/art-001.md", "# 标题\n\n" + "事实" * 600 + "\n")
     articles = [

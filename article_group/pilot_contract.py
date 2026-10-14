@@ -23,7 +23,8 @@ inherits before-images, append-only changelog entries, and sealed-run guards.
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
+from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -91,7 +92,11 @@ ROLE_DEFINITIONS: dict[str, dict[str, Any]] = {
         "label": "Quality / L2 Reviewer",
         "responsibility": "执行确定性门禁并以独立只读会话完成对抗性复核。",
         "inputs": ["draft.md", "fact-card.json", "任务卡", "既有 gate 产物"],
-        "outputs": ["gate reports", "independent-review.json", "findings"],
+        "outputs": [
+            "gate reports",
+            "review/l2-adversarial-review.json (由独立复核会话通过 `uv run python -m article_group.pilot_contract record-l2 --run-root <root> --review-json <path> --reviewer <role> --reviewer-session-id <id>` 录入)",
+            "findings",
+        ],
         "forbidden": ["直接改稿", "把 warning 伪装为 pass", "授予发布权"],
     },
 }
@@ -478,6 +483,28 @@ def record_handoff(
     if artifact_status not in ALLOWED_ARTIFACT_STATUSES:
         raise PilotContractError(f"unknown_artifact_status:{artifact_status}")
 
+    # 追加范围 A：output_refs / artifact_refs / decision_ref 必须指向 run 内真实存在的文件
+    for ref_key, ref_list in (("output_refs", output_refs), ("artifact_refs", artifact_refs)):
+        for ref in ref_list:
+            if ".." in ref:
+                raise PilotContractError(f"ref_path_traversal:{ref_key}:{ref}")
+            target_f = (root / ref).resolve()
+            if not target_f.is_relative_to(root.resolve()):
+                raise PilotContractError(f"ref_path_traversal:{ref_key}:{ref}")
+            if not target_f.is_file():
+                raise PilotContractError(f"ref_file_missing:{ref_key}:{ref}")
+
+    dec_ref = data.get("decision_ref")
+    if dec_ref:
+        dec_str = str(dec_ref).strip()
+        if ".." in dec_str:
+            raise PilotContractError(f"ref_path_traversal:decision_ref:{dec_str}")
+        target_dec = (root / dec_str).resolve()
+        if not target_dec.is_relative_to(root.resolve()):
+            raise PilotContractError(f"ref_path_traversal:decision_ref:{dec_str}")
+        if not target_dec.is_file():
+            raise PilotContractError(f"decision_ref_file_missing:{dec_str}")
+
     if stage == "planning" and status == "complete":
         ev_rec = _stage_record(root, "evidence")
         if ev_rec.get("human_material_approved") is False or data.get("human_material_approved") is False:
@@ -517,18 +544,27 @@ def record_handoff(
             raise PilotContractError("l2_review_artifact_required:quality_review")
 
         det_file = root / "review" / "deterministic-gates.json"
-        if det_file.is_file():
-            det_payload = _json_load(det_file) or {}
-            det_stat = det_payload.get("deterministic_gates") or det_payload.get("overall")
-            if det_stat != "pass":
-                raise PilotContractError("deterministic_gates_file_failed:quality_review")
+        if not det_file.is_file():
+            raise PilotContractError("det_gates_artifact_missing:quality_review")
+        det_payload = _json_load(det_file) or {}
+        det_stat = det_payload.get("deterministic_gates") or det_payload.get("overall")
+        if det_stat != "pass":
+            raise PilotContractError("deterministic_gates_file_failed:quality_review")
 
         l2_file = root / "review" / "l2-adversarial-review.json"
-        if l2_file.is_file():
-            l2_payload = _json_load(l2_file) or {}
-            l2_val = validate_and_normalize_l2_review(l2_payload)
-            if not l2_val["valid"] or l2_val["effective_decision"] != "approve":
-                raise PilotContractError(f"l2_contract_violation:{','.join(l2_val['errors'])}")
+        if not l2_file.is_file():
+            raise PilotContractError("l2_review_artifact_missing:quality_review")
+        l2_payload = _json_load(l2_file) or {}
+        l2_val = validate_and_normalize_l2_review(l2_payload)
+        if not l2_val["valid"] or l2_val["effective_decision"] != "approve":
+            raise PilotContractError(f"l2_contract_violation:{','.join(l2_val['errors'])}")
+
+        draft_file = root / "draft.md"
+        if draft_file.is_file():
+            current_draft_sha = hashlib.sha256(draft_file.read_bytes()).hexdigest()
+            reviewed_sha = str(l2_payload.get("reviewed_draft_sha256") or "").strip()
+            if not reviewed_sha or reviewed_sha != current_draft_sha:
+                raise PilotContractError("stale_l2_review:hash_mismatch")
 
         # 验证标题是否在冻结后被偷偷篡改
         title_to_verify = str(data.get("selected_title") or "").strip()
@@ -656,7 +692,9 @@ def validate_run(project_root: str | Path, run_root: str | Path) -> dict[str, An
         if quality.get("deterministic_gates") != "pass":
             errors.append("quality_review:deterministic_gates_not_pass")
         det_file = root / "review" / "deterministic-gates.json"
-        if det_file.is_file():
+        if not det_file.is_file():
+            errors.append("quality_review:det_gates_artifact_missing")
+        else:
             det_payload = _json_load(det_file) or {}
             det_stat = det_payload.get("deterministic_gates") or det_payload.get("overall")
             if det_stat != "pass":
@@ -666,13 +704,38 @@ def validate_run(project_root: str | Path, run_root: str | Path) -> dict[str, An
         if not quality.get("artifact_refs"):
             errors.append("quality_review:l2_artifact_missing")
         l2_file = root / "review" / "l2-adversarial-review.json"
-        if l2_file.is_file():
+        if not l2_file.is_file():
+            errors.append("quality_review:l2_review_artifact_missing")
+        else:
             l2_payload = _json_load(l2_file) or {}
             l2_val = validate_and_normalize_l2_review(l2_payload)
             if not l2_val["valid"]:
                 errors.extend(f"quality_review:l2_schema:{e}" for e in l2_val["errors"])
             if l2_val["effective_decision"] != "approve":
                 errors.append(f"quality_review:l2_file_decision_is_{l2_val['effective_decision']}")
+            draft_file = root / "draft.md"
+            if draft_file.is_file():
+                current_draft_sha = hashlib.sha256(draft_file.read_bytes()).hexdigest()
+                reviewed_sha = str(l2_payload.get("reviewed_draft_sha256") or "").strip()
+                if not reviewed_sha or reviewed_sha != current_draft_sha:
+                    errors.append("quality_review:stale_l2_review")
+
+    # 缺陷 5：检查 gate-registry-report.json 陈旧度
+    reg_file = root / "review" / "gate-registry-report.json"
+    if reg_file.is_file():
+        reg_payload = _json_load(reg_file) or {}
+        draft_file = root / "draft.md"
+        if draft_file.is_file():
+            curr_d_sha = hashlib.sha256(draft_file.read_bytes()).hexdigest()
+            reg_d_sha = str(reg_payload.get("draft_sha256") or "").strip()
+            if reg_d_sha and reg_d_sha != curr_d_sha:
+                errors.append("gate_registry:stale_gate_registry_report:draft_hash_mismatch")
+        l2_file = root / "review" / "l2-adversarial-review.json"
+        if l2_file.is_file():
+            curr_l2_sha = hashlib.sha256(l2_file.read_bytes()).hexdigest()
+            reg_l2_sha = str(reg_payload.get("l2_file_sha256") or "").strip()
+            if reg_l2_sha and reg_l2_sha != curr_l2_sha:
+                errors.append("gate_registry:stale_gate_registry_report:l2_hash_mismatch")
 
     bind_res = verify_artifact_hash_bindings(root)
     if not bind_res["passed"]:
@@ -705,8 +768,6 @@ def validate_run(project_root: str | Path, run_root: str | Path) -> dict[str, An
         "first_failure_stage": first_failure,
         "validated_at": _now(),
     }
-    _write_json(root, "pilot-validation.json", report, "pilot:validate")
-    _refresh_run_record(root)
     return report
 
 
@@ -858,7 +919,11 @@ def advance_pipeline(
             return {
                 "ok": True,
                 "next_gate": "l2_adversarial_review",
-                "message": "确定性门禁已全绿，等待独立只读会话执行 L2 对抗复核签发 approve",
+                "message": (
+                    "确定性门禁已全绿，等待独立只读会话完成 L2 对抗复核并录入：请运行 "
+                    f"`uv run python -m article_group.pilot_contract record-l2 --run-root {root} "
+                    "--review-json <path> --reviewer <role> --reviewer-session-id <id>` 录入复核结论并推进"
+                ),
                 "actions_taken": actions_taken,
             }
 
@@ -897,7 +962,8 @@ def advance_pipeline(
     if stages.get("delivery") != "complete":
         delivery_dir = root / "delivery" / "art-001"
         delivery_dir.mkdir(parents=True, exist_ok=True)
-        (delivery_dir / "delivery.md").write_bytes(draft_path.read_bytes())
+        delivery_file = delivery_dir / "delivery.md"
+        write_evidence(delivery_file, draft_path.read_bytes(), run_dir=root, reason="advance:delivery_file", author=author)
         record_handoff(
             project_root,
             root,
@@ -933,10 +999,26 @@ def advance_pipeline(
             "run_root": str(root),
         }
 
+    is_sealed = (root / "SEALED").is_file() and (root / "SEALED.manifest.json").is_file()
+    if not is_sealed:
+        try:
+            seal_pilot_run(project_root, root, signer=author)
+            actions_taken.append("run_sealed")
+            is_sealed = True
+        except Exception:
+            is_sealed = False
+
+    if is_sealed:
+        return {
+            "ok": True,
+            "next_gate": "completed_and_sealed",
+            "message": "当前 run 已处于完全交付与封存状态",
+            "actions_taken": actions_taken,
+        }
     return {
-        "ok": True,
-        "next_gate": "completed_and_sealed",
-        "message": "当前 run 已处于完全交付与封存状态",
+        "ok": False,
+        "next_gate": "delivery",
+        "message": "当前 run 尚未完成封存 (SEALED 缺失)",
         "actions_taken": actions_taken,
     }
 
@@ -984,6 +1066,93 @@ def record_metric(project_root: str | Path, run_root: str | Path, kind: str, val
     existing["updated_at"] = _now()
     _write_json(root, "pilot-metrics.json", existing, "pilot:metric")
     return {"ok": True, "metric": events[-1], "event_count": len(events), "run_root": str(root)}
+
+
+def record_l2_review(
+    run_root: str | Path,
+    review_json_path: str | Path,
+    reviewer: str,
+    reviewer_session_id: str,
+) -> dict[str, Any]:
+    """录入独立对抗复核子代理结论：
+    - 自动计算当前 draft.md 的 SHA-256 并注入 reviewed_draft_sha256；
+    - 自动依据历史归档与当前文件计算递增轮次 attempt；
+    - 注入 created_at 与 reviewer/reviewer_session_id；
+    - 校验 review-json 必含 decision 与 findings；
+    - 通过 save_l2_review_with_history 先归档上一轮再写入当前轮；
+    - 已封存 run 拒绝写入。
+    """
+    from .pilot_extensions import save_l2_review_with_history
+
+    root = Path(run_root).resolve()
+    if not root.is_dir():
+        raise PilotContractError(f"run_root_not_found:{root}")
+
+    if (root / "SEALED").is_file():
+        raise PilotContractError("run_sealed:cannot_record_l2_on_sealed_run")
+
+    draft_path = root / "draft.md"
+    if not draft_path.is_file():
+        raise PilotContractError("draft_file_missing:cannot_record_l2_without_draft")
+
+    rev_p = Path(review_json_path).resolve()
+    if not rev_p.is_file():
+        raise PilotContractError(f"review_json_not_found:{rev_p}")
+
+    try:
+        raw_payload = json.loads(rev_p.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise PilotContractError(f"invalid_review_json:{exc}")
+
+    if not isinstance(raw_payload, dict):
+        raise PilotContractError("review_payload_must_be_dict")
+
+    if "decision" not in raw_payload:
+        raise PilotContractError("missing_review_field:decision")
+    if "findings" not in raw_payload:
+        raise PilotContractError("missing_review_field:findings")
+
+    # 自动计算当前 draft 的哈希
+    draft_sha256 = hashlib.sha256(draft_path.read_bytes()).hexdigest()
+
+    # 自动计算 attempt 轮次：扫描 review/l2-history/attempt-*.json 与当前文件的 attempt
+    history_dir = root / "review" / "l2-history"
+    attempts = [0]
+    if history_dir.is_dir():
+        for f in history_dir.glob("attempt-*.json"):
+            m = re.match(r"attempt-(\d+)\.json", f.name)
+            if m:
+                attempts.append(int(m.group(1)))
+    curr_l2 = root / "review" / "l2-adversarial-review.json"
+    if curr_l2.is_file():
+        try:
+            curr_data = json.loads(curr_l2.read_text(encoding="utf-8"))
+            if isinstance(curr_data.get("attempt"), int):
+                attempts.append(curr_data["attempt"])
+        except Exception:
+            pass
+    next_attempt = max(attempts) + 1
+
+    # 组装完整合规的 L2 payload
+    l2_payload = dict(raw_payload)
+    l2_payload["reviewer"] = str(reviewer).strip()
+    l2_payload["reviewer_session_id"] = str(reviewer_session_id).strip()
+    l2_payload["reviewed_draft_sha256"] = draft_sha256
+    l2_payload["attempt"] = next_attempt
+    l2_payload["created_at"] = datetime.now(timezone.utc).isoformat()
+
+    # 调用 save_l2_review_with_history 归档上一轮并保存当前轮
+    save_l2_review_with_history(root, l2_payload, author=reviewer)
+    _refresh_run_record(root)
+
+    return {
+        "ok": True,
+        "run_root": str(root),
+        "attempt": next_attempt,
+        "reviewed_draft_sha256": draft_sha256,
+        "decision": l2_payload.get("decision"),
+        "l2_review": l2_payload,
+    }
 
 
 def role_brief(role: str) -> dict[str, Any]:
@@ -1061,6 +1230,12 @@ def _parser() -> argparse.ArgumentParser:
     image.add_argument("--caption", default="")
     image.add_argument("--insert", action="store_true")
     image.add_argument("--position", default="after_title")
+
+    rec_l2 = sub.add_parser("record-l2", help="录入独立对抗复核子代理结论并归档历史")
+    rec_l2.add_argument("--run-root", required=True)
+    rec_l2.add_argument("--review-json", required=True)
+    rec_l2.add_argument("--reviewer", required=True)
+    rec_l2.add_argument("--reviewer-session-id", required=True)
     return parser
 
 
@@ -1080,6 +1255,14 @@ def main(argv: list[str] | None = None) -> int:
             )
         elif args.command == "validate":
             result = validate_run(args.project_root, args.run_root)
+            root = _run_root(args.project_root, args.run_root)
+            if (root / "SEALED").is_file():
+                result["report_persisted"] = False
+                result["report_persist_skip_reason"] = "run_sealed"
+            else:
+                _write_json(root, "pilot-validation.json", result, "pilot:validate")
+                _refresh_run_record(root)
+                result["report_persisted"] = True
         elif args.command == "metric":
             value: Any = args.value
             if value is not None:
@@ -1139,10 +1322,25 @@ def main(argv: list[str] | None = None) -> int:
                 include_case_ref=not args.no_case_ref,
                 sessions_dir=args.sessions_dir,
             )
+        elif args.command == "record-l2":
+            result = record_l2_review(
+                args.run_root,
+                args.review_json,
+                args.reviewer,
+                args.reviewer_session_id,
+            )
         else:
             result = role_brief(args.role)
-    except (PilotContractError, ValueError, OSError, UnicodeError) as exc:
-        result = {"ok": False, "error": str(exc)}
+    except Exception as exc:
+        result = {"ok": False, "error": str(exc), "error_type": type(exc).__name__}
+        cmd = getattr(args, "command", None)
+        if cmd == "validate":
+            result.update({
+                "status": "BLOCKED",
+                "run_completed": False,
+                "artifact_ready": False,
+                "errors": [str(exc)],
+            })
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 2
     print(json.dumps(result, ensure_ascii=False, indent=2))

@@ -14,6 +14,10 @@ import json
 import sys
 from typing import Any
 
+from article_group.prompts.human_fingerprints import (
+    get_human_fingerprints_instruction,
+)
+
 STRUCTURES = {
     "contrarian": {
         "name": "逆向认知 (Contrarian)",
@@ -166,13 +170,14 @@ def build_skeleton(
             "suggested_hook": hook_clean,
         },
         "sections": steps_with_targets,
+        "human_fingerprints_instruction": get_human_fingerprints_instruction(topic),
     }
 
 
 def format_skeleton_markdown(data: dict[str, Any]) -> str:
     """Format skeleton data into standard Markdown brief."""
     lines = [
-        f"# 文章策划分镜骨架：{data['topic']}",
+        f"# 文章策写真分镜骨架：{data['topic']}",
         f"\n- **结构形态**：{data['structure_name']} (`{data['structure_type']}`)",
         f"- **核心锋芒立论 (Killer Stance)**：{data['killer_stance']} {'✅' if data['stance_valid'] else '⚠️ (注意：立论过软或偏端水)'}",
         f"- **开篇反差钩子 (Opening Hook)**：{data.get('opening_hook', '未指定')}",
@@ -187,6 +192,9 @@ def format_skeleton_markdown(data: dict[str, Any]) -> str:
     for s in data["sections"]:
         anchor_note = f"📌 {s['anchor_slot']}" if s["anchor_slot"] else "—"
         lines.append(f"| {s['act']} | {s['description']} | ~{s['target_cjk_words']} 字 | {anchor_note} |")
+
+    if data.get("human_fingerprints_instruction"):
+        lines.append(f"\n{data['human_fingerprints_instruction']}")
 
     return "\n".join(lines)
 

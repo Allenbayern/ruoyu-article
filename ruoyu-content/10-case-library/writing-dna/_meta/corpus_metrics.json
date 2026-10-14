@@ -1,0 +1,13 @@
+{
+  "total_articles": 154,
+  "total_clean_chars": 336222,
+  "para_median": 24.0,
+  "para_mean": 39.8,
+  "sent_median": 21,
+  "sent_mean": 24.9,
+  "short_sent_pct": 34.4,
+  "mid_sent_pct": 43.9,
+  "long_sent_pct": 21.7,
+  "chars_per_img": 201.9,
+  "bolds_per_1k": 2.77
+}

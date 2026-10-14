@@ -69,6 +69,17 @@ _SENSATIONAL_PATTERNS = (
     (re.compile(r"反转|惊天|骇人听闻|匪夷所思"), "shock_bait"),
 )
 
+# WeChat/Self-media forbidden/high-risk clickbait & sensationalism terms (ported from HelpWriting)
+WECHAT_TITLE_FORBIDDEN_WORDS: tuple[str, ...] = (
+    "一文读懂", "赶紧学", "建议收藏", "深度好文", "AI新时代", "未来已来",
+    "万字长文", "超全攻略", "全网最全", "保姆级", "手把手教学", "吐血推荐",
+    "必看", "必读", "错过就亏了", "太牛了", "炸裂", "逆天",
+)
+
+WECHAT_CONTENT_EXTREME_WORDS: tuple[str, ...] = (
+    "登顶", "碾压", "颠覆", "跪求", "绝了",
+)
+
 # Predefined compliant angles for CONDITIONAL candidates. 建议角度库：
 # 当某一门为 CONDITIONAL 时优先推荐对应角度。
 PREDEFINED_ANGLES = [
@@ -222,6 +233,8 @@ def _grade_gate_sensationalism(text: str) -> str:
         "震惊", "爆炸", "巨大反转", "意外转折", "没想到",
         "揭秘", "真相", "内幕", "不得不看",
         "血泪", "悲惨", "凄凉",
+        *WECHAT_TITLE_FORBIDDEN_WORDS,
+        *WECHAT_CONTENT_EXTREME_WORDS,
     )
     if any(p in text for p in conditional_phrases):
         return GRADE_CONDITIONAL
@@ -466,6 +479,24 @@ def scan_social_redlines(text: str) -> list[str]:
     return hits
 
 
+def check_wechat_forbidden_terms(title: str = "", text: str = "") -> list[str]:
+    """Check WeChat self-media forbidden/clickbait terms in title and body.
+
+    Returns a list of warning strings identifying matching forbidden words.
+    """
+    warnings: list[str] = []
+    if title:
+        found_title = [w for w in WECHAT_TITLE_FORBIDDEN_WORDS if w in title]
+        if found_title:
+            warnings.append(f"title_forbidden_words: {', '.join(found_title)}")
+    combined_text = f"{title} {text}".strip()
+    if combined_text:
+        found_extreme = [w for w in WECHAT_CONTENT_EXTREME_WORDS if w in combined_text]
+        if found_extreme:
+            warnings.append(f"content_extreme_words: {', '.join(found_extreme)}")
+    return warnings
+
+
 __all__ = [
     "GRADE_PASS",
     "GRADE_CONDITIONAL",
@@ -473,6 +504,9 @@ __all__ = [
     "VALID_GRADES",
     "GATE_KEYS",
     "PREDEFINED_ANGLES",
+    "WECHAT_TITLE_FORBIDDEN_WORDS",
+    "WECHAT_CONTENT_EXTREME_WORDS",
+    "check_wechat_forbidden_terms",
     "grade_five_gates",
     "crosscheck_five_gates",
     "suggest_compliant_angles",

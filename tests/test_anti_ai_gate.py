@@ -4,6 +4,7 @@ from article_group.anti_ai_gate import (
     check_opening_hook,
     score_burstiness,
     score_phrases,
+    score_punctuation_flatness,
     score_vocab,
     split_sentences,
     strip_markdown,
@@ -57,6 +58,22 @@ def test_ai_vocab_detection():
     score, det = score_vocab(jargon_text)
     assert det["total_hits"] >= 5
     assert score >= 50.0
+
+
+def test_punctuation_em_dash_penalized():
+    # 破折号过多（DeepSeek AI 味体征，>=3/千字）
+    dash_heavy_text = "答案其实很简单——专注。他找到了一条路——一条所有人都忽略的路。真正的结果——是所有人都没有想到的。"
+    score, det = score_punctuation_flatness(dash_heavy_text)
+    assert det["em_dash_count"] == 3
+    assert det["em_dash_density_1k"] > 2.5
+    # 高破折号不应享受人味加分，且应被施加惩罚
+    assert score >= 50.0
+
+    # 包含设问问号的人类风味文案
+    question_text = "为什么票房会突然腰斩？所有人都在找答案。但真的只是宣发的问题吗？显然不是。"
+    score_q, det_q = score_punctuation_flatness(question_text)
+    assert det_q["flavor_points"] >= 4
+    assert score_q <= 30.0
 
 
 def test_burstiness_evaluation():
@@ -114,3 +131,22 @@ def test_check_anti_ai_overall():
     assert passed_human
     assert report_human["verdict"] == "PASS"
     assert report_human["opening_passed"]
+    assert report_human["paragraph_passed"]
+
+
+def test_check_paragraph_length():
+    from article_group.anti_ai_gate import check_paragraph_length
+
+    # 短段落通过
+    short_text = "第一段很短，正常阅读体验。\n\n第二段也不长，阅读节奏明快。"
+    res_short = check_paragraph_length(short_text, max_chars=180)
+    assert res_short["passed"] is True
+    assert res_short["count"] == 0
+
+    # 超长段落（>180字符）报警
+    long_p = "这是一段非常冗长的正文内容，作者没有在任何合适的位置进行换行或者分段，导致整整大几百字全部堆叠在一起。" * 4
+    long_text = f"# 标题\n\n{long_p}\n\n普通短段落。"
+    res_long = check_paragraph_length(long_text, max_chars=180)
+    assert res_long["passed"] is False
+    assert res_long["count"] == 1
+    assert res_long["long_paragraphs"][0]["length"] > 180

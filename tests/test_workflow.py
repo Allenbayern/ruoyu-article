@@ -429,6 +429,28 @@ def test_markdown_character_count_accepts_the_flexible_target_band(tmp_path: Pat
     assert validate_batch(batch, tmp_path) == []
 
 
+def test_markdown_character_count_accepts_articles_above_soft_max_without_blocking(tmp_path: Path):
+    """2026-10-14 controller 裁决：取消硬上限，3500 字稿件不再失败。"""
+    batch = valid_batch()
+    materialize_artifacts(batch, tmp_path)
+    markdown = tmp_path / batch["articles"][0]["markdown_path"]
+    markdown.write_text("正文中的可验证主张" + "文" * 3491, encoding="utf-8")
+
+    assert validate_batch(batch, tmp_path) == []
+
+
+def test_markdown_character_count_still_rejects_under_1500_chars(tmp_path: Path):
+    """2026-10-14 controller 裁决：1500 字下限保持硬阻断不变，1400 字仍失败。"""
+    batch = valid_batch()
+    materialize_artifacts(batch, tmp_path)
+    markdown = tmp_path / batch["articles"][0]["markdown_path"]
+    markdown.write_text("正文中的可验证主张" + "文" * 1391, encoding="utf-8")
+
+    errors = validate_batch(batch, tmp_path)
+    assert any("markdown_character_count_out_of_range" in err for err in errors)
+
+
+
 def test_review_ready_can_return_for_scoped_repair():
     validate_transition("R8 review-ready", "H3 needs-revision")
 

@@ -130,13 +130,16 @@ def score_burstiness(sentences: list[str]) -> tuple[float, dict[str, Any]]:
     # Short sentence presence (5-12 chars)
     short_sentence_count = sum(1 for ln in lengths if 5 <= ln <= 12)
 
-    # Score mapping: CV <= 0.35 is very flat (AI味 85+); CV >= 0.75 is lively human writing (AI味 ~10)
-    if cv <= 0.3:
-        score = 90.0
-    elif cv >= 0.8:
+    # Score mapping calibrated with 2.83M corpus data:
+    # CV <= 0.25 is truly robotic/flat (AI score 85+);
+    # CV in 0.45-0.70 is standard human prose range (AI score ~25-45);
+    # CV >= 0.70 is lively human writing (AI score ~10).
+    if cv <= 0.25:
+        score = 85.0
+    elif cv >= 0.70:
         score = 10.0
     else:
-        score = 90.0 - (cv - 0.3) * (80.0 / 0.5)
+        score = 85.0 - (cv - 0.25) * (75.0 / 0.45)
 
     # Penalty if no adjacent sentence jump > 12 chars
     if max_adjacent_delta < 12:
@@ -226,14 +229,23 @@ def score_structural_perfection(text: str) -> tuple[float, dict[str, Any]]:
 
 
 def score_punctuation_flatness(text: str) -> tuple[float, dict[str, Any]]:
-    """Detect monotonous punctuation."""
+    """Detect monotonous punctuation.
+    Calibrated with 2.83M corpus data:
+    - Questions (?/？) are 17x more frequent in human writing (strong human beat).
+    - Em-dashes (——) are 3-6x MORE frequent in AI (esp. DeepSeek 5.16/1k vs Human 0.80/1k),
+      so dashes MUST NOT be rewarded as human flavor, and excessive density is penalized.
+    """
     chars = len(text)
     flavor_points = 0
-    flavor_points += text.count("——") * 3
+    # Questions are strong human indicators
+    flavor_points += (text.count("?") + text.count("？")) * 2
     flavor_points += text.count("…") * 2
-    flavor_points += text.count("?") + text.count("？")
     flavor_points += (text.count("!") + text.count("！")) // 2
     flavor_points += text.count("(") + text.count("（") + text.count(")") + text.count("）")
+
+    # Em-dash check: AI (especially DeepSeek) abuses dashes
+    em_dash_count = text.count("——")
+    em_dash_density_1k = (em_dash_count / (chars / 1000.0)) if chars > 0 else 0.0
 
     expected = max(chars, 200) / 1000.0 * 5.0
     ratio = (flavor_points / expected) if expected > 0 else 0.0
@@ -247,8 +259,14 @@ def score_punctuation_flatness(text: str) -> tuple[float, dict[str, Any]]:
     else:
         score = 85.0
 
+    # Penalty if em-dash density exceeds human normal ceiling (> 2.5 per 1k chars)
+    if em_dash_density_1k > 2.5 and em_dash_count >= 3:
+        score = min(100.0, score + 20.0)
+
     return round(float(score), 1), {
         "flavor_points": flavor_points,
+        "em_dash_count": em_dash_count,
+        "em_dash_density_1k": round(em_dash_density_1k, 2),
         "expected": round(expected, 1),
         "ratio": round(ratio, 2),
     }
@@ -269,6 +287,26 @@ def check_opening_hook(raw_text: str) -> dict[str, Any]:
             "advice": "第一段禁止以'近年来/随着...发展/在...背景下'切入，应换成具体场景、台词、数字或冲突事实。",
         }
     return {"passed": True, "paragraph_snippet": first_p[:60]}
+
+
+def check_paragraph_length(raw_text: str, max_chars: int = 180) -> dict[str, Any]:
+    """Check for excessively long paragraphs (> max_chars) that hurt mobile WeChat readability."""
+    paragraphs = [p.strip() for p in raw_text.splitlines() if p.strip() and not p.strip().startswith(("#", "```", "|", ">", "-"))]
+    long_paras = []
+    for idx, p in enumerate(paragraphs, start=1):
+        clean_p = re.sub(r"\s+", "", p)
+        if len(clean_p) > max_chars:
+            long_paras.append({
+                "index": idx,
+                "length": len(clean_p),
+                "snippet": p[:40] + "...",
+            })
+    return {
+        "passed": len(long_paras) == 0,
+        "count": len(long_paras),
+        "long_paragraphs": long_paras,
+        "advice": f"检测到 {len(long_paras)} 个过长段落（超 {max_chars} 字符），建议按手机端 3~4 行屏宽进行拆解" if long_paras else "段落长度符合手机阅读体验",
+    }
 
 
 # -----------------------------------------------------------------------------
@@ -296,6 +334,7 @@ def analyze_anti_ai(raw_text: str) -> dict[str, Any]:
     pu_score, pu_det = score_punctuation_flatness(plain)
 
     opening_check = check_opening_hook(raw_text)
+    paragraph_check = check_paragraph_length(raw_text, max_chars=180)
 
     total_ai_score = (
         b_score * WEIGHTS["burstiness"]
@@ -307,6 +346,10 @@ def analyze_anti_ai(raw_text: str) -> dict[str, Any]:
 
     if not opening_check["passed"]:
         total_ai_score = min(100.0, total_ai_score + 10.0)
+
+    # Moderate penalty if mobile WeChat readability is impaired by >= 3 long paragraphs (> 180 chars)
+    if paragraph_check["count"] >= 3:
+        total_ai_score = min(100.0, total_ai_score + 5.0)
 
     if total_ai_score < 35.0:
         verdict = "PASS"
@@ -321,6 +364,7 @@ def analyze_anti_ai(raw_text: str) -> dict[str, Any]:
         "char_count": len(plain),
         "sentence_count": len(sentences),
         "opening_hook": opening_check,
+        "paragraph_length": paragraph_check,
         "dimensions": {
             "burstiness": {"score": b_score, "detail": b_det},
             "phrases": {"score": p_score, "detail": p_det},
@@ -345,6 +389,7 @@ def check_anti_ai(
         "verdict": full["verdict"],
         "threshold": threshold,
         "opening_passed": full["opening_hook"]["passed"],
+        "paragraph_passed": full["paragraph_length"]["passed"],
         "hit_phrases": full["dimensions"]["phrases"]["detail"].get("samples", []),
         "hit_vocab": [f"{w}×{c}" for w, c in full["dimensions"]["vocab"]["detail"].get("top", [])],
         "full_report": full,
@@ -382,6 +427,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"综合 AI 味评分: {full['total_ai_score']} / 100 (阈值: {args.threshold})")
         print(f"字数: {full['char_count']}  句数: {full['sentence_count']}")
         print(f"开头破冰检查: {'✅ PASS' if full['opening_hook']['passed'] else '❌ FAIL: ' + full['opening_hook'].get('advice', '')}")
+        para_status = "✅ PASS" if full["paragraph_length"]["passed"] else f"⚠️ WARN: 存在 {full['paragraph_length']['count']} 个超长段落(>180字)"
+        print(f"段落屏宽检查: {para_status}")
         print("-" * 60)
         for name, dim in full["dimensions"].items():
             print(f"  [{name:12s}] 得分: {dim['score']:>5} (权重: {int(WEIGHTS[name]*100)}%)")

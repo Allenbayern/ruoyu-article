@@ -1628,3 +1628,43 @@ def test_a_missing_rebased_artifact_is_reported_as_a_path_error(tmp_path: Path) 
 
     assert target is None
     assert "artifact_binding_invalid:path" in errors
+
+
+def test_article_exceeding_soft_max_cjk_chars_passes_with_advisory(tmp_path: Path) -> None:
+    """2026-10-14 controller 裁决：3500 字稿件不再失败(BLOCKED)，但产生超长提醒(human_judgment_items)。"""
+    batch = _make_batch(tmp_path, with_style=True, with_prose=True)
+    # 修改 style-gate 中的 char_count 为 3500 字，prose 也同步为 3500 字（避免口径差报警）
+    style_path = batch / "review" / "style-gate-art-001.json"
+    style_data = json.loads(style_path.read_text(encoding="utf-8"))
+    style_data["articles"][0]["char_count"] = 3500
+    style_path.write_text(json.dumps(style_data, ensure_ascii=False), encoding="utf-8")
+
+    prose_path = batch / "review" / "prose-pilot-report.json"
+    prose_data = json.loads(prose_path.read_text(encoding="utf-8"))
+    prose_data["batches"][0]["articles"][0]["chars"] = 3500
+    prose_path.write_text(json.dumps(prose_data, ensure_ascii=False), encoding="utf-8")
+
+    report = evaluate_batch(batch)
+    # 不应被阻断为 BLOCKED
+    assert report["verdict"] != BLOCKED
+    # 必须产生超长提醒
+    items = report.get("human_judgment_items") or []
+    assert any("char_count=3500" in item and "advisory" in item.lower() for item in items)
+
+
+def test_article_under_1500_cjk_chars_still_blocks(tmp_path: Path) -> None:
+    """2026-10-14 controller 裁决：1400 字稿件（低于 1500）仍硬阻断(BLOCKED)。"""
+    batch = _make_batch(tmp_path, with_style=True, with_prose=True)
+    style_path = batch / "review" / "style-gate-art-001.json"
+    style_data = json.loads(style_path.read_text(encoding="utf-8"))
+    style_data["articles"][0]["char_count"] = 1400
+    style_path.write_text(json.dumps(style_data, ensure_ascii=False), encoding="utf-8")
+
+    prose_path = batch / "review" / "prose-pilot-report.json"
+    prose_data = json.loads(prose_path.read_text(encoding="utf-8"))
+    prose_data["batches"][0]["articles"][0]["chars"] = 1400
+    prose_path.write_text(json.dumps(prose_data, ensure_ascii=False), encoding="utf-8")
+
+    report = evaluate_batch(batch)
+    assert report["verdict"] == BLOCKED
+

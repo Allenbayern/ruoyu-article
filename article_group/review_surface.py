@@ -247,7 +247,8 @@ def validate_markdown_review_evidence(
             errors.append(f"markdown_evidence_cjk_count_invalid:{article_id}")
         elif declared_cjk != actual_cjk:
             errors.append(f"markdown_evidence_cjk_count_mismatch:{article_id}")
-        if not MIN_CJK_CHARS <= actual_cjk <= MAX_CJK_CHARS:
+        # 2026-10-14 controller 裁决：取消硬上限，1500 字下限保持硬阻断不变
+        if actual_cjk < MIN_CJK_CHARS:
             errors.append(
                 f"markdown_evidence_cjk_count_out_of_range:{article_id}:{actual_cjk}"
             )
