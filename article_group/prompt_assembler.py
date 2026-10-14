@@ -1,11 +1,11 @@
 """prompt_assembler: 将 12 篇定稿母本呼吸律动、外语片地道中文法则与四阶事实包
 全自动装配为高完成度 Writer 提示词。
 
-作用：
+作用与演进：
 1. 在 planning 阶段完成后，自动读取 title-pack, article-brief, evidence-pack 与 pending-review-sheet；
 2. 匹配 12 篇母本中最契合的 2 篇 Few-Shot；
-3. 将段落中位数 (40~65字)、长段沉浸拉片、短段冷刀收口、严禁英文代号/单集名、严格事实纪律等物理红线
-   硬编码进 System Prompt；
+3. 2026-10-14 阈值统一：律动物理红线与写作目标全量从 `dna_engine.DNA_RHYTHM_STANDARD` 单一权威源读取，
+   不再维护第二份硬编码数字；
 4. 输出可直接交付给任意 LLM（DeepSeek / Claude / Gemini）的完整结构化提示词，
    并落盘至 `review/writer-prompt.md` 与 `review/writer-prompt.json`（走 evidence_write）。
 """
@@ -16,7 +16,7 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
-from article_group.dna_engine import CANONICAL_MOTHER_TEXTS, match_dna
+from article_group.dna_engine import CANONICAL_MOTHER_TEXTS, DNA_RHYTHM_STANDARD, match_dna
 from article_group.evidence_write import write_evidence, write_evidence_json
 from article_group.prompts.human_fingerprints.registry import get_human_fingerprints_instruction
 
@@ -109,14 +109,14 @@ def assemble_writer_prompt(
 
 ### 一、 12篇定稿母本呼吸律动规范（物理红线）
 1. **段落字数严卡黄金区间**：
-   - 全文段落中位数必须保持在 **45 ~ 65 字** 之间！
+   - 全文段落中位数必须保持在 **{int(DNA_RHYTHM_STANDARD.target_para_median_min)} ~ {int(DNA_RHYTHM_STANDARD.target_para_median_max)} 字** 之间！
    - **绝对严禁一句话一行的碎片化短视频口播体！** 必须像成熟出版特稿一样，把起承转合自然融在段落中。
-2. **长短交错呼吸感 (Standard Deviation ≥ 25.0)**：
-   - 必须包含 **≥ 4 个 80 ~ 170 字的沉浸式微观拉片/现实算账大段落**（交代环境质感、道具细节与心理博弈，赋予文章厚重纵深）；
-   - 短段（≤ 35 字）比例控制在 **20% ~ 45%**，专用于段末冷酷收刀、转折压茬或强烈停顿；
-   - 超过 205 字的拥挤死墙段落数必须为 0！
-3. **文章总字数底线**：
-   - 正文 CJK 纯汉字数严格落在 **2000 ~ 2700 字** 的深水区（严禁注水套话凑字，全靠硬核拉片与利益机制推进）。
+2. **长短交错呼吸感 (Standard Deviation ≥ {DNA_RHYTHM_STANDARD.target_para_stdev_min:.1f})**：
+   - 必须包含 **≥ {DNA_RHYTHM_STANDARD.target_immersive_paras_min} 个 {DNA_RHYTHM_STANDARD.target_immersive_len_min} ~ {DNA_RHYTHM_STANDARD.target_immersive_len_max} 字的沉浸式微观拉片/现实算账大段落**（交代环境质感、道具细节与心理博弈，赋予文章厚重纵深）；
+   - 短段（≤ {DNA_RHYTHM_STANDARD.target_short_para_len_max} 字）比例控制在 **{int(DNA_RHYTHM_STANDARD.target_short_para_pct_min)}% ~ {int(DNA_RHYTHM_STANDARD.target_short_para_pct_max)}%**，专用于段末冷酷收刀、转折压茬或强烈停顿；
+   - 超过 {DNA_RHYTHM_STANDARD.gate_wall_para_len_max} 字的拥挤死墙段落数必须为 {DNA_RHYTHM_STANDARD.gate_wall_paras_max}！
+3. **文章总字数底线与写作目标**：
+   - 正文 CJK 纯汉字数写作目标建议落在 **{DNA_RHYTHM_STANDARD.target_cjk_min} ~ {DNA_RHYTHM_STANDARD.target_cjk_max} 字** 的深水区（底线硬阻断 ≥ {DNA_RHYTHM_STANDARD.gate_cjk_min} 字，严禁注水套话凑字，全靠硬核拉片与利益机制推进）。
 
 ### 二、 外语片地道中文语境重塑（严禁翻译腔与生硬英文字母）
 1. **去英文人名/角色代号**：
@@ -204,14 +204,7 @@ def assemble_writer_prompt(
         "title": title,
         "work": work_name,
         "archetype": archetype,
-        "dna_rhythm_standard": {
-            "para_median_target": "45~65字",
-            "para_stdev_min": 25.0,
-            "immersive_paras_min": 4,
-            "wall_paras_max": 0,
-            "short_paras_pct_range": "20%~45%",
-            "cjk_chars_range": "2000~2700字",
-        },
+        "dna_rhythm_standard": DNA_RHYTHM_STANDARD.to_prompt_assembler_dict(),
         "system_prompt": system_prompt,
         "user_prompt": user_prompt,
         "matched_mother_articles": [m["title"] for m in dna_match.get("canonical_mother_articles") or []],

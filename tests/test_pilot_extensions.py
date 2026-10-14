@@ -157,12 +157,16 @@ def test_contract_enforces_prose_pilot_on_draft(tmp_path: Path):
 
 
 def test_dna_engine_mother_calibration(tmp_path: Path):
-    from article_group.dna_engine import audit_draft_dna, match_dna
+    from article_group.dna_engine import DNA_RHYTHM_STANDARD, audit_draft_dna, match_dna
 
-    # 1. 匹配 12 篇母本与母题
+    # 1. 匹配 12 篇母本与母题，校验唯一律动标准（门禁硬线）
     match_res = match_dna("周星驰不懂人情世故底裤")
     assert match_res["detected_archetype"] == "行业争议与人物拆台"
     assert len(match_res["canonical_mother_articles"]) > 0
+    assert match_res["rhythm_standard"]["para_median_range"] == [37.0, 65.0]
+    assert match_res["rhythm_standard"]["para_stdev_min"] == 25.0
+    assert match_res["rhythm_standard"]["short_paras_le_35_pct_range"] == [15.0, 50.0]
+    assert match_res["rhythm_standard"]["cjk_hard_min"] == DNA_RHYTHM_STANDARD.gate_cjk_min
 
     # 2. 机械切碎段测试稿（一句话一行）应被拦截
     choppy_text = "# 测试标题\n\n" + "\n\n".join([f"第{i}句话短行。" for i in range(120)])

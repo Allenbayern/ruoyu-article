@@ -1,18 +1,25 @@
 """dna_engine: 基于 12 篇定稿母本标定的若雨随影 Writing DNA 审计与母本匹配引擎。
 
-核心设计纠偏（2026-10-13）：
-旧版 `scripts/dsh_dna_auto_engine.py` 误用外部营销号语料的碎段阈值（强制 `para_median <= 35`、
-`>80字段落数 == 0`、强制塞粗体与配图），导致 12 篇定稿母本 100% 无法通过旧门禁，反而把新系统
-逼成了“一句话一回车、满篇喊口号”的碎片化爽文。
-
-本模块以 `/home/allen/dsh/articles/` 下的 12 篇真实定稿母本为黄金标尺：
-1. 段落中位数 `32.0 ~ 68.0` 字（拒绝 <32 字的碎段刷屏，也拒绝 >68 字的学术死墙）；
-2. 段落呼吸律动标准差 `para_stdev >= 20.0`（强制长短交错：长段沉浸拉片/算账 + 短段冷酷收刀）；
-3. 沉浸叙事长段（75~200 字）`>= 4` 段（确保微观拉片与现实账本有足够叙事纵深）；
-4. 短段（<=35 字）占比 `15% ~ 58%`（既有短句冷刀，又严禁全篇回车碎段）；
-5. 超过 205 字的死墙段落 `== 0`；
-6. 打通仓库权威 `style_gate`（禁来源自证、审稿腔、骑墙和稀泥）与 `anti_ai_gate`（< 45.0），
-   并拦截廉价口头禅（“脊梁骨发凉/大白话拆开来看/抽了一记耳光”）高频堆砌。
+历史沿革与演进：
+1. 2026-10-13 核心设计纠偏：淘汰旧版外部营销号碎段阈值，以 12 篇定稿母本为黄金标尺。
+2. 2026-10-14 阈值统一与双轨分层（用户裁决：放宽门禁下沿兼容母本，提示词保持最新目标）：
+   - 解决 prompt_assembler 与 dna_engine 阈值割裂问题，定义唯一权威常量 `DNA_RHYTHM_STANDARD`；
+   - 写作目标（写入提示词，审计偏离仅作 advisory 提醒）：
+     - 段落中位数 `45.0 ~ 65.0` 字；
+     - 段落呼吸律动标准差 `para_stdev >= 25.0`；
+     - 沉浸叙事长段（80~170 字）`>= 4` 段；
+     - 短段（<=35 字）占比 `20.0% ~ 45.0%`；
+     - CJK 纯汉字数 `2000 ~ 2700` 字。
+   - 门禁硬线（audit_draft_dna 判 FAIL 阻断）：
+     - 段落中位数 `37.0 ~ 65.0` 字（兼容 mother-01 中位数 38 与 mother-12 中位数 37）；
+     - 段落呼吸律动标准差 `para_stdev >= 25.0`；
+     - 沉浸叙事长段（80~170 字）`>= 4` 段；
+     - 短段（<=35 字）占比 `15.0% ~ 50.0%`（兼容 mother-05 短段 18.4% 与 mother-12 短段 48.3%）；
+     - 超过 205 字的死墙段落 `== 0`；
+     - 文章字数下限接入 `run_profile.MIN_CJK_CHARS` (1500 字硬阻断)，无硬上限。
+   - 落在硬线内但偏离目标区间者，记入 `advisories`，不阻断发布。
+   - 打通仓库权威 `style_gate`（禁来源自证、审稿腔、骑墙和稀泥）与 `anti_ai_gate`（< 45.0），
+     并拦截廉价口头禅（“脊梁骨发凉/大白话拆开来看/抽了一记耳光”）高频堆砌。
 """
 
 from __future__ import annotations
@@ -22,11 +29,13 @@ import json
 import os
 import re
 import statistics
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from article_group.anti_ai_gate import analyze_anti_ai
 from article_group.evidence_write import write_evidence_json
+from article_group.run_profile import MIN_CJK_CHARS
 from article_group.style_gate import scan_style
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -34,6 +43,69 @@ DNA_ROOT = PROJECT_ROOT / "ruoyu-content" / "10-case-library" / "writing-dna"
 RAW_CORPUS_DIR = DNA_ROOT / "raw-corpus"
 META_DIR = DNA_ROOT / "_meta"
 MOTHER_ARTICLES_DIR = Path("/home/allen/dsh/articles")
+
+
+@dataclass(frozen=True)
+class DnaRhythmStandard:
+    """若雨随影文风律动与篇幅黄金标尺（2026-10-14 区分写作目标与门禁硬线）。"""
+
+    # --- 1. 写作目标（Target/Guideline: 写入提示词，审计偏离仅记为 advisory） ---
+    target_para_median_min: float = 45.0
+    target_para_median_max: float = 65.0
+    target_para_stdev_min: float = 25.0
+    target_immersive_len_min: int = 80
+    target_immersive_len_max: int = 170
+    target_immersive_paras_min: int = 4
+    target_short_para_len_max: int = 35
+    target_short_para_pct_min: float = 20.0
+    target_short_para_pct_max: float = 45.0
+    target_cjk_min: int = 2000
+    target_cjk_max: int = 2700
+
+    # --- 2. 门禁硬线（Hard Gate: audit_draft_dna 判 FAIL 阻断） ---
+    gate_para_median_min: float = 37.0
+    gate_para_median_max: float = 65.0
+    gate_para_stdev_min: float = 25.0
+    gate_immersive_len_min: int = 80
+    gate_immersive_len_max: int = 170
+    gate_immersive_paras_min: int = 4
+    gate_short_para_len_max: int = 35
+    gate_short_para_pct_min: float = 15.0
+    gate_short_para_pct_max: float = 50.0
+    gate_wall_para_len_max: int = 205
+    gate_wall_paras_max: int = 0
+    # 门禁硬下限从 run_profile.MIN_CJK_CHARS 读取（1500），不设硬上限
+    gate_cjk_min: int = MIN_CJK_CHARS
+
+    def to_rhythm_standard_dict(self) -> dict[str, Any]:
+        """供 match_dna 消费的标准字典格式。"""
+        return {
+            "para_median_range": [self.gate_para_median_min, self.gate_para_median_max],
+            "para_median_target_range": [self.target_para_median_min, self.target_para_median_max],
+            "para_stdev_min": self.gate_para_stdev_min,
+            "immersive_paras_80_170_min": self.gate_immersive_paras_min,
+            "immersive_paras_75_200_min": self.gate_immersive_paras_min,  # 兼容历史 key
+            "wall_paras_gt_205_max": self.gate_wall_paras_max,
+            "short_paras_le_35_pct_range": [self.gate_short_para_pct_min, self.gate_short_para_pct_max],
+            "short_paras_pct_target_range": [self.target_short_para_pct_min, self.target_short_para_pct_max],
+            "cjk_hard_min": self.gate_cjk_min,
+            "cjk_target_range": [self.target_cjk_min, self.target_cjk_max],
+        }
+
+    def to_prompt_assembler_dict(self) -> dict[str, Any]:
+        """供 prompt_assembler.dna_rhythm_standard 消费的格式（使用写作目标）。"""
+        return {
+            "para_median_target": f"{int(self.target_para_median_min)}~{int(self.target_para_median_max)}字",
+            "para_stdev_min": self.target_para_stdev_min,
+            "immersive_paras_min": self.target_immersive_paras_min,
+            "wall_paras_max": self.gate_wall_paras_max,
+            "short_paras_pct_range": f"{int(self.target_short_para_pct_min)}%~{int(self.target_short_para_pct_max)}%",
+            "cjk_chars_range": f"{self.target_cjk_min}~{self.target_cjk_max}字",
+        }
+
+
+# 全局唯一律动阈值常量（不可变）
+DNA_RHYTHM_STANDARD: DnaRhythmStandard = DnaRhythmStandard()
 
 # 12 篇定稿母本清单（作为最高优先级 Few-Shot 标尺）
 CANONICAL_MOTHER_TEXTS: list[dict[str, str]] = [
@@ -215,13 +287,7 @@ def match_dna(topic: str, genre_hint: str = "") -> dict[str, Any]:
         "few_shot_paths": [m["path"] for m in top_mothers],
         "matched_cases": top_cases,
         "dna_ruleset_path": str(DNA_ROOT / "Writing-DNA.md"),
-        "rhythm_standard": {
-            "para_median_range": [32.0, 68.0],
-            "para_stdev_min": 20.0,
-            "immersive_paras_75_200_min": 4,
-            "wall_paras_gt_205_max": 0,
-            "short_paras_le_35_pct_range": [15.0, 58.0],
-        },
+        "rhythm_standard": DNA_RHYTHM_STANDARD.to_rhythm_standard_dict(),
     }
 
 
@@ -266,9 +332,12 @@ def audit_draft_dna(
     p_median = statistics.median(para_lens)
     p_stdev = statistics.stdev(para_lens) if len(para_lens) > 1 else 0.0
 
-    immersive_para_count = len([p for p in para_lens if 75 <= p <= 205])
-    wall_para_count = len([p for p in para_lens if p > 205])
-    short_para_count = len([p for p in para_lens if p <= 35])
+    immersive_para_count = len([
+        p for p in para_lens
+        if DNA_RHYTHM_STANDARD.gate_immersive_len_min <= p <= DNA_RHYTHM_STANDARD.gate_immersive_len_max
+    ])
+    wall_para_count = len([p for p in para_lens if p > DNA_RHYTHM_STANDARD.gate_wall_para_len_max])
+    short_para_count = len([p for p in para_lens if p <= DNA_RHYTHM_STANDARD.gate_short_para_len_max])
     short_para_pct = (short_para_count / max(1, len(para_lens))) * 100.0
 
     sents = [s.strip() for s in re.split(r"[。！？!?；;\n]+", clean_text) if s.strip()]
@@ -313,30 +382,73 @@ def audit_draft_dna(
     ]
 
     violations: list[str] = []
-    if cjk_chars < 1500:
-        violations.append(f"正文字数不足深水区底线: {cjk_chars} CJK 字 (底线 >= 1500 字)")
-    if p_median < 32.0:
+    advisories: list[str] = []
+
+    # 1. 字数硬门禁（从 run_profile 读取硬下限，无硬上限）与目标区间 advisory
+    if cjk_chars < DNA_RHYTHM_STANDARD.gate_cjk_min:
         violations.append(
-            f"段落过度碎片化（一句话一行营销号体）: 中位数仅 {p_median:.1f} 字 (12篇母本标尺: 32~68 字)"
+            f"正文字数不足深水区底线: {cjk_chars} CJK 字 (底线 >= {DNA_RHYTHM_STANDARD.gate_cjk_min} 字)"
         )
-    elif p_median > 68.0:
+    elif cjk_chars < DNA_RHYTHM_STANDARD.target_cjk_min or cjk_chars > DNA_RHYTHM_STANDARD.target_cjk_max:
+        advisories.append(
+            f"字数偏离写作目标区间 ({DNA_RHYTHM_STANDARD.target_cjk_min}~{DNA_RHYTHM_STANDARD.target_cjk_max}字): "
+            f"当前为 {cjk_chars} CJK 字 (仅作提醒，不阻断发布)"
+        )
+
+    # 2. 段落中位数（硬线 37~65，目标 45~65；37<=p_median<45 记入 advisory）
+    if p_median < DNA_RHYTHM_STANDARD.gate_para_median_min:
         violations.append(
-            f"段落中位数过长（缺乏呼吸留白）: {p_median:.1f} 字 (12篇母本标尺: 32~68 字)"
+            f"段落过度碎片化（一句话一行营销号体）: 中位数仅 {p_median:.1f} 字 "
+            f"(门禁硬线: >= {DNA_RHYTHM_STANDARD.gate_para_median_min:.0f} 字)"
         )
-    if p_stdev < 20.0:
+    elif p_median > DNA_RHYTHM_STANDARD.gate_para_median_max:
         violations.append(
-            f"段落节奏死板（缺少长短交错呼吸感）: 标准差仅 {p_stdev:.1f} (要求 >= 20.0)"
+            f"段落中位数过长（缺乏呼吸留白）: {p_median:.1f} 字 "
+            f"(门禁硬线: <= {DNA_RHYTHM_STANDARD.gate_para_median_max:.0f} 字)"
         )
-    if immersive_para_count < 4:
+    elif p_median < DNA_RHYTHM_STANDARD.target_para_median_min or p_median > DNA_RHYTHM_STANDARD.target_para_median_max:
+        advisories.append(
+            f"段落中位数偏离最佳写作区间 ({DNA_RHYTHM_STANDARD.target_para_median_min:.0f}~{DNA_RHYTHM_STANDARD.target_para_median_max:.0f}字): "
+            f"当前为 {p_median:.1f} 字 (已过门禁硬线，建议优化)"
+        )
+
+    # 3. 段落标准差
+    if p_stdev < DNA_RHYTHM_STANDARD.gate_para_stdev_min:
         violations.append(
-            f"缺少沉浸式拉片/算账长段(75~205字): 当前仅 {immersive_para_count} 段 (要求 >= 4 段以建立叙事纵深)"
+            f"段落节奏死板（缺少长短交错呼吸感）: 标准差仅 {p_stdev:.1f} (要求 >= {DNA_RHYTHM_STANDARD.gate_para_stdev_min:.1f})"
         )
-    if wall_para_count > 0:
-        violations.append(f"存在 {wall_para_count} 个超过 205 字的死墙段落 (硬红线: 0)")
-    if short_para_pct > 58.0:
+
+    # 4. 沉浸式拉片长段
+    if immersive_para_count < DNA_RHYTHM_STANDARD.gate_immersive_paras_min:
         violations.append(
-            f"短碎段(<=35字)占比过高: {short_para_pct:.1f}% (上限 <= 58%，请将连续碎句合并为沉浸叙事段)"
+            f"缺少沉浸式拉片/算账长段({DNA_RHYTHM_STANDARD.gate_immersive_len_min}~{DNA_RHYTHM_STANDARD.gate_immersive_len_max}字): "
+            f"当前仅 {immersive_para_count} 段 (要求 >= {DNA_RHYTHM_STANDARD.gate_immersive_paras_min} 段以建立叙事纵深)"
         )
+
+    # 5. 死墙段落
+    if wall_para_count > DNA_RHYTHM_STANDARD.gate_wall_paras_max:
+        violations.append(
+            f"存在 {wall_para_count} 个超过 {DNA_RHYTHM_STANDARD.gate_wall_para_len_max} 字的死墙段落 "
+            f"(硬红线: {DNA_RHYTHM_STANDARD.gate_wall_paras_max})"
+        )
+
+    # 6. 短碎段占比（硬线 15%~50%，目标 20%~45%；落在 15%~20% 或 45%~50% 记入 advisory）
+    if short_para_pct < DNA_RHYTHM_STANDARD.gate_short_para_pct_min:
+        violations.append(
+            f"短段(<={DNA_RHYTHM_STANDARD.gate_short_para_len_max}字)占比过低: {short_para_pct:.1f}% "
+            f"(下限 >= {DNA_RHYTHM_STANDARD.gate_short_para_pct_min:.1f}%)"
+        )
+    elif short_para_pct > DNA_RHYTHM_STANDARD.gate_short_para_pct_max:
+        violations.append(
+            f"短碎段(<={DNA_RHYTHM_STANDARD.gate_short_para_len_max}字)占比过高: {short_para_pct:.1f}% "
+            f"(上限 <= {DNA_RHYTHM_STANDARD.gate_short_para_pct_max:.1f}%，请将连续碎句合并为沉浸叙事段)"
+        )
+    elif short_para_pct < DNA_RHYTHM_STANDARD.target_short_para_pct_min or short_para_pct > DNA_RHYTHM_STANDARD.target_short_para_pct_max:
+        advisories.append(
+            f"短段占比偏离最佳写作区间 ({DNA_RHYTHM_STANDARD.target_short_para_pct_min:.0f}%~{DNA_RHYTHM_STANDARD.target_short_para_pct_max:.0f}%): "
+            f"当前为 {short_para_pct:.1f}% (已过门禁硬线，建议优化)"
+        )
+
     if forbidden_hits:
         violations.append(f"发现 AI 禁用套话: {forbidden_hits}")
     if total_slogan_count > 2:
@@ -381,6 +493,7 @@ def audit_draft_dna(
         "style_gate_errors": style_errors,
         "anti_ai_score": anti_ai_score,
         "violations": violations,
+        "advisories": advisories,
     }
 
     if write_report and run_root is not None:
