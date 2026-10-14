@@ -585,8 +585,14 @@ def record_handoff(
             raise PilotContractError("delivery_artifact_required")
         wx_body = root / "wechat" / "body.html"
         if wx_body.exists():
-            from .moyu_green_renderer import validate_moyu_green_html
-            wx_val = validate_moyu_green_html(wx_body.read_text(encoding="utf-8"))
+            from .moyu_green_renderer import load_rendered_wechat_flags, validate_moyu_green_html
+
+            wx_flags = load_rendered_wechat_flags(root)
+            wx_val = validate_moyu_green_html(
+                wx_body.read_text(encoding="utf-8"),
+                allow_no_top_follow=not wx_flags["include_top_follow"],
+                allow_local_images=wx_flags["embed_images"],
+            )
             if not wx_val["passed"]:
                 raise PilotContractError(f"moyu_green_wechat_redline_violation:{','.join(wx_val['errors'])}")
         bind_res = verify_artifact_hash_bindings(root)

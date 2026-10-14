@@ -10,6 +10,13 @@ dependencies = [
     "jsonschema>=4.26.0",
 ]
 
+[project.optional-dependencies]
+# 可选：对比卡 HTML→PNG 渲染（article_group/comparison_card.py 惰性导入，缺失时跳过渲染）。
+# 安装：uv sync --extra render && uv run playwright install chromium
+render = [
+    "playwright>=1.48",
+]
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]

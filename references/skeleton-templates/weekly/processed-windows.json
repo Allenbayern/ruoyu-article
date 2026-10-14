@@ -1,0 +1,53 @@
+{
+  "schema": "processed-windows-v2",
+  "windows": [
+    {
+      "window_start": "2026-10-08",
+      "window_end": "2026-10-14",
+      "index_lastSync": "2026-10-14T09:27:21.930Z",
+      "corpus_sha256": "914ee9001311f24ca52a188c7de34faa89f959f49249606ebe9fb781e5ebbd9d",
+      "counts": {
+        "in_window_all": null,
+        "empty_text": null,
+        "cjk_ge_800": 36,
+        "new_vs_prev_baseline": null
+      },
+      "runs": [
+        {
+          "run": "macro-arch-weekly(2026-10-14,round2)",
+          "executed_at": "2026-10-14T17:30:00+08:00",
+          "note": "第 2 次执行：W42 主简报，新增 candidate-01~07 + skeleton-template-01"
+        }
+      ]
+    },
+    {
+      "window_start": "2026-10-09",
+      "window_end": "2026-10-15",
+      "index_lastSync": "2026-10-14T18:38:03.774Z",
+      "corpus_sha256": "c9e74c43d92cdccd7be89caa038db3c4a96445e1b1ea59a346183d692b5ec360",
+      "counts": {
+        "in_window_all": 73,
+        "empty_text": 26,
+        "cjk_ge_800": 35,
+        "new_vs_prev_baseline": 4
+      },
+      "runs": [
+        {
+          "run": "macro-arch-weekly(2026-10-15,round3)",
+          "executed_at": "2026-10-15T02:19:00+08:00",
+          "note": "第 3 次执行：W42 补遗，新增 candidate-08/09 + candidate-01~06 复现验证"
+        },
+        {
+          "run": "macro-arch-weekly(2026-10-15,round4)",
+          "executed_at": "2026-10-15T02:37:00+08:00",
+          "note": "第 4 次执行：0-delta，无新增可读深度稿；产出合并简报 + 台账机制"
+        },
+        {
+          "run": "macro-arch-weekly(2026-10-15,round5)",
+          "executed_at": "2026-10-15T02:56:51+08:00",
+          "note": "第 5 次执行：语料指纹不变（0-delta），但在中短稿轨道首次捕获新骨架 candidate-10；既有模板显式零追加"
+        }
+      ]
+    }
+  ]
+}

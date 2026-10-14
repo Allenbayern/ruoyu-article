@@ -146,8 +146,16 @@ def render_moyu_green_bundle(
     page_slug: str = "article",
     run_root: str | Path | None = None,
     include_cover_card: bool = False,
+    include_top_follow: bool = False,
+    embed_images: bool = False,
 ) -> dict[str, str]:
-    """将 Markdown 正文渲染为符合摸鱼绿杂志风规范的 body.html、preview.html 与 delivery.md。"""
+    """将 Markdown 正文渲染为符合摸鱼绿杂志风规范的 body.html、preview.html 与 delivery.md。
+
+    include_top_follow=False：去掉头部名片式关注条（正文直接从开篇切入）。
+    embed_images=False：不在 body.html 里写本地 `<img>`（微信公众号编辑器无法抓取本地/
+    相对路径图片，粘贴后必然碎图），只保留居中图注行作为「插图锚点」，正图由人工在编辑器
+    内上传或粘贴（见 wechat/image-gallery.html）。
+    """
     clean_title = _normalize_cjk_punct(title.strip())
     subtitle_str = " · ".join(_normalize_cjk_punct(p.strip()) for p in subtitle_points if p.strip())
     root_path = Path(run_root).resolve() if run_root else None
@@ -181,28 +189,33 @@ def render_moyu_green_bundle(
     </section>
   </section>""")
 
-    # 【组件 2】头部名片关注条（Top Follow Hook · 开头必须有）
-    out.append("""  <!-- 头部关注引导条 -->
-  <section style="margin: 0 0 24px; background: #f0fdf4; border: 1.5px solid #a7f3d0; border-radius: 12px; padding: 12px 16px; box-shadow: 0 2px 8px rgba(5,150,105,0.05);">
-    <section style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
-      <section style="display: flex; align-items: center; gap: 10px;">
-        <section style="width: 38px; height: 38px; background: #059669; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; color: #ffffff; flex-shrink: 0;">
-          <span leaf="">🍵</span>
-        </section>
-        <section>
-          <p style="margin: 0; font-size: 14px; font-weight: 800; color: #065f46; line-height: 1.4;">
-            <span leaf="">关注【若雨随影】</span>
-          </p>
-          <p style="margin: 2px 0 0; font-size: 12px; color: #047857; line-height: 1.4;">
-            <span leaf="">扒光名利场算盘 · 算透人性账本</span>
-          </p>
-        </section>
-      </section>
-      <section style="background: #059669; border-radius: 20px; padding: 6px 14px; flex-shrink: 0; text-align: center;">
-        <span style="font-size: 11px; font-weight: 800; color: #ffffff; letter-spacing: 0.5px;"><span leaf="">+ 关注</span></span>
-      </section>
-    </section>
-  </section>""")
+    # 【组件 2】头部名片关注条（Top Follow Hook · 按 run 配置可关闭）
+    if include_top_follow:
+        out.append("""  <!-- 头部关注引导条 -->
+  <table width="100%" border="0" cellpadding="0" cellspacing="0" style="border-collapse: collapse; margin: 0 0 24px; background: #f0fdf4; border: 1.5px solid #a7f3d0; border-radius: 12px; box-shadow: 0 2px 8px rgba(5,150,105,0.05);">
+    <tr>
+      <td style="padding: 12px 14px; vertical-align: middle;">
+        <table border="0" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
+          <tr>
+            <td style="width: 38px; height: 38px; background: #059669; border-radius: 50%; text-align: center; vertical-align: middle; font-size: 18px; color: #ffffff;">
+              <span leaf="">🍵</span>
+            </td>
+            <td style="padding-left: 10px; vertical-align: middle;">
+              <p style="margin: 0; font-size: 14px; font-weight: 800; color: #065f46; line-height: 1.4; white-space: nowrap;">
+                <span leaf="">关注【若雨随影】</span>
+              </p>
+              <p style="margin: 2px 0 0; font-size: 12px; color: #047857; line-height: 1.4; white-space: nowrap;">
+                <span leaf="">扒光名利场算盘 · 算透人性账本</span>
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+      <td style="padding: 12px 14px; text-align: right; vertical-align: middle;">
+        <span style="display: inline-block; background: #059669; border-radius: 20px; padding: 6px 14px; font-size: 11px; font-weight: 800; color: #ffffff; letter-spacing: 0.5px; white-space: nowrap;"><span leaf="">+ 关注</span></span>
+      </td>
+    </tr>
+  </table>""")
 
     # 【组件 3】正文叙事与呼吸感
     seen_quote_cards: set[str] = set()
@@ -228,11 +241,17 @@ def render_moyu_green_bundle(
             # 校验图片是否在 run_root 下真实存在，存在则渲染标准微信内联图文卡片
             img_file = root_path / src_rel if root_path else None
             if img_file and img_file.is_file():
-                img_card = f"""  <section style="margin: 24px 0; text-align: center;">
+                if embed_images:
+                    img_card = f"""  <section style="margin: 24px 0; text-align: center;">
     <img src="{_esc(src_rel)}" alt="{_esc(alt)}" style="max-width: 100%; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); display: block; margin: 0 auto;" />
     <p style="margin: 8px 0 0; font-size: 13px; color: #6b7280; text-align: center; line-height: 1.5;"><span leaf="">▲ {_esc(_normalize_cjk_punct(alt))}</span></p>
   </section>"""
-                out.append(img_card)
+                    out.append(img_card)
+                else:
+                    # 微信编辑器抓不到本地图片：正文只保留居中图注行作为「插图锚点」
+                    out.append(
+                        f"""  <p style="margin: 22px 0 18px; font-size: 13px; color: #6b7280; text-align: center; line-height: 1.5;"><span leaf="">▲ {_esc(_normalize_cjk_punct(alt))}</span></p>"""
+                    )
                 delivery_md_lines.append(f"![{_normalize_cjk_punct(alt)}]({src_rel})\n\n*▲ {_normalize_cjk_punct(alt)}*\n")
             continue
         if line == "---":
@@ -402,43 +421,51 @@ def render_moyu_green_bundle(
     t._timer=setTimeout(function(){{t.classList.remove('show');}},2800);
   }}
   function gzhCopy(){{
-    var el=document.getElementById('gzh-content');
-    var html=el.innerHTML;
-    var text=el.innerText;
-    var btn=document.getElementById('gzhCopyBtn');
-    var ok=false;
-    var handler=null;
-    var ta=document.createElement('textarea');
-    try{{
-      handler=function(e){{
-        if(!e.clipboardData)return;
-        e.clipboardData.setData('text/html',html);
-        e.clipboardData.setData('text/plain',text);
-        e.preventDefault();
-      }};
-      document.addEventListener('copy',handler,{{once:true}});
-      ta.value=text;
-      ta.setAttribute('readonly','');
-      ta.style.position='fixed';
-      ta.style.left='-9999px';
-      ta.style.top='0';
-      document.body.appendChild(ta);
-      ta.focus();
-      ta.select();
-      ok=document.execCommand('copy');
-    }}catch(e){{
-      ok=false;
-    }}finally{{
-      if(ta.parentNode)ta.parentNode.removeChild(ta);
-      if(handler)document.removeEventListener('copy',handler);
+    var el = document.getElementById('gzh-content');
+    var btn = document.getElementById('gzhCopyBtn');
+    
+    // 方案一：优先使用浏览器原生 DOM Range 选择后执行标准 copy 命令
+    // 这样浏览器会将完整的渲染图层和 HTML 样式原汁原味注入富文本剪贴板（微信公众平台最完美兼容方式）
+    var range = document.createRange();
+    range.selectNodeContents(el);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    
+    var ok = false;
+    try {{
+      ok = document.execCommand('copy');
+    }} catch(e) {{
+      ok = false;
     }}
-    if(ok){{
+    sel.removeAllRanges();
+
+    if (ok) {{
       gzhShowToast('✅ 已复制！去公众号编辑器按 Ctrl/⌘+V 粘贴即可');
-      var old=btn.textContent;btn.textContent='✅ 已复制';
-      setTimeout(function(){{btn.textContent=old;}},2200);
-    }}else{{
-      gzhShowToast('⚠ 浏览器阻止复制，请换 Edge/Chrome 后重试');
+      var old = btn.textContent;
+      btn.textContent = '✅ 已复制';
+      setTimeout(function(){{ btn.textContent = old; }}, 2200);
+      return;
     }}
+
+    // 方案二：备用方案，使用 ClipboardItem 直接写入原始 HTML
+    if (navigator.clipboard && window.isSecureContext && typeof ClipboardItem !== 'undefined') {{
+      var blob = new Blob([el.innerHTML], {{ type: 'text/html' }});
+      var textBlob = new Blob([el.innerText], {{ type: 'text/plain' }});
+      navigator.clipboard.write([
+        new ClipboardItem({{ 'text/html': blob, 'text/plain': textBlob }})
+      ]).then(function() {{
+        gzhShowToast('✅ 已复制！去公众号编辑器按 Ctrl/⌘+V 粘贴即可');
+        var old = btn.textContent;
+        btn.textContent = '✅ 已复制';
+        setTimeout(function(){{ btn.textContent = old; }}, 2200);
+      }}).catch(function() {{
+        gzhShowToast('⚠ 自动复制受阻，请直接在页面中 Ctrl+A 全选并 Ctrl+C 复制');
+      }});
+      return;
+    }}
+
+    gzhShowToast('⚠ 自动复制受阻，请直接在页面中手动全选复制');
   }}
 </script>
 </body>
@@ -477,6 +504,247 @@ def render_moyu_green_bundle(
     }
 
 
+WECHAT_RENDER_FLAGS_DEFAULT: dict[str, bool] = {
+    "include_cover_card": False,
+    # 2026-10-14 用户定稿标准：文首不配名片式关注条（正文直接从开篇切入；文末关注大卡保留）
+    "include_top_follow": False,
+    # 2026-10-14 用户定稿标准：正文不内嵌本地图片（微信编辑器抓不到本地/相对路径图片，粘贴必碎图），
+    # 只保留居中图注行作锚点，配图由人工经 wechat/image-gallery.html 逐张复制/上传插入
+    "embed_images": False,
+}
+
+
+def load_wechat_render_flags(run_root: str | Path) -> dict[str, bool]:
+    """渲染用开关：run 级 wechat-config.json 覆盖 → 否则用定稿默认值。"""
+    root = Path(run_root).resolve()
+    cfg: dict[str, Any] = {}
+    cfg_path = root / "wechat-config.json"
+    if cfg_path.is_file():
+        try:
+            loaded = json.loads(cfg_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                cfg = loaded
+        except Exception:
+            cfg = {}
+    flags = dict(WECHAT_RENDER_FLAGS_DEFAULT)
+    for key in flags:
+        if key in cfg:
+            flags[key] = bool(cfg[key])
+    return flags
+
+
+def load_rendered_wechat_flags(run_root: str | Path) -> dict[str, bool]:
+    """校验用开关：以「该 run 实际渲染时用的开关」为准（wechat-manifest.render_flags）。
+
+    渲染开关标准上线前产出的老 run（manifest 无 render_flags）按其历史标准校验，
+    不做新标准回溯判定，避免历史交付件被追溯判错。
+    """
+    root = Path(run_root).resolve()
+    manifest_path = root / "wechat" / "wechat-manifest.json"
+    if manifest_path.is_file():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:
+            manifest = {}
+        if isinstance(manifest, dict):
+            rendered = manifest.get("render_flags")
+            if isinstance(rendered, dict):
+                flags = dict(WECHAT_RENDER_FLAGS_DEFAULT)
+                for key in flags:
+                    if key in rendered:
+                        flags[key] = bool(rendered[key])
+                return flags
+            return {"include_cover_card": False, "include_top_follow": True, "embed_images": True}
+    return load_wechat_render_flags(root)
+
+
+def build_image_gallery_html(
+    run_root: str | Path,
+    *,
+    title: str,
+    draft_text: str | None = None,
+    embed_static_max_bytes: int = 1_200_000,
+) -> dict[str, Any]:
+    """构建「公众号配图插入指引」画廊页（wechat/image-gallery.html）。
+
+    微信公众号编辑器无法抓取本地／相对路径图片，粘贴含本地 `<img>` 的 HTML 必然碎图。
+    本页把正文里出现的图片按顺序列出：静态图内嵌 base64（file:// 下 canvas 不被污染，
+    可一键把图片本体复制进剪贴板，再粘到编辑器里由微信自行上传）；超大的动态 GIF 保留
+    相对路径并明确标注「必须用编辑器图片按钮上传」，因为走剪贴板只会丢动画帧。
+    """
+    import base64
+
+    from article_group.image_processor import parse_image_header
+
+    root = Path(run_root).resolve()
+    md = draft_text if draft_text is not None else (root / "draft.md").read_text(encoding="utf-8")
+
+    # 图片登记底账：用于给「需人工上传」的动图回指用户原始文件名
+    manifest_map: dict[str, str] = {}
+    mf = root / "images" / "image-manifest.json"
+    if mf.is_file():
+        try:
+            for it in (json.loads(mf.read_text(encoding="utf-8")).get("images") or []):
+                src_orig = str(it.get("source_original_path") or "")
+                if it.get("relative_path") and src_orig:
+                    manifest_map[str(it["relative_path"])] = Path(src_orig).name
+        except Exception:
+            manifest_map = {}
+
+    items: list[dict[str, Any]] = []
+    order = 0
+    for m in re.finditer(r"!\[([^\]]*)\]\(([^)]+)\)", md):
+        rel = m.group(2).strip()
+        if rel.startswith(("http://", "https://", "data:")):
+            continue
+        fp = root / rel
+        if not fp.is_file():
+            continue
+        order += 1
+        alt = _normalize_cjk_punct(m.group(1).strip())
+        try:
+            meta = parse_image_header(fp)
+        except Exception:
+            meta = {"format": "unknown", "width": 0, "height": 0}
+        fmt = str(meta.get("format") or "unknown")
+        size_bytes = fp.stat().st_size
+        embed = fmt != "gif" and size_bytes <= embed_static_max_bytes
+        src = f"data:image/{fmt};base64," + base64.b64encode(fp.read_bytes()).decode("ascii") if embed else rel
+        items.append({
+            "order": order,
+            "rel": rel,
+            "name": fp.name,
+            "alt": alt,
+            "src": src,
+            "embedded": embed,
+            "format": fmt,
+            "width": int(meta.get("width") or 0),
+            "height": int(meta.get("height") or 0),
+            "size_mb": round(size_bytes / 1048576, 2),
+            "is_gif": fmt == "gif",
+            "source_name": manifest_map.get(rel, ""),
+        })
+
+    rows: list[str] = []
+    for it in items:
+        idx = it["order"]
+        gif_note = (
+            '<p class="gifnote">🎞️ 动态 GIF：请用公众号编辑器「图片 → 上传」选择该文件（走剪贴板只会保留一帧、丢失动画）。'
+            + (f'<br>原始文件：{_esc(it["source_name"])}（就在你放插图的文件夹里）' if it.get("source_name") else "")
+            + '</p>'
+            if it["is_gif"]
+            else ""
+        )
+        btn = (
+            f'<button class="copybtn" onclick="copyShot(\'shot{idx}\', true)">🎞️ 动图不可剪贴板复制</button>'
+            if it["is_gif"]
+            else f'<button class="copybtn" onclick="copyShot(\'shot{idx}\', false)">📋 复制这张图</button>'
+        )
+        rows.append(f"""  <section class="card">
+    <section class="head">
+      <span class="badge">{idx:02d}</span>
+      <span class="fname">{_esc(it['name'])}</span>
+      <span class="meta">{_esc(it['format'].upper())} · {it['width']}×{it['height']} · {it['size_mb']}MB</span>
+    </section>
+    <img id="shot{idx}" class="shot" src="{it['src']}" alt="{_esc(it['alt'])}" />
+    <p class="anchor">正文里的插入锚点（把图片粘在这一行上方）：</p>
+    <p class="anchortext">▲ {_esc(it['alt'])}</p>
+    <p class="path">文件位置：{_esc(it['rel'])}</p>
+    {gif_note}
+    {btn}
+  </section>""")
+
+    body = "\n".join(rows) if rows else '<p class="empty">正文里没有检测到本地配图。</p>'
+    html = f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{_esc(title)} · 公众号配图插入指引</title>
+<style>
+  body{{margin:0;background:#eef0f2;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;color:#111827;-webkit-text-size-adjust:100%;}}
+  .wrap{{max-width:860px;margin:0 auto;padding:24px 14px 60px;}}
+  h1{{font-size:20px;font-weight:800;margin:0 0 6px;}}
+  .sub{{font-size:13px;color:#6b7280;margin:0 0 18px;line-height:1.7;}}
+  .steps{{background:#f0fdf4;border:1.5px solid #a7f3d0;border-radius:12px;padding:14px 18px;margin:0 0 22px;}}
+  .steps li{{font-size:13.5px;color:#065f46;line-height:1.9;}}
+  .card{{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px 18px 18px;margin:0 0 18px;box-shadow:0 3px 14px rgba(0,0,0,.05);}}
+  .head{{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;}}
+  .badge{{background:#059669;color:#fff;font-size:12px;font-weight:800;padding:3px 9px;border-radius:6px;}}
+  .fname{{font-size:13.5px;font-weight:700;color:#065f46;font-family:Consolas,Monaco,monospace;}}
+  .meta{{font-size:12px;color:#9ca3af;}}
+  .shot{{max-width:100%;height:auto;display:block;margin:0 auto;border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.08);}}
+  .anchor{{font-size:12.5px;color:#6b7280;margin:14px 0 4px;}}
+  .anchortext{{font-size:13.5px;color:#374151;margin:0 0 4px;background:#f9fafb;border-left:3px solid #059669;padding:7px 10px;border-radius:0 6px 6px 0;}}
+  .path{{font-size:12px;color:#9ca3af;margin:6px 0 0;font-family:Consolas,Monaco,monospace;}}
+  .gifnote{{font-size:12.5px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;margin:10px 0 0;line-height:1.7;}}
+  .copybtn{{margin-top:12px;background:#059669;color:#fff;border:0;border-radius:9px;padding:9px 18px;font-size:13.5px;font-weight:700;cursor:pointer;}}
+  .copybtn:hover{{background:#047857;}}
+  .empty{{font-size:14px;color:#6b7280;}}
+  .toast{{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#111827;color:#fff;padding:11px 20px;border-radius:10px;font-size:13.5px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .25s;max-width:88vw;text-align:center;z-index:99;}}
+  .toast.show{{opacity:1;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>{_esc(title)}</h1>
+  <p class="sub">共 {len(items)} 张配图 · 按正文出现顺序排列</p>
+  <section class="steps">
+    <ol>
+      <li>先在公众号编辑器里粘贴<strong>纯文字排版稿</strong>（body.html），此时每处插图只剩一行灰色「▲ 图注」。</li>
+      <li>回到本页，对每张图点<strong>「📋 复制这张图」</strong>（或右键图片 →「复制图像」）。</li>
+      <li>在编辑器里把光标点到对应那条<strong>「▲ 图注」上方</strong>，按 Ctrl/⌘+V —— 微信会自动把图片上传到自己的图库。</li>
+    </ol>
+    <p style="font-size:12.5px;color:#047857;margin:8px 0 0;line-height:1.7;">也可以直接把 <code>images/</code> 里的文件拖进编辑器，或用编辑器工具栏的「图片 → 上传」——效果与粘贴完全一致。</p>
+  </section>
+{body}
+</div>
+<div class="toast" id="toast"></div>
+<script>
+  function gzhToast(msg){{
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(t._timer);
+    t._timer = setTimeout(function(){{ t.classList.remove('show'); }}, 3000);
+  }}
+  function copyShot(id, isGif){{
+    if (isGif) {{
+      gzhToast('动图请用编辑器「图片 → 上传」选择文件，剪贴板复制会丢动画');
+      return;
+    }}
+    var img = document.getElementById(id);
+    if (!img || !img.complete || !img.naturalWidth) {{
+      gzhToast('图片还没加载完，稍等一下再点');
+      return;
+    }}
+    try {{
+      var c = document.createElement('canvas');
+      c.width = img.naturalWidth;
+      c.height = img.naturalHeight;
+      c.getContext('2d').drawImage(img, 0, 0);
+      c.toBlob(function(blob){{
+        if (!blob) {{ gzhToast('转换失败，请右键图片 →「复制图像」'); return; }}
+        if (navigator.clipboard && typeof ClipboardItem !== 'undefined') {{
+          navigator.clipboard.write([new ClipboardItem({{ 'image/png': blob }})]).then(
+            function(){{ gzhToast('✅ 图片已复制！去编辑器锚点处 Ctrl/⌘+V'); }},
+            function(){{ gzhToast('⚠ 浏览器拦截了自动复制，请右键图片 →「复制图像」'); }}
+          );
+        }} else {{
+          gzhToast('⚠ 请右键图片 →「复制图像」');
+        }}
+      }}, 'image/png');
+    }} catch (e) {{
+      gzhToast('⚠ 请右键图片 →「复制图像」');
+    }}
+  }}
+</script>
+</body>
+</html>
+"""
+    return {"html": html, "items": items, "count": len(items)}
+
+
 def write_moyu_green_run_bundle(
     run_root: str | Path,
     *,
@@ -491,6 +759,8 @@ def write_moyu_green_run_bundle(
     page_slug: str = "article",
     author: str = "controller",
     include_cover_card: bool = False,
+    include_top_follow: bool = False,
+    embed_images: bool = False,
 ) -> dict[str, Any]:
     """从 run_root/draft.md 渲染摸鱼绿三件套并落盘至 run_root/wechat/，绑定 source_draft_sha256。"""
     root = Path(run_root).resolve()
@@ -512,8 +782,14 @@ def write_moyu_green_run_bundle(
         page_slug=page_slug,
         run_root=root,
         include_cover_card=include_cover_card,
+        include_top_follow=include_top_follow,
+        embed_images=embed_images,
     )
-    val = validate_moyu_green_html(bundle["body_html"])
+    val = validate_moyu_green_html(
+        bundle["body_html"],
+        allow_no_top_follow=not include_top_follow,
+        allow_local_images=embed_images,
+    )
     if not val["passed"]:
         raise ValueError(f"moyu_green_validation_failed:{val['errors']}")
 
@@ -522,6 +798,9 @@ def write_moyu_green_run_bundle(
     write_evidence(wechat_dir / "preview.html", bundle["preview_html"], run_dir=root, reason="moyu_green:preview_html", author=author)
     write_evidence(wechat_dir / "delivery.md", bundle["delivery_md"], run_dir=root, reason="moyu_green:delivery_md", author=author)
 
+    gallery = build_image_gallery_html(root, title=title, draft_text=md_text)
+    write_evidence(wechat_dir / "image-gallery.html", gallery["html"], run_dir=root, reason="moyu_green:image_gallery", author=author)
+
     manifest = {
         "template": "ruoyu-moyu-green-2026-10-12",
         "validation": val,
@@ -529,6 +808,16 @@ def write_moyu_green_run_bundle(
         "body_sha256": bundle["body_sha256"],
         "preview_sha256": bundle["preview_sha256"],
         "delivery_md_sha256": bundle["delivery_md_sha256"],
+        "render_flags": {
+            "include_cover_card": include_cover_card,
+            "include_top_follow": include_top_follow,
+            "embed_images": embed_images,
+        },
+        "image_gallery": {
+            "path": "wechat/image-gallery.html",
+            "image_count": gallery["count"],
+            "body_html_embeds_local_images": embed_images,
+        },
         "publication_authorization": "not_authorized",
     }
     write_evidence_json(wechat_dir / "wechat-manifest.json", manifest, run_dir=root, reason="moyu_green:manifest", author=author)
@@ -620,7 +909,7 @@ def render_moyu_green_from_run(
                 break
         recommendations = recs
 
-    include_cover_card = bool(wx_cfg.get("include_cover_card", False))
+    flags = load_wechat_render_flags(root)
 
     return write_moyu_green_run_bundle(
         root,
@@ -634,12 +923,26 @@ def render_moyu_green_from_run(
         recommendations=recommendations,
         page_slug=root.name,
         author=author,
-        include_cover_card=include_cover_card,
+        include_cover_card=flags["include_cover_card"],
+        include_top_follow=flags["include_top_follow"],
+        embed_images=flags["embed_images"],
     )
 
 
-def validate_moyu_green_html(body_html: str, *, allow_pure_reading_flow: bool = True) -> dict[str, Any]:
-    """确定性校验「摸鱼绿杂志风」5 大技术红线与 6 大组件完整性。"""
+def validate_moyu_green_html(
+    body_html: str,
+    *,
+    allow_pure_reading_flow: bool = True,
+    allow_no_top_follow: bool = True,
+    allow_local_images: bool = False,
+) -> dict[str, Any]:
+    """确定性校验「摸鱼绿杂志风」技术红线与组件完整性。
+
+    2026-10-14 用户定稿标准：文首名片式关注条默认不做（需要时由 run 显式开启，
+    那时 allow_no_top_follow=False 才会强制要求它存在）。
+    allow_local_images=True：允许 body.html 内含本地图片路径（仅用于留档预览）；默认禁止，
+    因为微信公众号编辑器抓不到本地/相对路径图片，粘贴后必然碎图。
+    """
     errors: list[str] = []
 
     if not body_html.strip().startswith("<section") or not body_html.strip().endswith("</section>"):
@@ -654,8 +957,9 @@ def validate_moyu_green_html(body_html: str, *, allow_pure_reading_flow: bool = 
         errors.append("forbidden_fixed_or_sticky_in_body_html")
     if "若雨随影 · 影视暗房" not in body_html and not allow_pure_reading_flow:
         errors.append("missing_component_1_breaking_cover")
-    if "+ 关注" not in body_html or "扒光名利场算盘 · 算透人性账本" not in body_html:
-        errors.append("missing_component_2_top_follow_hook")
+    if not allow_no_top_follow:
+        if "+ 关注" not in body_html or "扒光名利场算盘 · 算透人性账本" not in body_html:
+            errors.append("missing_component_2_top_follow_hook")
     if "读者互动" not in body_html:
         errors.append("missing_component_4_interaction_card")
     if "👉 点击顶部蓝字关注「若雨随影」" not in body_html or "【设为星标】" not in body_html:
@@ -666,6 +970,11 @@ def validate_moyu_green_html(body_html: str, *, allow_pure_reading_flow: bool = 
         errors.append("forbidden_fake_click_link_in_recommendations")
     if '<span leaf="">' not in body_html:
         errors.append("missing_leaf_spans")
+    if not allow_local_images:
+        for src in re.findall(r'<img[^>]*\ssrc="([^"]*)"', body_html, re.I):
+            cleaned = src.strip()
+            if cleaned and not cleaned.startswith(("http://", "https://", "data:")):
+                errors.append(f"local_image_src_forbidden_in_wechat_copy:{cleaned}")
 
     return {
         "passed": len(errors) == 0,
