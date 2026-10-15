@@ -7,6 +7,8 @@ AGENTS.md §7 ② 与 docs/dsh/moyu-green-wechat-spec-2026-10-12.md 都写「固
 """
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from article_group.moyu_green_renderer import (
@@ -135,12 +137,18 @@ def test_recommendation_url_becomes_real_anchor_and_absent_url_stays_plain():
     recs += [{"title": f"《无链接{i}》", "desc": "d"} for i in range(2, 6)]
     body = _render(recs)["body_html"]
 
-    assert '<a href="https://example.com/rec"' in body
-    assert "《带链接》" in body
+    # 带 url 的条目必须是真 <a> 且 href 指向该 url。
+    # 不写死属性顺序：渲染器按微信规范输出 <a target="_blank" href="...">，
+    # 而 textvalue 承载去《》后的纯净标题（2026-10-15 修正：原断言写成 '<a href=' 恒不成立）。
+    assert re.search(r'<a\b[^>]*href="https://example\.com/rec"', body), "带 url 的推荐未被渲染成真链接"
+    assert 'textvalue="带链接"' in body
+    assert ">带链接</span></a>" in body
+    # 标题在正文里会剥掉《》（微信编辑器识别真实文章标题所需），故不能断言带书名号的原串
+    assert "《带链接》" not in body
     # 没有 url 的条目不得被包成假链接
     for i in range(2, 6):
-        assert f'<a href="{{}}" ' not in body
-        assert f"《无链接{i}》" in body
+        assert f"无链接{i}</span>" in body
+        assert f"无链接{i}</a>" not in body
     # 规范禁止的虚假「点击直达」
     assert "点击直达" not in body
     assert validate_moyu_green_html(body)["passed"] is True

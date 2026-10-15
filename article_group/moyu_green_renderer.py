@@ -249,7 +249,7 @@ def _hoist_md_tables(markdown_text: str) -> str:
 # wechat-config.json 给 6 篇照样全绿出厂——case-008 实测渲染出 6 篇且校验器只查「往期推荐」
 # 四个字是否存在，不查条数。这里把条数收敛成硬约束：渲染侧规范化 + 校验侧真门禁。
 RECOMMENDATION_FIXED_COUNT = 5
-RECOMMENDATION_PIN = "📌 "
+RECOMMENDATION_PIN = "📌"
 
 
 def normalize_recommendations(
