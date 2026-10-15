@@ -6,11 +6,12 @@
 
 - 生产形态是**日更流水线**（`scripts/daily_engine.py` + `article_group/run_profile.py`）：默认 `two_article_daily`（A/B），controller 指定时 `three_article_daily`（A/B/C，2026-09-21 起），历史三槽对照用 `three_slot_controlled`。
 - 最近完成封存的批次是 `runs/2026-09-20/daily-010`（`SEALED` + `SEALED.manifest.json`；全库现有 3 个封存批次，另两个是 `daily-008`、`daily-009`）。此后 `daily-011` 起（含 `runs/2026-09-26/daily-liuhuan-zhenhuan`、`runs/2026-09-27/daily-national-day-boxoffice`）已产出 `delivery/` 交付稿但**尚未封存**。`runs/` 不进版本库，只留契约、脚本与测试。
-- 2115 个离线测试全部通过（校验器、CLI、来源捕获、发现雷达、合规门禁、封存校验；2026-09-27 实测 `uv run python3 -m pytest -q`）。
+- 2252 个离线测试全部通过（校验器、CLI、来源捕获、发现雷达、合规门禁、封存校验；2026-10-15 实测 `uv run pytest -q`，此前记的 2115 为 2026-09-27 口径）。
 - 2026-09-25：**标识层 codex → dsh 改名**，写端用新值、读端兼容旧值——`review_surface=markdown_dsh`、`preview_mode=local_dsh`、`schema_version` 族 `dsh-*`、L2 复核产物 `dsh-l2-review`；入口 `article_group/dsh_review.py`（历史名 `article_group/codex_review.py` 保留可用）。
 - 2026-09-25：封存升级为**全量清单 + run 之外锚点**（`article_group/run_seal.py`）——封存时逐文件 size/sha256 记入 `SEALED.manifest.json`（含 `SEALED` 标记自身哈希），`verify` 分类改动/新增/缺失/符号链接变化/append-only 被重写并与 `evidence-changelog.jsonl` 对账；锚点默认写本机 `RUOYU_SEAL_ANCHOR_DIR`（`/home/allen/seal-anchors`），配 `RUOYU_SEAL_ANCHOR_PUSH` 或 `~/.dsh/seal-anchor-push.conf` 时复制到离机账本（本机已启用），老批次用 `--reanchor` 事后补锚（报 `anchored_retroactive`，退出 3，**绝不报 `intact`**）。**已知限制**：本清单防误写，不防蓄意的进程外改写（清单自身不在自己的 `files` 里）。
 - 2026-08-11：契约系统落地——`article_group/case_contract.py`（事实/反馈词汇与技法引用校验）、`article_group/bilibili_capture.py`（B站长文公开证据捕获）、`v2_contract/`（任务卡/流转影子校验器，冻结 V2 词表）、`templates/evidence-pack.md` P1 冻结。自宿主糖果梦热榜（tgmeng）作为第二个只读发现雷达接入（影视榜 + AI 聚合糖果指数）。
-- 未实现也未授权：cron/定时器、来源注册表、发布器集成、图片管线、对外发布路径。
+- 未实现也未授权：来源注册表、发布器集成、图片管线、对外发布路径。
+- **定时任务不在上面的「未授权」清单里**（2026-10-15 核对后修正——本行此前写作「未实现也未授权：cron/定时器」，与实际情况不符）：仓库侧 crontab 已有两条只读采集（`scripts/dailyhot_radar.py` 08:30、`scripts/dailyhot_classify.py` 08:35，2026-09-16 落地），另有 2 张 DSH Task Board 定时卡由 Host 权威持有——`0 4 * * 1`（爆款宏观架构提炼，周一 04:00，已成功执行 5 次）与 `0 9 * * *`（抖音一本正经讲梗简报，每日 09:00）。它们都不修改本仓库的代码、规则或控制面。
 
 ## 目录结构
 

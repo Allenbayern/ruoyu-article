@@ -14,10 +14,19 @@ repository ever publishes, merges, deploys, or sends messages.
   scoped repairs → re-review → controller acceptance). Deliverables are
   frozen single-file HTML with producer provenance seals; no external
   publication is performed.
-- 403 offline tests pass (validators, CLI, source capture, discovery radar,
-  compliance gates, absorbed offline sample parsers).
-- No cron, source registry, publisher integration, image pipeline, or
-  publication path is implemented or authorized.
+- 2252 offline tests pass (validators, CLI, source capture, discovery radar,
+  compliance gates, absorbed offline sample parsers; measured 2026-10-15 with
+  `uv run pytest -q`).
+- No source registry, publisher integration, image pipeline, or publication
+  path is implemented or authorized.
+- Scheduled jobs are NOT in that unauthorized list (corrected 2026-10-15; this
+  line previously claimed cron was not authorized, which was untrue): the host
+  crontab runs two read-only collectors from this repo
+  (`scripts/dailyhot_radar.py` 08:30, `scripts/dailyhot_classify.py` 08:35,
+  landed 2026-09-16), and two DSH Task Board schedule cards are held
+  authoritatively by the Host (`0 4 * * 1` macro-architecture, 5 successful
+  runs; `0 9 * * *` daily briefing). Neither modifies this repo's code, rules,
+  or control plane.
 - 2026-08-07: absorbed 8 offline sample parsers from the legacy
   `media-intel-aios` project into `article_group/sources/`; the legacy
   project's automation backup moved out of the repo tree (2026-09-15):
