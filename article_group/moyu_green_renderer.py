@@ -32,6 +32,15 @@ def _esc(text: str) -> str:
     return html.escape(text, quote=False)
 
 
+def _esc_attr(text: str) -> str:
+    """属性值专用转义。
+
+    _esc 用 quote=False，不转义双引号——直接塞进 href="..."/src="..." 时，一个 `"`
+    就能截断属性并注入任意属性或标签（2026-10-15 由新增超链接回归测试实测抓到）。
+    """
+    return html.escape(text, quote=True)
+
+
 def _normalize_cjk_punct(text: str) -> str:
     """将半角直引号与英文逗号/感叹号/问号归一为全角中文标点。"""
     # 处理成对直引号 "..." -> “...”
@@ -132,6 +141,175 @@ def _render_numbered_item(num_str: str, text: str) -> str:
   </section>"""
 
 
+_MD_TABLE_SENTINEL = "\x00MDTABLE\x00"
+
+
+def _split_md_row(row: str) -> list[str]:
+    text = row.strip()
+    if text.startswith("|"):
+        text = text[1:]
+    if text.endswith("|"):
+        text = text[:-1]
+    return [cell.strip() for cell in text.split("|")]
+
+
+def _is_md_separator_row(cells: Sequence[str]) -> bool:
+    return bool(cells) and all(re.fullmatch(r":?-{2,}:?", (cell or "").strip()) for cell in cells)
+
+
+def _render_md_cell(cell: str, *, header: bool, align: str) -> str:
+    """单元格内联渲染：**加粗** 与 [文字](链接)，全部包裹 <span leaf="">。"""
+    normalized = _normalize_cjk_punct(cell.strip())
+    chunks: list[str] = []
+    for part in re.split(r"(\*\*.*?\*\*|\[[^\]]+\]\([^)]+\))", normalized):
+        if not part:
+            continue
+        m_link = re.fullmatch(r"\[([^\]]+)\]\(([^)]+)\)", part)
+        if m_link:
+            chunks.append(
+                f'<a href="{_esc_attr(m_link.group(2))}" style="color: #059669; text-decoration: none; font-weight: 700;">'
+                f'<span leaf="">{_esc(m_link.group(1))}</span></a>'
+            )
+        elif part.startswith("**") and part.endswith("**") and len(part) > 4:
+            chunks.append(f'<strong style="color: #111827;"><span leaf="">{_esc(part[2:-2])}</span></strong>')
+        else:
+            chunks.append(f'<span leaf="">{_esc(part)}</span>')
+    inner = "".join(chunks)
+    if header:
+        return (
+            '<th style="padding: 9px 8px; text-align: center; font-weight: 800; color: #065f46; font-size: 12px; '
+            'line-height: 1.5; border-bottom: 1.5px solid rgba(5,150,105,0.25);">' + inner + "</th>"
+        )
+    return (
+        f'<td style="padding: 9px 8px; text-align: {align}; vertical-align: top; color: #374151; font-size: 12px; '
+        'line-height: 1.6; border-bottom: 1px solid #f3f4f6;">' + inner + "</td>"
+    )
+
+
+def _render_md_table(rows: Sequence[Sequence[str]]) -> str:
+    """把 Markdown 表格渲染为微信友好的内联样式 <table>，避免管道行被当成正文段落。"""
+    if not rows:
+        return ""
+    header = list(rows[0])
+    body = [list(r) for r in rows[1:]]
+    aligns = ["center"] * len(header)
+    if body and _is_md_separator_row(body[0]):
+        aligns = [
+            "center" if (c.startswith(":") and c.endswith(":")) else "right" if c.endswith(":") else "left"
+            for c in body[0]
+        ]
+        body = body[1:]
+    width = max([len(header)] + [len(r) for r in body]) if body else len(header)
+
+    def _pad(cells: list[str]) -> list[str]:
+        return (cells + [""] * width)[:width]
+
+    head_html = "".join(_render_md_cell(c, header=True, align="center") for c in _pad(header))
+    body_rows = ""
+    for row in body:
+        tds = "".join(
+            _render_md_cell(c, header=False, align=aligns[i] if i < len(aligns) else "left")
+            for i, c in enumerate(_pad(row))
+        )
+        body_rows += f"      <tr>{tds}</tr>\n"
+    return f"""  <section style="margin: 0 0 26px;">
+    <table style="width: 100%; border-collapse: collapse; background: #ffffff; border: 1.5px solid rgba(5,150,105,0.18); border-radius: 10px; overflow: hidden;">
+      <thead>
+      <tr style="background: #ECFDF5;">{head_html}</tr>
+      </thead>
+      <tbody>
+{body_rows}      </tbody>
+    </table>
+  </section>"""
+
+
+def _hoist_md_tables(markdown_text: str) -> str:
+    """把「| ... |」Markdown 表格整块折叠为单行占位符，交由主循环整体渲染。"""
+    hoisted: list[str] = []
+    block: list[str] = []
+
+    def _flush() -> None:
+        if block:
+            encoded = "\x02".join("\x01".join(_split_md_row(r)) for r in block)
+            hoisted.append(_MD_TABLE_SENTINEL + encoded)
+            block.clear()
+
+    for raw in markdown_text.splitlines():
+        if raw.strip().startswith("|"):
+            block.append(raw)
+            continue
+        _flush()
+        hoisted.append(raw)
+    _flush()
+    return "\n".join(hoisted)
+
+
+# 2026-10-15 定稿红线（AGENTS.md §7 ② + docs/dsh/moyu-green-wechat-spec-2026-10-12.md）：
+# 文末「往期推荐」固定 5 篇。此前只有渲染侧软兜底（len(recs) >= 5 即 break），run 级
+# wechat-config.json 给 6 篇照样全绿出厂——case-008 实测渲染出 6 篇且校验器只查「往期推荐」
+# 四个字是否存在，不查条数。这里把条数收敛成硬约束：渲染侧规范化 + 校验侧真门禁。
+RECOMMENDATION_FIXED_COUNT = 5
+RECOMMENDATION_PIN = "📌 "
+
+
+def normalize_recommendations(
+    recommendations: Sequence[Mapping[str, str]],
+    *,
+    title: str = "",
+    work_badge: str = "",
+) -> tuple[list[dict[str, str]], dict[str, Any]]:
+    """把「往期推荐」规范化为恰好 RECOMMENDATION_FIXED_COUNT 篇，并返回可审计的处置记录。
+
+    - 多于 5 篇：按输入顺序截断，被丢弃的标题进 audit["dropped"]（不静默丢弃）。
+    - 少于 5 篇：用 CANONICAL_MOTHER_TEXTS 母本补齐，补入的标题进 audit["padded"]。
+    - 标题重复/空标题：只保留第一条，同样进 audit["dropped"]。
+    """
+    recs: list[dict[str, str]] = []
+    seen: set[str] = set()
+    dropped: list[str] = []
+    for raw in recommendations or []:
+        item = {str(k): str(v) for k, v in dict(raw).items()}
+        rec_title = (item.get("title") or "").strip()
+        if not rec_title or rec_title in seen:
+            if rec_title:
+                dropped.append(rec_title)
+            continue
+        seen.add(rec_title)
+        recs.append(item)
+
+    padded: list[str] = []
+    if len(recs) < RECOMMENDATION_FIXED_COUNT:
+        from article_group.dna_engine import CANONICAL_MOTHER_TEXTS
+
+        for mother in CANONICAL_MOTHER_TEXTS:
+            if len(recs) >= RECOMMENDATION_FIXED_COUNT:
+                break
+            mother_title = f"《{mother['title']}》"
+            if mother_title in seen or mother["title"] == title:
+                continue
+            if work_badge and work_badge[:4] in mother["title"]:
+                continue
+            seen.add(mother_title)
+            recs.append({
+                "title": mother_title,
+                "desc": f"{mother['archetype']}标杆深文：剥开名利场温情脉脉的面纱，把每一分现实代价算到骨头里。",
+            })
+            padded.append(mother_title)
+
+    if len(recs) > RECOMMENDATION_FIXED_COUNT:
+        dropped.extend(r.get("title", "") for r in recs[RECOMMENDATION_FIXED_COUNT:])
+        recs = recs[:RECOMMENDATION_FIXED_COUNT]
+
+    audit = {
+        "target": RECOMMENDATION_FIXED_COUNT,
+        "action": "padded" if padded else ("truncated" if dropped else "ok"),
+        "padded": padded,
+        "dropped": [d for d in dropped if d],
+        "count": len(recs),
+    }
+    return recs, audit
+
+
 def render_moyu_green_bundle(
     markdown_text: str,
     *,
@@ -148,7 +326,7 @@ def render_moyu_green_bundle(
     include_cover_card: bool = False,
     include_top_follow: bool = False,
     embed_images: bool = False,
-) -> dict[str, str]:
+) -> dict[str, Any]:
     """将 Markdown 正文渲染为符合摸鱼绿杂志风规范的 body.html、preview.html 与 delivery.md。
 
     include_top_follow=False：去掉头部名片式关注条（正文直接从开篇切入）。
@@ -159,6 +337,11 @@ def render_moyu_green_bundle(
     clean_title = _normalize_cjk_punct(title.strip())
     subtitle_str = " · ".join(_normalize_cjk_punct(p.strip()) for p in subtitle_points if p.strip())
     root_path = Path(run_root).resolve() if run_root else None
+
+    # 红线：往期推荐固定 5 篇（不论调用方给几条，出厂恒为 5 条并留下处置记录）
+    recommendations, recommendation_audit = normalize_recommendations(
+        recommendations, title=title, work_badge=work_badge
+    )
 
     out: list[str] = []
     out.append(
@@ -228,9 +411,16 @@ def render_moyu_green_bundle(
         "",
     ]
 
-    for raw_line in markdown_text.splitlines():
+    for raw_line in _hoist_md_tables(markdown_text).splitlines():
         line = raw_line.strip()
         if not line:
+            continue
+        # Markdown 表格整块占位符 ➔ 渲染为内联样式 <table>
+        if line.startswith(_MD_TABLE_SENTINEL):
+            raw_table = line[len(_MD_TABLE_SENTINEL):]
+            table_rows = [r.split("\x01") for r in raw_table.split("\x02")]
+            out.append(_render_md_table(table_rows))
+            delivery_md_lines.append("\n".join("| " + " | ".join(r) + " |" for r in table_rows) + "\n")
             continue
         # 跳过顶层 H1 标题和 Markdown 图片占位符（微信纯享内联正文不带本地断裂死图路径）
         if line.startswith("# "):
@@ -243,7 +433,7 @@ def render_moyu_green_bundle(
             if img_file and img_file.is_file():
                 if embed_images:
                     img_card = f"""  <section style="margin: 24px 0; text-align: center;">
-    <img src="{_esc(src_rel)}" alt="{_esc(alt)}" style="max-width: 100%; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); display: block; margin: 0 auto;" />
+    <img src="{_esc_attr(src_rel)}" alt="{_esc_attr(alt)}" style="max-width: 100%; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); display: block; margin: 0 auto;" />
     <p style="margin: 8px 0 0; font-size: 13px; color: #6b7280; text-align: center; line-height: 1.5;"><span leaf="">▲ {_esc(_normalize_cjk_punct(alt))}</span></p>
   </section>"""
                     out.append(img_card)
@@ -352,18 +542,27 @@ def render_moyu_green_bundle(
     </p>
   </section>""")
 
-    # 【组件 6】往期推荐（Recommendation · 支持自定义篇数，不承诺点击跳转）
+    # 【组件 6】往期推荐（Recommendation · 严格兼容微信公众号原生图文超链接属性）
     rec_list = list(recommendations)
     total_recs = len(rec_list)
     rec_items_html: list[str] = []
     for idx, rec in enumerate(rec_list):
         rec_title = _normalize_cjk_punct(rec.get("title", "").strip())
+        # 纯净标题（剥离《》与前缀emoji，供微信编辑器识别为图文文章真实标题）
+        pure_title = re.sub(r"^[📌s]+|[《》「」]", "", rec_title).strip()
         rec_desc = _normalize_cjk_punct(rec.get("desc", "").strip())
+        rec_url = str(rec.get("url") or rec.get("link") or "").strip()
         border_style = " border-bottom: 1px solid #ecfdf5;" if idx < total_recs - 1 else ""
         margin_b = "12px" if idx < total_recs - 1 else "8px"
+        if rec_url:
+            # 微信公众号官方规范：📌在<a>外，<a>带textvalue/data-itemshowtype/linktype/data-linktype
+            title_node = f'<span leaf="">📌&nbsp;<a target="_blank" href="{_esc_attr(rec_url)}" textvalue="{_esc_attr(pure_title)}" data-itemshowtype="0" linktype="text" data-linktype="2" style="color: #065f46; text-decoration: none;"><span leaf="">{_esc(pure_title)}</span></a></span>'
+        else:
+            title_node = f'<span leaf="">📌&nbsp;{_esc(pure_title)}</span>'
+        desc_node = f"""
+      <p style="margin: 0; font-size: 12.5px; color: #4b5563; line-height: 1.6; text-align: left;"><span leaf="">{_esc(rec_desc)}</span></p>""" if rec_desc else ""
         rec_items_html.append(f"""    <section style="margin-bottom: {margin_b}; padding: 10px 0 12px;{border_style}">
-      <p style="margin: 0 0 4px; font-size: 14px; color: #065f46; line-height: 1.6;"><span leaf="">📌 {_esc(rec_title)}</span></p>
-      <p style="margin: 0; font-size: 12.5px; color: #4b5563; line-height: 1.6; text-align: left;"><span leaf="">{_esc(rec_desc)}</span></p>
+      <p style="margin: 0 0 4px; font-size: 14px; color: #065f46; line-height: 1.6;">{title_node}</p>{desc_node}
     </section>""")
 
     num_words_map = {1: "这篇", 2: "两篇", 3: "三篇", 4: "四篇", 5: "五篇", 6: "六篇"}
@@ -491,6 +690,27 @@ def render_moyu_green_bundle(
         "👉 **点击顶部蓝字关注「若雨随影」，顺手设为星标，好文不错过。**",
         "",
     ])
+    if rec_list:
+        delivery_md_lines.extend([
+            "",
+            "---",
+            "",
+            "### 🔥 往期推荐",
+            "",
+            rec_intro_text,
+            "",
+        ])
+        for rec in rec_list:
+            r_title = _normalize_cjk_punct(rec.get("title", "").strip())
+            r_desc = _normalize_cjk_punct(rec.get("desc", "").strip())
+            r_url = str(rec.get("url") or rec.get("link") or "").strip()
+            if r_url:
+                delivery_md_lines.append(f"* [📌 {r_title}]({r_url})")
+            else:
+                delivery_md_lines.append(f"* 📌 {r_title}")
+            if r_desc:
+                delivery_md_lines.append(f"  {r_desc}")
+            delivery_md_lines.append("")
     delivery_md = "\n".join(delivery_md_lines)
 
     return {
@@ -501,6 +721,7 @@ def render_moyu_green_bundle(
         "body_sha256": hashlib.sha256(body_html.encode("utf-8")).hexdigest(),
         "preview_sha256": hashlib.sha256(preview_html.encode("utf-8")).hexdigest(),
         "delivery_md_sha256": hashlib.sha256(delivery_md.encode("utf-8")).hexdigest(),
+        "recommendation_audit": recommendation_audit,
     }
 
 
@@ -804,6 +1025,11 @@ def write_moyu_green_run_bundle(
     manifest = {
         "template": "ruoyu-moyu-green-2026-10-12",
         "validation": val,
+        "recommendations": {
+            "fixed_count": RECOMMENDATION_FIXED_COUNT,
+            "rendered_count": val.get("recommendation_count"),
+            "normalization": bundle.get("recommendation_audit", {}),
+        },
         "source_draft_sha256": draft_sha256,
         "body_sha256": bundle["body_sha256"],
         "preview_sha256": bundle["preview_sha256"],
@@ -940,6 +1166,7 @@ def validate_moyu_green_html(
 
     2026-10-14 用户定稿标准：文首名片式关注条默认不做（需要时由 run 显式开启，
     那时 allow_no_top_follow=False 才会强制要求它存在）。
+    2026-10-15 新增红线：往期推荐固定 RECOMMENDATION_FIXED_COUNT（5）篇，按条目锚点实数。
     allow_local_images=True：允许 body.html 内含本地图片路径（仅用于留档预览）；默认禁止，
     因为微信公众号编辑器抓不到本地/相对路径图片，粘贴后必然碎图。
     """
@@ -964,8 +1191,16 @@ def validate_moyu_green_html(
         errors.append("missing_component_4_interaction_card")
     if "👉 点击顶部蓝字关注「若雨随影」" not in body_html or "【设为星标】" not in body_html:
         errors.append("missing_component_5_footer_follow_cta")
-    if "往期推荐" not in body_html:
+    # 【组件 6 红线】往期推荐固定 5 篇：只查「往期推荐」四个字存在是不够的——
+    # case-008 就是四字齐全但实际 6 篇、门禁全绿出厂。这里按条目锚点 📌 实数。
+    rec_section = body_html[body_html.index("往期推荐"):] if "往期推荐" in body_html else ""
+    recommendation_count = rec_section.count(RECOMMENDATION_PIN)
+    if not rec_section:
         errors.append("missing_component_6_recommendations")
+    elif recommendation_count != RECOMMENDATION_FIXED_COUNT:
+        errors.append(
+            f"recommendations_must_be_{RECOMMENDATION_FIXED_COUNT}:got_{recommendation_count}"
+        )
     if "点击直达" in body_html:
         errors.append("forbidden_fake_click_link_in_recommendations")
     if '<span leaf="">' not in body_html:
@@ -980,4 +1215,5 @@ def validate_moyu_green_html(
         "passed": len(errors) == 0,
         "errors": errors,
         "leaf_span_count": body_html.count("<span leaf="),
+        "recommendation_count": recommendation_count,
     }
