@@ -123,6 +123,7 @@ def test_run_all_gates_writes_artifacts_and_reports_fail_without_exit(tmp_path):
         "review/gates/compliance-gate.json",
         "review/gates/assertion-coverage.json",
         "review/gates/editorial-gate.json",
+        "review/gates/publish-precheck-advisory.json",
     }
     hierarchy = writes["task-hierarchy-validation-report.json"]
     assert hierarchy["pass"] is False
@@ -139,6 +140,75 @@ def test_run_all_gates_writes_artifacts_and_reports_fail_without_exit(tmp_path):
     five_questions = writes["review/gates/topic-five-questions.json"]
     assert five_questions["pass"] is False
     assert "missing:topic_five_questions" in five_questions["errors"]
+
+
+def test_publish_precheck_advisory_is_wired_but_never_gates(tmp_path):
+    """补充层必须落盘、必须报状态，但**不许**有 pass、不许进阻断判定。"""
+    writes: dict[str, object] = {}
+
+    def writer(rel: str, value: object) -> None:
+        writes[rel] = value
+
+    summary = run_all_gates(tmp_path, writer, fail_on_error=False)
+
+    advisory = writes["review/gates/publish-precheck-advisory.json"]
+    # 空 run 没有 drafts/ → 显式 not_run + 原因（不是静默跳过，也不是"干净"）
+    assert advisory["status"] == "not_run"
+    assert advisory["reason"] == "no_articles_to_scan"
+    assert advisory["layer"] == "advisory"
+    assert advisory["gate_effect"] == "none"
+    assert advisory["authorizes_publication"] is False
+    assert "pass" not in advisory
+
+    # 只在独立的 advisory 栏报状态，绝不混进 pass 汇总
+    assert summary["publish_precheck_advisory"] == "not_run"
+    assert all("publish_precheck" not in key or key.endswith(("_advisory", "_note"))
+               for key in summary)
+    assert not any(
+        value == "fail" and "publish_precheck" in key for key, value in summary.items()
+    )
+
+
+def test_publish_precheck_advisory_error_does_not_block_run(tmp_path, monkeypatch):
+    """补充层自己炸了也不许拖垮门禁，但必须留痕成 error 记录。"""
+    from article_group import run_gates
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("vendor 炸了")
+
+    monkeypatch.setattr(run_gates, "build_publish_precheck_advisory", boom)
+    writes: dict[str, object] = {}
+    summary = run_gates.run_all_gates(
+        tmp_path, lambda rel, value: writes.__setitem__(rel, value), fail_on_error=False
+    )
+
+    advisory = writes["review/gates/publish-precheck-advisory.json"]
+    assert advisory["status"] == "error"
+    assert "advisory_crashed:RuntimeError:vendor 炸了" in advisory["reason"]
+    assert advisory["errors"] == ["RuntimeError:vendor 炸了"]
+    assert "pass" not in advisory
+    assert summary["publish_precheck_advisory"] == "error"
+
+
+def test_publish_precheck_record_write_failure_does_not_block_run(tmp_path):
+    """记录写不进去（封存 run / 磁盘错 / 权限）也不许拖垮门禁。
+
+    契约说"不阻断"就必须真不阻断：异常只许降级成显式 error 状态，
+    不许让整轮门禁崩掉，也不许留下"看起来 ran、其实没落成证据"的假象。
+    """
+    from article_group import run_gates
+
+    writes: dict[str, object] = {}
+
+    def writer(rel: str, value: object) -> None:
+        if rel == run_gates.PUBLISH_PRECHECK_RECORD_PATH:
+            raise RuntimeError("RunSealedError: run 已封存")
+        writes[rel] = value
+
+    summary = run_gates.run_all_gates(tmp_path, writer, fail_on_error=False)
+
+    assert summary["publish_precheck_advisory"] == "error"
+    assert run_gates.PUBLISH_PRECHECK_RECORD_PATH not in writes
 
 
 def test_run_all_gates_reports_social_five_gates_failure(tmp_path):

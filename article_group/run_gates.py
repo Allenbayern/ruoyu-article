@@ -20,6 +20,13 @@ Three institutional gates, no silent skips:
   candidates run the real five-gates enforcement (hard errors block,
   keyword cross-check warnings are aid only). Declaration shape:
   `templates/five-gates-declaration.md`.
+- **publish_precheck_advisory（发布前审补充层，2026-10-15）** — **非门禁**：
+  第三方 skill 的词面预检，只产出"哪里值得看"的复核候选与逐篇报告，
+  记录带 ``gate_effect: "none"`` 且**没有 pass 字段**；不参与本函数的
+  ``fail_on_error`` 判定，也不进返回的 pass 汇总（只在
+  ``publish_precheck_advisory`` 栏报 ``ran``/``partial``/``not_run``/``error``）。
+  理由见 `article_group/publish_precheck.py` 模块 docstring：词面命中≠违规，
+  零候选≠安全，且判定者不能是被检产物自己。
 
 Generators call :func:`run_all_gates` with their own ``write_json`` writer
 (rooted at the run dir), e.g. ``run_real_daily_005.gates()``.
@@ -40,6 +47,12 @@ from .compliance_gate import crosscheck_pool_five_gates, validate_pool_five_gate
 from .editorial_gate import build_editorial_gate
 from .editorial_review import evaluate_editorial_record
 from .git_hygiene import validate_infra_ready
+from .publish_precheck import GATE_RECORD_PATH as PUBLISH_PRECHECK_RECORD_PATH
+from .publish_precheck import (
+    bounded_reason_detail,
+    build_publish_precheck_advisory,
+    write_target_problem,
+)
 
 COMPLIANCE_GATE_REASON = (
     "社会话题五道门（five_gates）仅在 social_topic 题材启用；本期日更为影视制作"
@@ -396,6 +409,55 @@ def run_all_gates(
     editorial_quality = build_editorial_gate(run_root, editorial_declarations)
     write_json("review/gates/editorial-gate.json", editorial_quality)
 
+    # 发布前审补充层（2026-10-15）：第三方 skill 的词面预检，advisory only。
+    # 刻意不进 fail_on_error 与返回的 pass 汇总 —— 候选不是结论。
+    # 但异常也不能让这一栏凭空消失：捕获后落成显式 error 记录（fail-open 但留痕）。
+    try:
+        publish_precheck = build_publish_precheck_advisory(
+            run_root, write_article_reports=write_json
+        )
+    except Exception as exc:  # noqa: BLE001 — 补充层不许拖垮门禁，但必须留痕
+        publish_precheck = {
+            "schema_version": "publish-precheck-advisory-v1",
+            "skill_id": "yuwen-publish-precheck",
+            "layer": "advisory",
+            "gate_effect": "none",
+            "blocking": False,
+            "authorizes_publication": False,
+            "publication_authorization": "not_authorized",
+            "verdict": "advisory_only",
+            "status": "error",
+            # L2R11-08：原因串必须过同一把尺子（单行/有界/无控制字符）—— 先前这里裸拼 exc，
+            # vendor 的多行回溯会从门禁层原样漏进 run 级记录。
+            "reason": f"advisory_crashed:{type(exc).__name__}:{bounded_reason_detail(exc)}",
+            "articles": [],
+            "totals": {},
+            "errors": [f"{type(exc).__name__}:{bounded_reason_detail(exc)}"],
+        }
+    # 记录写不进去（封存 run / 磁盘错 / 权限）同样不许拖垮门禁 —— 契约写了"不阻断"
+    # 就得真不阻断；但状态必须改成 error，不能留下"看起来 ran 其实没落成证据"的假象。
+    try:
+        # L2R11-09：容器越界（`review/gates` 是外链软链）不是"写失败"，而是本层不许写 ——
+        # 否则记录落到 run 之外，门禁面却报正常。
+        escape = write_target_problem(run_root, PUBLISH_PRECHECK_RECORD_PATH)
+        if escape:
+            # L2R11-09：容器越界 → 不写；原因串带 rel（`write_refused:path_escape:<rel>`）。
+            raise OSError(f"write_refused:{escape}:{PUBLISH_PRECHECK_RECORD_PATH}")
+        write_json(PUBLISH_PRECHECK_RECORD_PATH, publish_precheck)
+    except Exception as exc:  # noqa: BLE001 — 见上
+        publish_precheck = {
+            **publish_precheck,
+            "status": "error",
+            "reason": (
+                f"advisory_record_write_failed:{type(exc).__name__}:"
+                f"{bounded_reason_detail(exc)}"
+            ),
+            "errors": [
+                *(publish_precheck.get("errors") or []),
+                f"record_write_failed:{type(exc).__name__}:{bounded_reason_detail(exc)}",
+            ],
+        }
+
     compliance_failed = compliance.get("full_gate") == "run" and not compliance.get("pass")
     if fail_on_error and (
         not hierarchy_report["pass"]
@@ -436,6 +498,11 @@ def run_all_gates(
             else ("pass" if compliance.get("pass") else "fail")
         ),
         "compliance_gate_reason": COMPLIANCE_GATE_REASON,
+        # 补充层：只报扫描器状态，永不 pass/fail，永不阻断（见模块 docstring）。
+        "publish_precheck_advisory": publish_precheck.get("status", "not_run"),
+        "publish_precheck_advisory_note": (
+            "advisory only：候选 ≠ 违规结论，零候选 ≠ 安全；不构成发布授权。"
+        ),
     }
 
 

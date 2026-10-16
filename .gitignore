@@ -55,6 +55,12 @@ scripts/*
 # 导入的是 scripts.dsh_review_audit；这个新名字不进白名单时，干净检出会因
 # ModuleNotFoundError 直接失败（实测：干净克隆多出 3 个回归）。与 codex_ 条目对称。
 !scripts/dsh_review_audit.py
+# 2026-10-16：发布前审补充层的**三份证据脚本**（黑名单挖掘 + 平台规则候选误报测量 + 词库候选挖掘）。
+# 第 10 轮复核指出：`scripts/*` 把这两份也挡在版本控制外，而 runbook 与历轮复核结论都用
+# "重跑这两个脚本"当复算命令 —— 干净检出没有它们，证据就只剩本机的 /tmp。与上面三条同对称。
+!scripts/publish_precheck_blacklist_mining.py
+!scripts/publish_precheck_platform_mine.py
+!scripts/publish_precheck_wordlist_mine.py
 # 2026-09-25：选题侦察四件套（topic_scout / scout_calibration / topic_backlog /
 # scout_to_candidate_pool）的**测试**没有被忽略，而脚本本身命中上面的 `scripts/*`。
 # 于是 `git add -A` 会提交测试而不提交被它们 import 的模块——实测（git archive HEAD

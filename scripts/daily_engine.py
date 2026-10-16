@@ -988,6 +988,95 @@ def gates() -> None:
     )
 
 
+ADVISORY_STATUSES = frozenset({"ran", "partial", "not_run", "error"})
+
+
+def _bounded_reason(reason: str, *, limit: int = 200) -> str:
+    """RUN-RECORD 里的 `reason` 必须有上界（L2R7-05：实测 20 万字符原样入档）。
+
+    超长时截断 + 8 位摘要：与 `publish_precheck._reason_detail` 同一口径（既不无界，
+    也不把"前 200 字符相同"的两类故障塌成同一个串）。
+    """
+    flat = " ".join(str(reason).split())
+    if len(flat) <= limit:
+        return flat
+    return f"{flat[:limit]}…+{hashlib.sha256(flat.encode('utf-8', 'replace')).hexdigest()[:8]}"
+
+
+def publish_precheck_advisory_status(root: Path) -> tuple[str, str]:
+    """读发布前审补充层的状态（**非门禁**），供 RUN-RECORD 独立栏回填（L2-09）。
+
+    它长期 error/not_run 不该在 RUN-RECORD 里无迹可寻；状态词用 ran/partial/not_run/error，
+    与 pass/fail 天然不混，不可能被读成"通过"。缺失或读坏 → not_run（不是静默省略）。
+
+    L2R2-04：初版对记录**完全不校验**，两处会被击穿 ——
+    ① 合法但非对象的 JSON（`[]` / `null` / `123`）→ `report.get` 抛 AttributeError，
+       直接击穿 RUN-RECORD 组装；
+    ② 状态词无白名单 → 手写 `{"status": "pass"}` 被原样回填进
+       `batch["run_gates"]["publish_precheck_advisory"]`，这一栏凭空多出一个"通过"。
+    现在：非对象 → error；未知状态 → error（不透传，也不缩写成 not_run 以免掩盖伪造）。
+
+    L2R6-05（复核方 coverage_gap ⑤，本层主动收口）：初版把 **OSError 与解析失败一起** 归成
+    良性 `("not_run", "")` —— 于是"记录文件存在但内容坏了（非 UTF-8 / 截断 JSON）"与
+    "这一层根本没跑过"在 RUN-RECORD 里逐字段同形，正是本层最怕的那种"故障伪装成没事"。
+    现在只把**文件不存在**当 not_run；文件在但读不坏、坏了一律 error（带病因）。
+
+    L2R7-05：上一句的判据 `is_file()` 仍把三类"有东西但不可用"当成了"根本没有" ——
+    同名**目录**、**悬空软链**、以及**合法 JSON 但没有 `status` 键**（`{}` / `{"foo":1}`，
+    原先靠 `report.get("status", "not_run")` 默认成良性 not_run）。另外 `reason` 原样透传
+    无上限，第 7 轮实测 20 万字符能进 `batch["run_gates"]["publish_precheck_advisory_reason"]`。
+    现在：软链 → `record_is_symlink`；存在但非普通文件 → `record_not_a_file`；
+    缺 `status` 键 → `record_missing_status`；`reason` 过 `_bounded_reason()`（≤200 字符 + 摘要）。
+    """
+    path = root / "review/gates/publish-precheck-advisory.json"
+    if path.is_symlink():
+        # 记录被指到 run 外：本层自己的写路径从不产生软链，出现即为异常，不当"没跑过"。
+        return "error", "record_is_symlink"
+    if not path.exists():
+        return "not_run", ""
+    if not path.is_file():
+        return "error", "record_not_a_file"
+    try:
+        report = json.loads(path.read_text(encoding="utf-8"))
+    except RecursionError:
+        # L2R8-05：`json.loads` 对**深层嵌套**输入抛 RecursionError（不是 JSONDecodeError、
+        # 也不是 OSError），原先不在 except 元组里 → 逃出本函数（调用点 daily_engine 侧无 try）
+        # → `batch.json` 永远写不出来、流水线在 batch_manifest 处中断。破坏了本函数
+        # "一切读坏 → error 带病因"的总体性契约。
+        return "error", "record_too_deep"
+    except UnicodeDecodeError:
+        return "error", "record_not_utf8"
+    except json.JSONDecodeError:
+        return "error", "record_not_json"
+    except ValueError as exc:  # JSONDecodeError/UnicodeDecodeError 之外的解码类故障
+        return "error", f"record_invalid:{type(exc).__name__}"
+    except OSError as exc:
+        return "error", f"record_unreadable:{type(exc).__name__}"
+    if not isinstance(report, dict):
+        return "error", f"record_not_a_mapping:{type(report).__name__}"
+    # L2R9-01（major）：`json.loads` 只挡住**解析期**的 RecursionError。一个"能解析、但值本身
+    # 嵌套极深"的记录（实测约 45000–50000 层，视 CPython 版本）会在后面的 `str(report[...])`
+    # 里再次 RecursionError —— 而那时已经出了 `try`，于是逃出本函数；调用点（batch_manifest）
+    # 没有 try，流水线就在写 `batch.json` 之前中断。现在**所有读值/转字符串都在 try 内**：
+    # "解析不了的、读不出来的、转不动的"一律走同一个 fail-closed 出口。
+    try:
+        if "status" not in report:
+            return "error", "record_missing_status"
+        status = str(report["status"])
+        if status not in ADVISORY_STATUSES:
+            shown = " ".join(status.split())[:40]
+            return "error", f"unknown_status:{shown}"
+        if status == "ran":
+            return status, ""
+        return status, _bounded_reason(str(report.get("reason", "")))
+    except RecursionError:
+        return "error", "record_too_deep"
+    except ValueError as exc:  # 转换/解码类故障（UnicodeDecodeError 等）
+        return "error", f"record_invalid:{type(exc).__name__}"
+    except OSError as exc:
+        return "error", f"record_unreadable:{type(exc).__name__}"
+
+
 def batch_manifest(bodies_map: dict[str, str]) -> None:
     specs = BATCH_SPECS
     articles = []
@@ -1133,6 +1222,7 @@ def batch_manifest(bodies_map: dict[str, str]) -> None:
     hygiene_report = json.loads((ROOT / "review/gates/git-hygiene.json").read_text(encoding="utf-8"))
     compliance_report = json.loads((ROOT / "review/gates/compliance-gate.json").read_text(encoding="utf-8"))
     five_questions_report = json.loads((ROOT / "review/gates/topic-five-questions.json").read_text(encoding="utf-8"))
+    advisory_status, advisory_reason = publish_precheck_advisory_status(ROOT)
     batch["run_gates"] = {
         "portfolio_gate": "pass" if portfolio_report.get("pass") else "fail",
         "task_hierarchy_contract": "pass" if hierarchy_report.get("pass") else "fail",
@@ -1141,6 +1231,8 @@ def batch_manifest(bodies_map: dict[str, str]) -> None:
         "editorial_protocol": "pass" if editorial_report.get("pass") else "fail",
         "independent_review": "pass" if independent_report.get("pass") else "fail",
         "prose_pilot": "advisory",
+        "publish_precheck_advisory": advisory_status,
+        "publish_precheck_advisory_reason": advisory_reason,
         "git_hygiene_infra": "pass" if hygiene_report.get("pass") else "fail",
         "compliance_gate": (
             "not_run"
