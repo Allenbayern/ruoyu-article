@@ -221,7 +221,8 @@ def _build_prompt(args: argparse.Namespace) -> str:
         f"Acceptance criteria: {criteria}\n"
         f"Run root / artifact context: {args.run_root}\n"
         f"Additional focus: {args.focus or 'none'}\n"
-        f"{L2_CONTENT_REDLINES}"
+        f"{L2_CONTENT_REDLINES}\n"
+        f"{L2_HUMAN_TONE_QUESTIONS}\n"
         "Use exact file paths, line numbers where possible, commands, and counterexamples."
     )
 
@@ -253,6 +254,79 @@ L2_CONTENT_REDLINES = (
     "in the delivered body; declared-but-absent is a blocker. An abstract-only treatment "
     "with no concrete physical anchor is needs_changes.\n"
 )
+
+# L2 人味儿对抗固定三问（2026-10-17 落地，借鉴微信长文人味儿写作工程 B8 标定）：
+# 复核员必须对稿件执行三问对抗审视，严守严重度触发闸门：
+#   Q1 · 说理方式（靠什么说服人：摆事实、讲道理还是动情绪，有无主次，禁端平中间腔）
+#   Q2 · 说话姿态（有没有一个人在场：写作者个体声线与辨识度，禁公版标准声）
+#   Q3 · 出其不意（笔法意外性：反例替换测试，整篇无意外记 blocker，单段≥3句可被同义平庸句无损替换记 major）
+L2_HUMAN_TONE_QUESTIONS = (
+    "Human-tone adversarial checks (B8 questions; check every one independently):\n"
+    "(Q1) Persuasion path (what persuades the reader): does the piece argue through facts, "
+    "emotions, or abstract reasoning with a clear primary driver, or is it flattened into a safe, "
+    "diplomatic middle-tone where all three are balanced superficially? "
+    "Mark major if all three are used equally and shallowly in the same section, or if claimed 'facts' "
+    "are purely judgment adjectives.\n"
+    "(Q2) Voice & presence (is there a specific human presence): is there an unmistakable authorial voice "
+    "and temperament with dynamic posture shifts across sections, or a generic, interchangeable corporate/account voice? "
+    "Mark major if no sentence can be attributed uniquely to this author and the tone is completely flat throughout.\n"
+    "(Q3) Unexpected turns (anti-predictability & craft surprises): test paragraphs by replacing sentences with "
+    "'the most predictable, risk-free sentence'. Mark blocker if the entire piece has zero unexpected craft moments; "
+    "mark major if any single section has >=3 sentences that can be seamlessly replaced by predictable boilerplate clichés.\n"
+    "Evidence rule: every finding MUST cite a verbatim passage of >=12 characters from the draft. "
+    "If uncertain or unable to evaluate a question, record q1_not_covered / q2_not_covered / q3_not_covered in coverage_gaps.\n"
+)
+
+
+def verify_review_evidence_quotes(
+    findings: list[Mapping[str, Any]],
+    text: str,
+    *,
+    min_chars: int = 12,
+) -> dict[str, Any]:
+    """确定性回查 L2 findings 中的引文是否逐字存在于被复核文本中（B8 纪律）。
+
+    检查规则：
+    - 对每条 finding，提取 evidence 中的文本；
+    - 长度 >= min_chars 的引用片段必须在 text 中逐字匹配；
+    - 返回 {"pass": bool, "total": int, "matched": int, "mismatched": list[dict]}。
+    """
+    total = 0
+    matched = 0
+    mismatched = []
+    normalized_text = text.replace("\r\n", "\n")
+
+    for idx, finding in enumerate(findings):
+        if not isinstance(finding, Mapping):
+            continue
+        evidence = str(finding.get("evidence") or "").strip()
+        if not evidence:
+            continue
+        total += 1
+        clean_evidence = evidence.strip("`\"' \n\t")
+        lines = [line.strip("`\"' \t") for line in clean_evidence.splitlines() if len(line.strip("`\"' \t")) >= min_chars]
+        candidate = max(lines, key=len) if lines else clean_evidence
+
+        if len(candidate) < min_chars:
+            matched += 1
+            continue
+
+        if candidate in normalized_text:
+            matched += 1
+        else:
+            mismatched.append({
+                "finding_index": idx,
+                "severity": str(finding.get("severity") or ""),
+                "target": str(finding.get("target") or ""),
+                "candidate_quote": candidate[:80],
+            })
+
+    return {
+        "pass": len(mismatched) == 0,
+        "total": total,
+        "matched": matched,
+        "mismatched": mismatched,
+    }
 
 
 def _base_record(args: argparse.Namespace, mode: str, command: list[str]) -> dict[str, Any]:
@@ -986,10 +1060,23 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="run 已封存时仍写入复核记录与日志（controller 决定；走留底+记账）",
     )
+    parser.add_argument(
+        "--print-l2-prompt",
+        action="store_true",
+        help="打印官方 L2 独立只读复核提示词模板（含五大内容红线与 B8 人味儿固定三问）并退出",
+    )
     return parser
 
 
 def main() -> int:
+    if "--print-l2-prompt" in sys.argv:
+        print(
+            "=== L2 Content Redlines ===\n"
+            f"{L2_CONTENT_REDLINES}\n"
+            "=== L2 Human-Tone Adversarial Questions (B8) ===\n"
+            f"{L2_HUMAN_TONE_QUESTIONS}"
+        )
+        return 0
     args = build_parser().parse_args()
     from article_group.evidence_write import RunSealedError
 

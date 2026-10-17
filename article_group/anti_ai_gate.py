@@ -25,12 +25,41 @@ DEFAULT_THRESHOLD: float = 45.0
 # -----------------------------------------------------------------------------
 # Cliché and Jargon Patterns
 # -----------------------------------------------------------------------------
-
-AI_PHRASES: list[tuple[str, str]] = [
+#
+# 分两组，**计分行为完全不变**（顺序与内容逐字保持原样），区别只在可审计性：
+#
+#   A. GENRE_TIGHTENED_PHRASES —— 「体裁加严」组：比通用去 AI 规则**有意更严**的条目。
+#   B. 其余条目 —— 通用组：与 lieflat-less-ai-tone 等通用去 AI 规则同向。
+#
+# 为什么需要显式标注（2026-10-15，L2 finding §2）：通用规则源 lieflat-less-ai-tone
+# `SKILL.md:103-104` 明确判定「正文里的『首先……其次』」与「句内同构排比」**不是 AI 痕迹**
+# （人类用得不比 AI 少），而本门禁对它们计分。这是**有意的体裁加严**（生效体裁：若雨随影
+# 公众号影视长文），不是实现与规则源漂移；此前它只存在于代码里、无任何标注，无法审计，
+# 故在此显式成组并写明依据。
+#
+# 决策证据（2026-10-15，量测脚本与结果见同目录）：
+#   runs/2026-10-15/baimiao-vs-lieflat-rule-matrix/INTEGRATION-AND-FIXLIST.md §2
+#   runs/2026-10-15/baimiao-vs-lieflat-rule-matrix/phrase-weight-measurement.json
+# 量测结论：154 篇人类已发表稿件 + 7 篇本院定稿上，phrases/structural 两维中位分均为 0.0，
+# 仅 3/154 命中本组条目；反事实把 phrases 权重 0.30→0.20 会翻转的判定为 **0 篇**。
+# → 该加严在真实人类语料上是**惰性**的，问题只在「未标注」；因此**保留评分口径**（改权重
+#   会破坏历史分数可比性而收益为零），只做标签化。
+GENRE_TIGHTENED_SCOPE = "wechat-longform"
+GENRE_TIGHTENED_RATIONALE = (
+    "lieflat-less-ai-tone/SKILL.md:103-104 判『正文序数路标』与『句内同构排比』为非 AI 痕迹；"
+    "本门禁的生效体裁是公众号影视长文，故按体裁加严计分——这是有意的口径差，非实现漂移。"
+)
+GENRE_TIGHTENED_PHRASES: list[tuple[str, str]] = [
     (r"首先[,，].{0,12}其次[,，].{0,12}最后", "枚举套话：首先…其次…最后"),
     (r"首先[,，].{0,12}其次[,，].{0,12}再次", "枚举套话：首先…其次…再次"),
     (r"不仅.{0,10}而且", "句式套话：不仅…而且"),
     (r"一方面.{0,15}另一方面", "句式套话：一方面…另一方面"),
+]
+
+AI_PHRASES: list[tuple[str, str]] = [
+    # —— A. 体裁加严组（显式标注；内容与顺序与历史版本逐字一致）——
+    *GENRE_TIGHTENED_PHRASES,
+    # —— B. 通用组（与通用去 AI 规则同向）——
     (r"值得一提的是", "AI过渡词：值得一提的是"),
     (r"不可否认", "AI过渡词：不可否认"),
     (r"毋庸置疑", "AI过渡词：毋庸置疑"),
@@ -60,6 +89,11 @@ AI_PHRASES: list[tuple[str, str]] = [
     (r"产生了(深远|重大|巨大)的影响", "空洞评价：产生了…影响"),
 ]
 
+
+def is_genre_tightened(pattern: str) -> bool:
+    """该 pattern 是否属于「体裁加严」组（供审计/报告使用，不参与计分）。"""
+    return any(pat == pattern for pat, _ in GENRE_TIGHTENED_PHRASES)
+
 AI_VOCAB: list[str] = [
     "赋能", "打造", "聚焦", "深度融合", "生态", "闭环", "链路", "抓手",
     "价值链", "护城河", "方法论", "底层逻辑", "生态位", "结构化思维",
@@ -72,6 +106,60 @@ AI_VOCAB: list[str] = [
 OPENING_CLICHE_PATTERN = re.compile(
     r"^(近年来|随着.{1,20}的(发展|深入|推进|不断)|在.{1,20}的背景下|在当今|回顾.{1,10})"
 )
+
+# -----------------------------------------------------------------------------
+# Zero-width & Invisible Watermark Characters (AIGC Steganography & Trace)
+# -----------------------------------------------------------------------------
+# 常见于 AI 生成内容在字间夹带的隐形指纹/零宽字符（如 watermarks-remover 等工具审计重点）：
+# U+200B: ZERO WIDTH SPACE (零宽空格)
+# U+200C: ZERO WIDTH NON-JOINER (零宽非连接符)
+# U+200D: ZERO WIDTH JOINER (零宽连接符)
+# U+2060: WORD JOINER (词连接符)
+# U+FEFF: ZERO WIDTH NO-BREAK SPACE / BOM (零宽无间断空格)
+ZERO_WIDTH_CHARS = {
+    "\u200b": "ZERO WIDTH SPACE (U+200B)",
+    "\u200c": "ZERO WIDTH NON-JOINER (U+200C)",
+    "\u200d": "ZERO WIDTH JOINER (U+200D)",
+    "\u2060": "WORD JOINER (U+2060)",
+    "\ufeff": "ZERO WIDTH NO-BREAK SPACE (U+FEFF)",
+}
+ZERO_WIDTH_PATTERN = re.compile(r"[\u200b\u200c\u200d\u2060\ufeff]")
+
+
+def scan_invisible_watermarks(text: str) -> dict[str, Any]:
+    """Scan for invisible zero-width watermark characters in text.
+
+    Returns detection summary including positions, counts, and character types.
+    """
+    findings: list[dict[str, Any]] = []
+    char_counts: dict[str, int] = {}
+    for idx, ch in enumerate(text):
+        if ch in ZERO_WIDTH_CHARS:
+            name = ZERO_WIDTH_CHARS[ch]
+            char_counts[name] = char_counts.get(name, 0) + 1
+            if len(findings) < 20:  # Sample up to 20 locations
+                findings.append({
+                    "char": name,
+                    "index": idx,
+                    "context": text[max(0, idx - 5): min(len(text), idx + 6)].replace(ch, "[HIDDEN]"),
+                })
+    total_count = sum(char_counts.values())
+    return {
+        "detected": total_count > 0,
+        "total_count": total_count,
+        "breakdown": char_counts,
+        "samples": findings,
+    }
+
+
+def clean_invisible_watermarks(text: str) -> tuple[str, int]:
+    """Strip all invisible zero-width watermark characters from text.
+
+    Returns (cleaned_text, removed_count).
+    """
+    cleaned, count = ZERO_WIDTH_PATTERN.subn("", text)
+    return cleaned, count
+
 
 # -----------------------------------------------------------------------------
 # Text Preprocessing & Helpers
@@ -335,6 +423,7 @@ def analyze_anti_ai(raw_text: str) -> dict[str, Any]:
 
     opening_check = check_opening_hook(raw_text)
     paragraph_check = check_paragraph_length(raw_text, max_chars=180)
+    watermark_check = scan_invisible_watermarks(raw_text)
 
     total_ai_score = (
         b_score * WEIGHTS["burstiness"]
@@ -351,6 +440,11 @@ def analyze_anti_ai(raw_text: str) -> dict[str, Any]:
     if paragraph_check["count"] >= 3:
         total_ai_score = min(100.0, total_ai_score + 5.0)
 
+    # Invisible watermark characters (U+200B etc.) indicate explicit machine steganography
+    if watermark_check["detected"]:
+        # Direct significant AI penalty if invisible zero-width chars are detected
+        total_ai_score = min(100.0, total_ai_score + min(30.0, watermark_check["total_count"] * 10.0))
+
     if total_ai_score < 35.0:
         verdict = "PASS"
     elif total_ai_score < 50.0:
@@ -365,6 +459,7 @@ def analyze_anti_ai(raw_text: str) -> dict[str, Any]:
         "sentence_count": len(sentences),
         "opening_hook": opening_check,
         "paragraph_length": paragraph_check,
+        "invisible_watermarks": watermark_check,
         "dimensions": {
             "burstiness": {"score": b_score, "detail": b_det},
             "phrases": {"score": p_score, "detail": p_det},
@@ -382,7 +477,12 @@ def check_anti_ai(
 ) -> tuple[bool, dict[str, Any]]:
     """Main gate API: returns (passed, report)."""
     full = analyze_anti_ai(text)
-    passed = full["total_ai_score"] < threshold and full["opening_hook"]["passed"]
+    # Zero-width watermarks strictly fail the gate
+    passed = (
+        full["total_ai_score"] < threshold
+        and full["opening_hook"]["passed"]
+        and not full["invisible_watermarks"]["detected"]
+    )
     report = {
         "passed": passed,
         "total_score": full["total_ai_score"],
@@ -390,6 +490,8 @@ def check_anti_ai(
         "threshold": threshold,
         "opening_passed": full["opening_hook"]["passed"],
         "paragraph_passed": full["paragraph_length"]["passed"],
+        "watermark_passed": not full["invisible_watermarks"]["detected"],
+        "watermark_count": full["invisible_watermarks"]["total_count"],
         "hit_phrases": full["dimensions"]["phrases"]["detail"].get("samples", []),
         "hit_vocab": [f"{w}×{c}" for w, c in full["dimensions"]["vocab"]["detail"].get("top", [])],
         "full_report": full,
@@ -427,6 +529,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"综合 AI 味评分: {full['total_ai_score']} / 100 (阈值: {args.threshold})")
         print(f"字数: {full['char_count']}  句数: {full['sentence_count']}")
         print(f"开头破冰检查: {'✅ PASS' if full['opening_hook']['passed'] else '❌ FAIL: ' + full['opening_hook'].get('advice', '')}")
+        wm = full.get("invisible_watermarks", {})
+        wm_status = "✅ PASS" if not wm.get("detected") else f"❌ FAIL: 检出 {wm.get('total_count')} 处隐形零宽字符水印"
+        print(f"隐形水印检查: {wm_status}")
         para_status = "✅ PASS" if full["paragraph_length"]["passed"] else f"⚠️ WARN: 存在 {full['paragraph_length']['count']} 个超长段落(>180字)"
         print(f"段落屏宽检查: {para_status}")
         print("-" * 60)

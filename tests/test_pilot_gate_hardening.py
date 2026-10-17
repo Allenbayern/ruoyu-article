@@ -606,3 +606,83 @@ def test_record_l2_cli_validations_and_rejections(tmp_path: Path):
     data3 = json.loads(proc3.stdout)
     assert data3["ok"] is False
     assert "run_sealed" in data3["error"]
+
+
+def test_advance_pipeline_delivery_triggers_viral_library_archive(tmp_path: Path):
+    """验证 delivery 阶段自动联动 media-intel 爆款库发布即归档，且归档异常不影响主线封存。"""
+    project_root = tmp_path / "ruoyu-film-daily"
+    project_root.mkdir()
+    media_intel = tmp_path / "media-intel-aios"
+    scripts_dir = media_intel / "scripts"
+    scripts_dir.mkdir(parents=True)
+    lib_dir = media_intel / "run" / "viral-library"
+    lib_dir.mkdir(parents=True)
+
+    marker = tmp_path / "archived_called.txt"
+    fake_archive = scripts_dir / "archive_published_article.py"
+    fake_archive.write_text(
+        f'import sys\nfrom pathlib import Path\nPath("{marker}").write_text(" ".join(sys.argv))\nsys.exit(0)\n',
+        encoding="utf-8",
+    )
+
+    root = _init_sample_run(project_root)
+    # 填充必要文件与 handoffs 至 final_gate approved
+    draft_content = "# 真实长文测试标题\n\n“那总，王总出家前留下的八十万窟窿，您看怎么平？”财务总监把审计报表往红木茶几上一拍。\n\n正文内容测试。"
+    (root / "draft.md").write_text(draft_content, encoding="utf-8")
+    from article_group.moyu_green_renderer import render_moyu_green_from_run
+    render_moyu_green_from_run(root)
+
+    (root / "cand.json").write_text("{}", encoding="utf-8")
+    record_handoff(project_root, root, "discovery", "complete", "scout", {"output_refs": ["cand.json"]})
+    (root / "topic.md").write_text("# 选题", encoding="utf-8")
+    record_handoff(project_root, root, "topic_gate", "approved", "human", {"decision_ref": "topic.md", "selected_candidate_ref": "c1"})
+    (root / "ev.json").write_text("{}", encoding="utf-8")
+    record_handoff(project_root, root, "evidence", "complete", "evidence_researcher", {"output_refs": ["ev.json"]})
+    (root / "plan.md").write_text("# 规划", encoding="utf-8")
+    record_handoff(project_root, root, "planning", "complete", "editorial_planner", {"output_refs": ["plan.md"]})
+    record_handoff(project_root, root, "draft", "complete", "writer", {"output_refs": ["draft.md"]})
+    (root / "review").mkdir(parents=True, exist_ok=True)
+    d_sha = hashlib.sha256(draft_content.encode("utf-8")).hexdigest()
+    (root / "review" / "deterministic-gates.json").write_text(
+        json.dumps({"deterministic_gates": "pass", "reviewed_draft_sha256": d_sha}),
+        encoding="utf-8",
+    )
+    (root / "review" / "l2-adversarial-review.json").write_text(
+        json.dumps({
+            "decision": "approve",
+            "scope_reviewed": ["draft.md"],
+            "findings": [],
+            "non_findings": ["pass"],
+            "coverage_gaps": [],
+            "reviewed_draft_sha256": d_sha,
+            "attempt": 1,
+            "created_at": "2026-10-17T12:00:00+08:00",
+            "reviewer": "quality_l2_reviewer",
+            "reviewer_session_id": "sess-test-01",
+        }),
+        encoding="utf-8",
+    )
+    record_handoff(
+        project_root,
+        root,
+        "quality_review",
+        "complete",
+        "quality_l2_reviewer",
+        {
+            "deterministic_gates": "pass",
+            "l2_decision": "approve",
+            "output_refs": ["review/deterministic-gates.json", "review/l2-adversarial-review.json"],
+            "artifact_refs": ["review/deterministic-gates.json", "review/l2-adversarial-review.json"],
+        },
+    )
+    record_handoff(project_root, root, "final_gate", "approved", "human", {"decision_ref": "topic.md"})
+
+    res = advance_pipeline(project_root, root)
+    assert res["ok"] is True
+    assert res["next_gate"] == "completed_and_sealed"
+    assert "delivery_completed" in res["actions_taken"]
+    assert "delivery_archived_to_viral_library" in res["actions_taken"]
+    assert "run_sealed" in res["actions_taken"]
+    assert marker.is_file()
+    assert "archive-file" in marker.read_text(encoding="utf-8")
+

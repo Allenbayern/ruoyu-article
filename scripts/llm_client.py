@@ -62,6 +62,8 @@ def chat(env: dict[str, str], system: str, user: str, max_tokens: int = MAX_TOKE
         raise LlmUnavailable(str(body["error"])[:200])
     message = (body.get("choices") or [{}])[0].get("message") or {}
     content = message.get("content")
+    if not content and message.get("reasoning_content"):
+        content = message.get("reasoning_content")
     if not content:
         raise LlmUnavailable("empty_content")
     return content

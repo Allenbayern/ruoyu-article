@@ -124,6 +124,7 @@ def test_run_all_gates_writes_artifacts_and_reports_fail_without_exit(tmp_path):
         "review/gates/assertion-coverage.json",
         "review/gates/editorial-gate.json",
         "review/gates/publish-precheck-advisory.json",
+        "review/gates/narrative-detail-provenance.json",
     }
     hierarchy = writes["task-hierarchy-validation-report.json"]
     assert hierarchy["pass"] is False

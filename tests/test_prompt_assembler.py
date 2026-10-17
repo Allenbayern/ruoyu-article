@@ -218,3 +218,47 @@ def test_audit_draft_dna_boundary_cases(tmp_path: Path):
     assert len(r48["violations"]) == 0
     assert any("短段占比偏离最佳写作区间" in a and "48.0%" in a for a in r48["advisories"])
 
+
+def test_prompt_assembler_carries_three_failure_zone_defenses(tmp_path: Path):
+    """验证 prompt_assembler 装配的提示词严格贯彻三大失守区靶向约束（B8 与 10 份复核收敛结论）。"""
+    run_dir = tmp_path / "run-three-defenses"
+    run_dir.mkdir()
+
+    res = assemble_writer_prompt(run_dir, save_evidence=False)
+    sys_prompt = res["system_prompt"]
+    user_prompt = res["user_prompt"]
+
+    # 1. 失守区一：尾声和稀泥与升华坍缩
+    assert "三大失守区靶向红线" in sys_prompt
+    assert "失守区一：尾声和稀泥与升华坍缩" in sys_prompt
+    assert "严禁尾声感悟升华" in sys_prompt
+    assert "严禁立场和稀泥" in sys_prompt
+    assert "物理动作落锁（冷酷收刀）" in sys_prompt
+
+    # 2. 失守区二：可预测同义句与公版套话（Q3 意外性）
+    assert "失守区二：可预测同义句与公版套话" in sys_prompt
+    assert "反可预测测试" in sys_prompt
+    assert "若某段有 ≥3 句可被同义、无风险、谁都会说的平庸套话无损替换" in sys_prompt
+
+    # 3. 失守区三：道具与账本中后段蒸发
+    assert "失守区三：道具与数字账本在中后段隐形" in sys_prompt
+    assert "严禁开篇摆设道具后中后段蒸发" in sys_prompt
+    assert "每个二级小节（`##`）必须至少唤醒或承载 1~2 个具体微观道具" in sys_prompt
+    assert "千字微观物理锚点密度硬指标" in sys_prompt
+    assert "正文每 1000 字必须分布不少于 **3 ~ 5 处** 具象物理锚点" in sys_prompt
+    assert "全篇均匀度红线" in sys_prompt
+
+    # 4. 首尾可预测套话绝对黑名单
+    assert "首尾八股套话绝对物理黑名单" in sys_prompt
+    assert "首段严禁套话" in sys_prompt
+    assert "在浮躁的当下/时代里" in sys_prompt
+    assert "尾声严禁套话" in sys_prompt
+    assert "生活仍在继续" in sys_prompt
+    assert "一部优秀的电影不仅在于……更在于……" in sys_prompt
+
+    # 5. User Prompt 输出要求对齐
+    assert "每小节至少承载 1~2 处微观感官道具" in user_prompt
+    assert "正文全篇维持每千字 3~5 处物理锚点密度" in user_prompt
+    assert "严禁出现“这何尝不是/生活仍在继续/愿我们都能/你怎么看”" in user_prompt
+
+

@@ -77,6 +77,7 @@ OUT_OF_SCOPE: dict[str, str] = {
     # 其它位置
     "scripts/gen_sources_021.py": "写 runs/<date>/ 证据文件（日目录，非 run 目录）；与 mp_fetch 同口径",
     "scripts/preview_route_audit.py": "审计 CLI：ROOT 指仓库根，只写显式 --output 报告",
+    "scripts/b8_dual_review_evaluator.py": "评测 CLI：B8 双复核可靠性验证，只写显式 --out-dir 评测报告",
     "scripts/move_completed_20260807.py": "视频隔离区搬运（/vol2 素材盘；RUN_ID 是隔离批次号，不写 runs/ 下的文章 run）",
     "scripts/move_completed_to_quarantine.py": "视频隔离区搬运（同上，2026-08-06 批次）",
     "scripts/patches/2026-09-17-mac/patch_daily_engine_wechat.py": "一次性补丁：改仓库源码，不写 run",
@@ -89,6 +90,9 @@ OUT_OF_SCOPE: dict[str, str] = {
     # 破坏性工具（按设计销毁，且自带 --purge --yes 双确认）
     "scripts/purge_quarantine.py": "隔离区清理工具：按设计整 run 删除（--purge --yes 双确认）；不属写入通道，"
                                    "但它清空的 run 若是封存 run，等于绕开护栏——需 controller 决定是否禁止",
+    "scripts/generate_perfect_case009_draft.py": "case-009 演练生成脚本，演练沙盒写入",
+    "scripts/test_case009_draft.py": "case-009 测试草稿脚本，演练测试",
+    "scripts/topic_pipeline/manage.py": "选题工作流本地管理 CLI，管理 topic_pool 与沙盒 run",
 }
 
 # ── 待收口：确实写 run 内证据、但还没走留底通道（运行时由护栏兜住） ──

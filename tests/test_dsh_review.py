@@ -1338,3 +1338,65 @@ def test_dsh_review_rebases_run_relative_output(tmp_path: Path, monkeypatch: pyt
     record = json.loads(expected_file.read_text(encoding="utf-8"))
     assert record["decision"] == "approve"
 
+
+def test_l2_prompt_carries_human_tone_questions():
+    args = dsh_review.build_parser().parse_args(
+        [
+            "--mode", "l2",
+            "--run-root", "/tmp/mock-run",
+            "--output", "/tmp/mock-run/review.json",
+            "--request", "review human tone",
+        ]
+    )
+    prompt = dsh_review._build_prompt(args)
+    assert "(Q1) Persuasion path" in prompt
+    assert "(Q2) Voice & presence" in prompt
+    assert "(Q3) Unexpected turns" in prompt
+    assert ">=12 characters" in prompt
+    assert "q1_not_covered" in prompt
+
+
+def test_verify_review_evidence_quotes():
+    draft_text = (
+        "一件洗得发白、工整叠好的白衬衫。\n"
+        "当年放疗杀死了他大部分唾液腺细胞，口腔常年分泌不出唾液。\n"
+        "戏不是靠资本硬捧出来的，更不是靠热搜和水军刷出来的。\n"
+    )
+
+    findings = [
+        {
+            "severity": "minor",
+            "target": "section_1",
+            "evidence": "当年放疗杀死了他大部分唾液腺细胞，口腔常年分泌不出唾液。",
+        },
+        {
+            "severity": "minor",
+            "target": "section_2",
+            "evidence": "这句是完全编造的根本不存在于正文里的台词句子",
+        },
+    ]
+
+    res = dsh_review.verify_review_evidence_quotes(findings, draft_text, min_chars=12)
+    assert res["pass"] is False
+    assert res["total"] == 2
+    assert res["matched"] == 1
+    assert len(res["mismatched"]) == 1
+    assert res["mismatched"][0]["finding_index"] == 1
+
+    # 全匹配用例
+    res_pass = dsh_review.verify_review_evidence_quotes(findings[:1], draft_text, min_chars=12)
+    assert res_pass["pass"] is True
+    assert res_pass["matched"] == 1
+    assert len(res_pass["mismatched"]) == 0
+
+
+def test_print_l2_prompt_flag(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
+    monkeypatch.setattr(dsh_review.sys, "argv", ["dsh_review", "--print-l2-prompt"])
+    rc = dsh_review.main()
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert "=== L2 Content Redlines ===" in captured.out
+    assert "=== L2 Human-Tone Adversarial Questions (B8) ===" in captured.out
+    assert "(Q1) Persuasion path" in captured.out
+
+

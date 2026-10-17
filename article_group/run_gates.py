@@ -365,6 +365,67 @@ def build_assertion_coverage_gate(
     }
 
 
+def build_narrative_detail_gate(run_root: str | Path) -> dict[str, Any]:
+    """叙述性细节溯源网（2026-10-16，case-009 复盘新增）。
+
+    背景与边界见
+    :func:`article_group.pilot_extensions.check_narrative_detail_provenance`
+    上方的注释：这是**回归网**，把「正文写了、但全部信源里逐字不存在」的
+    可证伪细节清单化。
+
+    刻意 ``blocking=False``（advisory）：零命中可能是编造，也可能是作者自己的
+    比喻或措辞偏差，机器不该替人做这个判断——但**必须显式列出来**，不能再像
+    ``191a079e…`` 那一版那样"门禁全绿、编造无声"。
+    """
+
+    from article_group.pilot_extensions import (
+        check_narrative_detail_provenance,
+        load_run_source_corpus,
+    )
+
+    root = Path(run_root)
+    draft_path = root / "draft.md"
+    if not draft_path.is_file():
+        return {
+            "schema_version": "narrative-detail-gate-v1",
+            "pass": False,
+            "blocking": False,
+            "status": "not_run",
+            "reason": "draft_md_missing",
+            "warnings": [],
+            "unsourced": [],
+            "publication_authorization": "not_authorized",
+        }
+    draft_text = draft_path.read_text(encoding="utf-8")
+    corpus = load_run_source_corpus(root)
+    if not corpus:
+        # 没有语料就没法比对：显式报 not_run，不伪装成"检查过了、很干净"。
+        return {
+            "schema_version": "narrative-detail-gate-v1",
+            "pass": False,
+            "blocking": False,
+            "status": "not_run",
+            "reason": "source_corpus_empty",
+            "warnings": [],
+            "unsourced": [],
+            "publication_authorization": "not_authorized",
+        }
+    result = check_narrative_detail_provenance(draft_text, corpus)
+    unsourced = result["unsourced"]
+    return {
+        "schema_version": "narrative-detail-gate-v1",
+        "pass": bool(result["passed"]),
+        "blocking": False,
+        "status": "pass" if result["passed"] else "advisory",
+        "checked_probes": result["checked_probes"],
+        "corpus_chars": len(corpus),
+        "warnings": [f"unsourced_narrative_detail:{item['term']}" for item in unsourced],
+        "unsourced": unsourced,
+        "note": result["note"],
+        "publication_authorization": "not_authorized",
+    }
+
+
 def run_all_gates(
     run_root: str | Path,
     write_json: WriteFn,
@@ -403,6 +464,11 @@ def run_all_gates(
     # B1（2026-09-18）：正文断言 ↔ 账本覆盖进门前置成门禁（逐篇报告一并留底）。
     assertion_report = build_assertion_coverage_gate(run_root, write_article_reports=write_json)
     write_json("review/gates/assertion-coverage.json", assertion_report)
+
+    # 叙述性细节溯源网（2026-10-16，case-009 复盘）：把「正文有、信源逐字无」的
+    # 可证伪细节清单化。刻意不进 fail_on_error —— 见 build_narrative_detail_gate。
+    narrative_detail = build_narrative_detail_gate(run_root)
+    write_json("review/gates/narrative-detail-provenance.json", narrative_detail)
 
     # 编辑质量门禁（2026-09-21，daily-010 编读复盘）：读者面结构与承诺兑现的机械判定。
     # 默认只报警；spec 用 EDITORIAL_DECLARATIONS 逐篇声明才硬拦（fail-closed）。
@@ -491,6 +557,11 @@ def run_all_gates(
         "independent_review": "pass" if independent_report["pass"] else "fail",
         "topic_five_questions": "pass" if five_questions["pass"] else "fail",
         "assertion_coverage": "pass" if assertion_report["pass"] else "fail",
+        # 叙述性细节溯源网：advisory，永不 pass/fail 阻断（见 build_narrative_detail_gate）。
+        "narrative_detail_provenance": narrative_detail.get("status", "not_run"),
+        "narrative_detail_provenance_note": (
+            "advisory only：清单是候选，不是「编造」结论；零命中不等于全文无编造。"
+        ),
         "git_hygiene_infra": "pass" if hygiene["pass"] else "fail",
         "compliance_gate": (
             "not_run"
@@ -518,6 +589,8 @@ def build_anti_ai_gate(text: str, *, threshold: float = 45.0) -> dict[str, Any]:
         "verdict": report["verdict"],
         "threshold": threshold,
         "opening_passed": report["opening_passed"],
+        "watermark_passed": report.get("watermark_passed", True),
+        "watermark_count": report.get("watermark_count", 0),
         "hit_phrases": report["hit_phrases"],
         "hit_vocab": report["hit_vocab"],
     }
@@ -532,6 +605,7 @@ __all__ = [
     "build_editorial_protocol_report",
     "build_git_hygiene_snapshot",
     "build_independent_review_gate",
+    "build_narrative_detail_gate",
     "build_task_hierarchy_report",
     "build_topic_five_questions_gate",
     "run_all_gates",

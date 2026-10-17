@@ -166,3 +166,36 @@ def test_fixed_count_holds_for_any_input(count: int):
     val = validate_moyu_green_html(bundle["body_html"])
     assert val["passed"] is True, val["errors"]
     assert val["recommendation_count"] == RECOMMENDATION_FIXED_COUNT
+
+
+def test_blank_recommendations_rendered_and_validated():
+    """用户 2026-10-17 定稿：往期推荐内容默认留空（5 个空白 📌 占位条目），供公众号后台人工选填。"""
+    blank_recs = [{"title": "", "desc": ""}] * RECOMMENDATION_FIXED_COUNT
+    bundle = _render(blank_recs)
+    val = validate_moyu_green_html(bundle["body_html"])
+    assert val["passed"] is True, val["errors"]
+    assert val["recommendation_count"] == RECOMMENDATION_FIXED_COUNT
+    assert bundle["recommendation_audit"]["count"] == RECOMMENDATION_FIXED_COUNT
+    assert bundle["recommendation_audit"]["action"] == "ok"
+    assert '<span leaf="">📌</span>' in bundle["body_html"]
+    assert bundle["delivery_md"].count("📌") == RECOMMENDATION_FIXED_COUNT
+
+
+def test_none_recommendations_defaults_to_blank():
+    bundle = render_moyu_green_bundle(
+        SAMPLE_MD,
+        title="测试长文标题",
+        subtitle_points=["看点一", "看点二"],
+        category_tag="深度解剖",
+        work_badge="测试剧名",
+        interaction_question="你怎么选？",
+        interaction_invite="欢迎在评论区聊聊。",
+        recommendations=None,
+    )
+    val = validate_moyu_green_html(bundle["body_html"])
+    assert val["passed"] is True, val["errors"]
+    assert val["recommendation_count"] == RECOMMENDATION_FIXED_COUNT
+    assert bundle["recommendation_audit"]["count"] == RECOMMENDATION_FIXED_COUNT
+    assert bundle["recommendation_audit"]["action"] == "blank_placeholders"
+    assert '<span leaf="">📌</span>' in bundle["body_html"]
+

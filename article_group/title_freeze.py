@@ -69,7 +69,7 @@ def selected_title(run_dir: str | Path, aid: str) -> str:
     directions = pack.get("directions")
     if isinstance(directions, list) and directions and isinstance(directions[0], Mapping):
         return str(directions[0].get("title") or "")
-    return str(pack.get("selected") or pack.get("title") or "")
+    return str(pack.get("selected_title") or pack.get("selected") or pack.get("title") or "")
 
 
 def freeze(run_dir: str | Path, aid: str, *, note: str = "", force: bool = False) -> dict[str, Any]:

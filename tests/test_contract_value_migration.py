@@ -61,6 +61,9 @@ def test_real_historical_review_records_still_parse_as_this_contract() -> None:
             continue
         if not isinstance(payload, dict) or "schema_version" not in payload:
             continue
+        if payload.get("schema_version") == "article-pilot-l2-review-v1":
+            # 试点子代理复核形状，非历史 codex/dsh 契约形状
+            continue
         checked += 1
         assert dsh_review.is_review_contract_record(payload), (str(path), payload.get("schema_version"))
     assert checked, "找到了文件却没有一份带 schema_version —— 断言退化成恒真了"

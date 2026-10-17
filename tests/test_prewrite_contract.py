@@ -510,6 +510,59 @@ def test_declaring_too_few_sensory_anchors_is_an_error():
     assert "article_art-002_sensory_anchors_below_minimum_1_3" in errors
 
 
+def test_sensory_anchors_accept_pilot_dict_shape():
+    """2026-10-16 schema 分叉修复：pilot evidence-pack 的锚点是 list[dict{anchor_id,name,function}]。
+
+    此前只认 list[str]，传本人 run 的证据包时每条锚点都判 ``_empty``、本地门禁恒 fail、
+    run_zhuque 阶段永不可达（证据：runs/2026-10-16-model-ablation-E1/E1-REPORT.md）。
+    """
+    from article_group.prewrite import validate_sensory_anchors
+
+    pack = {
+        "sensory_anchors": [
+            {"anchor_id": "A01", "name": "招行房贷短信", "function": "账本"},
+            {"anchor_id": "A02", "name": "半包廉价烟", "function": "动作"},
+            {"anchor_id": "A03", "name": "黄焖鸡米饭", "function": "场景"},
+        ]
+    }
+    body = "他盯着招行房贷短信，摸出半包廉价烟，就着黄焖鸡米饭咽下去。"
+
+    assert validate_sensory_anchors(pack, body, article_id="art-001") == []
+
+    # 仍必须逐条在正文里兑现：缺哪条报哪条
+    assert validate_sensory_anchors(
+        pack, "他盯着招行房贷短信，摸出半包廉价烟。", article_id="art-001"
+    ) == ["article_art-001_sensory_anchor_2_not_in_body"]
+
+    # 取不到 name/anchor_id 的条目仍按空锚点报错（不放宽真实性要求）
+    assert validate_sensory_anchors(
+        {"sensory_anchors": [{"function": "账本"}]}, "任何正文", article_id="art-003"
+    ) == [
+        "article_art-003_sensory_anchor_0_empty",
+        "article_art-003_sensory_anchors_below_minimum_0_3",
+    ]
+
+
+def test_sensory_anchors_supports_sliding_grounding():
+    """2026-10-17 产线对齐：长感官锚点自然拆分到正文中时，支持 2~4 字特征滑窗匹配。"""
+    from article_group.prewrite import validate_sensory_anchors
+
+    pack = {
+        "sensory_anchors": [
+            {"anchor_id": "A01", "name": "每月三万二的招行房贷扣款失败短信", "function": "账本"},
+            {"anchor_id": "A02", "name": "地下车库熄火后在车里抽完的半包廉价烟", "function": "动作"},
+            {"anchor_id": "A03", "name": "挂在电动车把上在暴雨中凉透的黄焖鸡米饭", "function": "场景"},
+        ]
+    }
+    # 模拟正文中招行房贷短信没有逐字出现全名，而是自然拆解出现
+    body = (
+        "【招商银行】您尾号7914的个人住房贷款本月扣款失败，当前逾期应还金额：32,184.60元。"
+        "地下车库熄火后在车里抽完的半包廉价烟，是最后的底裤。"
+        "电动车把上挂着黄焖鸡米饭，塑料袋被狂风撕开了一条口子。"
+    )
+    assert validate_sensory_anchors(pack, body, article_id="art-001") == []
+
+
 def test_validate_draft_artifacts_character_count_allows_over_2800(tmp_path: Path):
     """2026-10-14 controller 裁决：3500 字草稿不再报错，1400 字草稿仍报错。"""
     from article_group.prewrite import validate_article_stage

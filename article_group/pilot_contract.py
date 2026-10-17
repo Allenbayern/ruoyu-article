@@ -859,6 +859,30 @@ def advance_pipeline(
         brief_data = _json_load(brief_path) or {}
         killer_stance = str(brief_data.get("killer_stance") or "").strip()
 
+        # 校验标题健康度（微信手机端折行敏感度 ≤28字、违禁虚词过滤）
+        if selected_title:
+            from article_group.title_funnel import audit_title_health
+            thealth = audit_title_health(selected_title)
+            if not thealth["passed"]:
+                return {
+                    "ok": False,
+                    "next_gate": "planning",
+                    "message": f"title-pack.json 中的 selected_title 校验未通过：{','.join(thealth['errors'])}",
+                    "actions_taken": actions_taken,
+                }
+
+        # 校验《动笔前投射对焦卡》（若已配置）
+        if "projection_card" in brief_data:
+            from article_group.projection_card import validate_projection_card
+            pval = validate_projection_card(brief_data["projection_card"])
+            if not pval["passed"]:
+                return {
+                    "ok": False,
+                    "next_gate": "planning",
+                    "message": f"article-brief.json 中的 projection_card 校验未通过：{','.join(pval['errors'])}",
+                    "actions_taken": actions_taken,
+                }
+
         # 装配 Writer 提示词
         assemble_writer_prompt(root, author="editorial_planner", save_evidence=True)
 
@@ -994,6 +1018,34 @@ def advance_pipeline(
             },
         )
         actions_taken.append("delivery_completed")
+
+        # 触发「发布即归档」联动：自动向 media-intel 爆款案例库注册权威交付底稿
+        try:
+            media_intel_root = project_root.parent / "media-intel-aios"
+            archive_script = media_intel_root / "scripts" / "archive_published_article.py"
+            library_root = media_intel_root / "run" / "viral-library"
+            if archive_script.is_file() and library_root.exists():
+                import subprocess
+                subprocess.run(
+                    [
+                        sys.executable,
+                        str(archive_script),
+                        "archive-file",
+                        "--file",
+                        str(delivery_file),
+                        "--library-root",
+                        str(library_root),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    check=False,
+                )
+                actions_taken.append("delivery_archived_to_viral_library")
+        except Exception:
+            # 归档失败不得阻断主流水线封存
+            pass
+
         seal_pilot_run(project_root, root, signer=author)
         actions_taken.append("run_sealed")
 

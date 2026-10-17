@@ -369,16 +369,66 @@ def build_gate_registry_report(run_root: str | Path) -> dict[str, Any]:
         try:
             l2_data = json.loads(l2_path.read_text(encoding="utf-8"))
             dec = l2_data.get("decision")
-            gates["l2_adversarial_review"] = {
-                "status": "pass" if dec == "approve" else ("needs_changes" if dec == "needs_changes" else "fail"),
+            # 2026-10-16（case-009 复盘）：此前只读 decision、**从不比对稿件哈希**，
+            # 于是 draft.md 被整篇换掉之后 L2 仍报 pass —— 与封存稿 11 处编造并列的
+            # 同一类「自述式放行」。这里补上哈希绑定：复核对象必须就是当前 draft.md。
+            reviewed_sha = str(
+                l2_data.get("reviewed_draft_sha256") or l2_data.get("target_sha256") or ""
+            ).strip()
+            current_sha = ""
+            if draft_path.is_file():
+                current_sha = hashlib.sha256(draft_path.read_bytes()).hexdigest()
+            entry: dict[str, Any] = {
+                "status": "pass"
+                if dec == "approve"
+                else ("needs_changes" if dec == "needs_changes" else "fail"),
                 "blocking": True,
                 "decision": dec,
                 "findings_count": len(l2_data.get("findings") or []),
+                "reviewed_draft_sha256": reviewed_sha or None,
+                "current_draft_sha256": current_sha or None,
             }
+            if not reviewed_sha:
+                # 没有哈希就没法证明这次复核针对的是当前稿 —— 不可验证，不许放行。
+                entry["status"] = "fail"
+                entry["error"] = "l2_review_unbound:missing_draft_sha256"
+            elif current_sha and reviewed_sha != current_sha:
+                entry["status"] = "fail"
+                entry["error"] = "l2_review_stale:draft_changed_after_review"
+            gates["l2_adversarial_review"] = entry
         except Exception:
             gates["l2_adversarial_review"] = {"status": "fail", "blocking": True, "error": "corrupted_l2_json"}
     else:
         gates["l2_adversarial_review"] = {"status": "not_run", "blocking": True, "reason": "l2_review_not_conducted"}
+
+    # 4.1 叙述性细节溯源网（2026-10-16，case-009 复盘）
+    # advisory：把「正文有、信源逐字无」的可证伪细节清单化，供人工逐条处置；
+    # 刻意 blocking=False —— 零命中可能是编造，也可能是作者自己的比喻。
+    detail_path = review_dir / "gates" / "narrative-detail-provenance.json"
+    if detail_path.exists():
+        try:
+            detail = json.loads(detail_path.read_text(encoding="utf-8"))
+            gates["narrative_detail_provenance"] = {
+                "status": detail.get("status", "not_run"),
+                "blocking": False,
+                "checked_probes": detail.get("checked_probes"),
+                "unsourced_count": len(detail.get("unsourced") or []),
+                "unsourced": [u.get("term") for u in (detail.get("unsourced") or [])],
+                "artifact": str(detail_path.relative_to(root)),
+                "reason": detail.get("reason"),
+            }
+        except Exception:
+            gates["narrative_detail_provenance"] = {
+                "status": "fail",
+                "blocking": False,
+                "error": "corrupted_narrative_detail_json",
+            }
+    else:
+        gates["narrative_detail_provenance"] = {
+            "status": "not_run",
+            "blocking": False,
+            "reason": "narrative_detail_report_missing",
+        }
 
     # 5. 脱水可读性透视稿 (source-stripped.md)
     if draft_path.exists():
@@ -497,6 +547,28 @@ def build_gate_registry_report(run_root: str | Path) -> dict[str, Any]:
     # 11. 朱雀检测（真机外部服务）
     gates["zhuque_detector"] = run_zhuque_gate_check(draft_path, execute_live=False)
 
+    # 12. 手机端深度长文排版与叙事呼吸节奏门禁 (mobile_rhythm_gate)
+    if draft_path.exists():
+        from article_group.mobile_rhythm_gate import check_mobile_rhythm
+        draft_text = draft_path.read_text(encoding="utf-8")
+        mobile_res = check_mobile_rhythm(draft_text)
+        gates["mobile_rhythm"] = {
+            "status": "pass" if mobile_res["passed"] else "fail",
+            "blocking": True,
+            "metrics": {
+                "h2_count": mobile_res["metrics"]["h2_count"],
+                "overlength_count": mobile_res["metrics"]["overlength_count"],
+                "consecutive_long_spans_count": mobile_res["metrics"]["consecutive_long_spans_count"],
+                "anchor_gaps_count": mobile_res["metrics"]["anchor_gaps_count"],
+                "screenshot_anchors_count": mobile_res["metrics"]["screenshot_anchors_count"],
+            },
+            "errors": mobile_res["errors"],
+            "warnings": mobile_res["warnings"],
+            "advice": mobile_res["advice"],
+        }
+    else:
+        gates["mobile_rhythm"] = {"status": "not_run", "blocking": True, "reason": "draft_md_missing"}
+
     blocking_failures = [
         name for name, g in gates.items()
         if g.get("blocking") is True and g.get("status") in {"fail", "not_run"}
@@ -571,6 +643,16 @@ def run_all_pilot_gates(
         else {"passed": False, "violations": ["source_manifest_missing"], "max_capability_level": 0}
     )
     unc_comp = check_uncertainty_sheet_compliance(draft_text, sheet_data, ev_data)
+    from article_group.run_gates import build_narrative_detail_gate
+    narrative_detail = build_narrative_detail_gate(root)
+    (root / "review" / "gates").mkdir(parents=True, exist_ok=True)
+    write_evidence_json(
+        root / "review" / "gates" / "narrative-detail-provenance.json",
+        narrative_detail,
+        run_dir=root,
+        reason="pilot_adapters:narrative_detail_provenance",
+        author="writer",
+    )
     registry_report = build_gate_registry_report(root)
     if execute_live_zhuque:
         registry_report["gates"]["zhuque_detector"] = run_zhuque_gate_check(draft_path, execute_live=True)
@@ -605,6 +687,7 @@ def run_all_pilot_gates(
         "claim_provenance": claim_prov,
         "source_capabilities": src_cap,
         "uncertainty_compliance": unc_comp,
+        "mobile_rhythm": registry_report["gates"].get("mobile_rhythm", {}),
         "publication_authorization": "not_authorized",
     }
 

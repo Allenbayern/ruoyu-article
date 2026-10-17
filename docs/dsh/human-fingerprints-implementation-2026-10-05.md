@@ -44,3 +44,19 @@
 
 ### 5. 技能与 SOP 同步
 - `~/.agents/skills/ruoyu-article-production/SKILL.md` 已加入 `Humanize Pipeline & Self-Healing Execution` 标准步骤。
+
+---
+
+## 二、 追加：lieflat 第 3/10/11 条 advisory 接入（2026-10-15）
+
+- 背景：`lieflat-less-ai-tone` 的第 3（相邻句结构同款）、10（翻译腔五种）、11（段首零主语评论）条自带测量脚本
+  （`scripts/check-structure.py`、`scripts/check-translationese.py`），但全仓零引用。
+- 变更：新增 `article_group/lieflat_checks.py`，由 `humanize_pipeline` 的**阶段 2b** 调用（audit_trail 步骤名 `lieflat_advisories`）。
+  - 复用 skill 自带正则与测量口径（importlib 按路径加载，不复制规则）；`LIEFLAT_SKILL_DIR` 可覆盖 skill 目录。
+  - **advisory only**：不参与 `check_local_gates` 的 `passed`，因为这三条的最终裁决要人读（`lieflat/SKILL.md:185/:426/:449`）。
+  - 翻译腔分桶：只报 skill 收录的 5 种可改结构；「以一种…的方式」「扮演…角色」「使得…能够」、抽象被动等
+    **实测低于收录门槛、明令不得据以改写**的标记单独进 reference-only 桶（`lieflat/SKILL.md:330`）。
+  - 结构指标按 skill 公布的人类/AI 基线打区间标签，段数 <20 标「样本不足」，比喻起段固定为「对照项」。
+- 测试：`tests/test_lieflat_checks.py`（10 用例）；`tests/` 全量 2261 passed。
+- 零行为回归证据：与 `git show HEAD:` 旧版同输入比对，输出文件字节一致（sha256 `12288ad14c83…`），仅新增 advisory 步骤。
+- 过程记录与待修清单：`runs/2026-10-15/baimiao-vs-lieflat-rule-matrix/INTEGRATION-AND-FIXLIST.md`。

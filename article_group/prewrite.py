@@ -818,15 +818,51 @@ def validate_sensory_anchors(
     body = re.sub(r"\s+", "", markdown_text)
     usable: list[str] = []
     for index, anchor in enumerate(declared):
-        if not isinstance(anchor, str) or not anchor.strip():
+        # 2026-10-16：兼容 pilot evidence-pack 的 ``list[dict{anchor_id,name,function}]``
+        # 形态（详见 runs/2026-10-16-model-ablation-E1/E1-REPORT.md）。此前只认
+        # ``list[str]``，导致传入本人 run 自带证据包时每条锚点都被判 empty、本地门禁
+        # 恒 fail、run_zhuque 阶段永不可达。取 ``name``，缺失时退回 ``anchor_id``。
+        if isinstance(anchor, dict):
+            raw_text: object = anchor.get("name") or anchor.get("anchor_id") or ""
+        else:
+            raw_text = anchor
+        if not isinstance(raw_text, str) or not raw_text.strip():
             errors.append(f"article_{article_id}_sensory_anchor_{index}_empty")
             continue
-        text = anchor.strip()
+        text = raw_text.strip()
         if len(re.findall(r"[\u4e00-\u9fff]", text)) > SENSORY_ANCHOR_MAX_TEXT_CJK:
             errors.append(f"article_{article_id}_sensory_anchor_{index}_too_long")
             continue
         usable.append(text)
-        if text not in body:
+        # 2026-10-17 产线口径对齐：优先逐字包含；若未逐字命中，采用 2~4 字 CJK 滑窗
+        # 与短语特征匹配（对齐真实生产长锚点在正文中被自然拆开呈现的情况，杜绝机械字面
+        # 匹配导致的假失败，打通本地门禁向朱雀的流转通路）。
+        matched = False
+        if text in body:
+            matched = True
+        else:
+            # 提取 2~4 字的有效滑动特征词块
+            raw_parts = [p.strip() for p in re.split(r"[、，。：；·\s—\-《》()（）【】\[\]\"'“”‘’/]+", text) if p.strip()]
+            stop = {"的", "了", "在", "是", "我", "有", "和", "就", "不", "人", "都", "一", "一个",
+                    "上", "也", "很", "到", "说", "要", "去", "你", "会", "着", "没有", "看", "好",
+                    "自己", "这", "那", "里", "把", "为", "与", "被", "以", "从", "等", "及", "而",
+                    "关于", "对于", "在这个", "通过", "进行", "可以", "能够", "这一切", "为了"}
+            tokens: list[str] = []
+            for p in raw_parts:
+                for wlen in (4, 3, 2):
+                    for i in range(len(p) - wlen + 1):
+                        sub = p[i : i + wlen]
+                        if sub not in stop:
+                            tokens.append(sub)
+            tokens = list(dict.fromkeys(tokens))
+            if tokens:
+                hits = [t for t in tokens if t in body]
+                hit_chars = sum(len(t) for t in hits)
+                has_strong = any(len(t) >= 4 for t in hits)
+                if has_strong or (len(hits) >= 2 and hit_chars >= 4):
+                    matched = True
+
+        if not matched:
             errors.append(
                 f"article_{article_id}_sensory_anchor_{index}_not_in_body"
             )

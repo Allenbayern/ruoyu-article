@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from article_group.anti_ai_gate import (
     analyze_anti_ai,
     check_anti_ai,
@@ -150,3 +152,101 @@ def test_check_paragraph_length():
     assert res_long["passed"] is False
     assert res_long["count"] == 1
     assert res_long["long_paragraphs"][0]["length"] > 180
+
+
+# ---------------------------------------------------------------------------
+# 体裁加严分组的显式标注（2026-10-15，INTEGRATION-AND-FIXLIST.md §2）
+# ---------------------------------------------------------------------------
+
+SKILL_MD = Path("/home/allen/.agents/skills/lieflat-less-ai-tone/SKILL.md")
+
+
+def test_genre_tightened_group_is_explicit_and_order_preserving():
+    from article_group.anti_ai_gate import (
+        AI_PHRASES,
+        GENRE_TIGHTENED_PHRASES,
+        GENRE_TIGHTENED_RATIONALE,
+        GENRE_TIGHTENED_SCOPE,
+        is_genre_tightened,
+    )
+
+    # 分组必须显式声明体裁与依据（此前只存在于代码里、无法审计）
+    assert GENRE_TIGHTENED_SCOPE == "wechat-longform"
+    assert "SKILL.md:103-104" in GENRE_TIGHTENED_RATIONALE
+    assert len(GENRE_TIGHTENED_PHRASES) == 4
+    # 顺序守恒：加严组仍是 AI_PHRASES 的前 4 条，计分行为不变
+    assert AI_PHRASES[: len(GENRE_TIGHTENED_PHRASES)] == GENRE_TIGHTENED_PHRASES
+    assert len(AI_PHRASES) == 31
+    assert not (set(GENRE_TIGHTENED_PHRASES) & set(AI_PHRASES[len(GENRE_TIGHTENED_PHRASES):]))
+    # 标注助手只认加严组
+    assert all(is_genre_tightened(p) for p, _ in GENRE_TIGHTENED_PHRASES)
+    assert not any(is_genre_tightened(p) for p, _ in AI_PHRASES[len(GENRE_TIGHTENED_PHRASES):])
+
+
+def test_genre_tightened_rationale_is_verifiable_in_skill_source():
+    """标注里引用的规则源必须真的这么写——不是自述式理由。"""
+    lines = SKILL_MD.read_text(encoding="utf-8").splitlines()
+    first_second = lines[102]  # 1-based :103
+    parallelism = lines[103]   # 1-based :104
+    assert "首先" in first_second and "其次" in first_second
+    assert "无差别" in first_second or "人类" in first_second
+    assert "排比" in parallelism and "人类" in parallelism
+
+
+def test_phrases_scoring_unchanged_by_grouping():
+    """分组是纯标注重构：固定输入下加严组条目仍在计分，且命中标签可被解析出来。"""
+    from article_group.anti_ai_gate import GENRE_TIGHTENED_PHRASES, score_phrases
+
+    text = "首先，要看清账本；其次，要算清成本；最后，再谈情怀。\n\n这不仅是一次翻拍，而且是一次清算。"
+    score, detail = score_phrases(text)
+    assert score > 0.0
+    samples = detail["samples"]  # 形如 "命中片段 (标签)"
+    assert any("枚举套话：首先…其次…最后" in s for s in samples)
+    assert any("句式套话：不仅…而且" in s for s in samples)
+    # 加严组条目确实参与计分（非死代码）：至少一个命中样本带加严组标签
+    assert any(any(label in s for _, label in GENRE_TIGHTENED_PHRASES) for s in samples)
+    # 通用组仍照常参与计分（对照组）
+    score2, _ = score_phrases("值得一提的是，这里还有一处细节。")
+    assert score2 > 0.0
+
+
+def test_invisible_watermarks_detection_and_cleaning():
+    """测试零宽隐形字符水印扫描、门禁阻断与清洗功能。"""
+    from article_group.anti_ai_gate import (
+        clean_invisible_watermarks,
+        scan_invisible_watermarks,
+    )
+
+    clean_sample = "上映第四天，票房直接腰斩到了 1800 万。张艺谋在首映礼上叹了一口气。"
+    # 注入零宽隐形字符 (U+200B, U+200C, U+2060)
+    watermarked_sample = f"上映第四天\u200b，票房直接\u200c腰斩到了 1800 万\u2060。张艺谋在首映礼上叹了一口气。"
+
+    # 1. 扫描检测
+    scan_res = scan_invisible_watermarks(watermarked_sample)
+    assert scan_res["detected"] is True
+    assert scan_res["total_count"] == 3
+    assert "ZERO WIDTH SPACE (U+200B)" in scan_res["breakdown"]
+    assert "ZERO WIDTH NON-JOINER (U+200C)" in scan_res["breakdown"]
+    assert "WORD JOINER (U+2060)" in scan_res["breakdown"]
+
+    # 干净文本检测
+    clean_scan = scan_invisible_watermarks(clean_sample)
+    assert clean_scan["detected"] is False
+    assert clean_scan["total_count"] == 0
+
+    # 2. 门禁阻断验证
+    passed, report = check_anti_ai(watermarked_sample)
+    assert passed is False
+    assert report["watermark_passed"] is False
+    assert report["watermark_count"] == 3
+
+    # 3. 清洗剥离验证
+    cleaned_text, removed_count = clean_invisible_watermarks(watermarked_sample)
+    assert removed_count == 3
+    assert cleaned_text == clean_sample
+
+    # 清洗后再过门禁应 PASS
+    recheck_passed, recheck_report = check_anti_ai(cleaned_text)
+    assert recheck_passed is True
+    assert recheck_report["watermark_passed"] is True
+

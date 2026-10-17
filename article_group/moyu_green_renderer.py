@@ -274,48 +274,68 @@ RECOMMENDATION_PIN = "📌"
 
 
 def normalize_recommendations(
-    recommendations: Sequence[Mapping[str, str]],
+    recommendations: Sequence[Mapping[str, str]] | None = None,
     *,
     title: str = "",
     work_badge: str = "",
 ) -> tuple[list[dict[str, str]], dict[str, Any]]:
     """把「往期推荐」规范化为恰好 RECOMMENDATION_FIXED_COUNT 篇，并返回可审计的处置记录。
 
+    - 允许空白占位条目（用户 2026-10-17 定稿：往期推荐内容默认留空，供公众号后台人工选填）。
+    - 若输入为空（None 或 []）：默认填充 5 个空白 📌 占位条目。
+    - 若输入为部分非空推荐（1~4 篇）：用 CANONICAL_MOTHER_TEXTS 母本补齐到 5 篇。
     - 多于 5 篇：按输入顺序截断，被丢弃的标题进 audit["dropped"]（不静默丢弃）。
-    - 少于 5 篇：用 CANONICAL_MOTHER_TEXTS 母本补齐，补入的标题进 audit["padded"]。
-    - 标题重复/空标题：只保留第一条，同样进 audit["dropped"]。
+    - 标题重复：只保留第一条，同样进 audit["dropped"]。
     """
+    if not recommendations:
+        recs = [{"title": "", "desc": ""}] * RECOMMENDATION_FIXED_COUNT
+        audit = {
+            "target": RECOMMENDATION_FIXED_COUNT,
+            "action": "blank_placeholders",
+            "padded": [],
+            "dropped": [],
+            "count": RECOMMENDATION_FIXED_COUNT,
+        }
+        return recs, audit
+
     recs: list[dict[str, str]] = []
     seen: set[str] = set()
     dropped: list[str] = []
-    for raw in recommendations or []:
+    for raw in recommendations:
         item = {str(k): str(v) for k, v in dict(raw).items()}
         rec_title = (item.get("title") or "").strip()
-        if not rec_title or rec_title in seen:
-            if rec_title:
-                dropped.append(rec_title)
+        if not rec_title:
+            # 允许留空占位项（用户 2026-10-17 定稿：往期推荐内容留空，供公众号后台人工选填）
+            recs.append(item)
+            continue
+        if rec_title in seen:
+            dropped.append(rec_title)
             continue
         seen.add(rec_title)
         recs.append(item)
 
     padded: list[str] = []
     if len(recs) < RECOMMENDATION_FIXED_COUNT:
-        from article_group.dna_engine import CANONICAL_MOTHER_TEXTS
+        if not seen:
+            while len(recs) < RECOMMENDATION_FIXED_COUNT:
+                recs.append({"title": "", "desc": ""})
+        else:
+            from article_group.dna_engine import CANONICAL_MOTHER_TEXTS
 
-        for mother in CANONICAL_MOTHER_TEXTS:
-            if len(recs) >= RECOMMENDATION_FIXED_COUNT:
-                break
-            mother_title = f"《{mother['title']}》"
-            if mother_title in seen or mother["title"] == title:
-                continue
-            if work_badge and work_badge[:4] in mother["title"]:
-                continue
-            seen.add(mother_title)
-            recs.append({
-                "title": mother_title,
-                "desc": f"{mother['archetype']}标杆深文：剥开名利场温情脉脉的面纱，把每一分现实代价算到骨头里。",
-            })
-            padded.append(mother_title)
+            for mother in CANONICAL_MOTHER_TEXTS:
+                if len(recs) >= RECOMMENDATION_FIXED_COUNT:
+                    break
+                mother_title = f"《{mother['title']}》"
+                if mother_title in seen or mother["title"] == title:
+                    continue
+                if work_badge and work_badge[:4] in mother["title"]:
+                    continue
+                seen.add(mother_title)
+                recs.append({
+                    "title": mother_title,
+                    "desc": f"{mother['archetype']}标杆深文：剥开名利场温情脉脉的面纱，把每一分现实代价算到骨头里。",
+                })
+                padded.append(mother_title)
 
     if len(recs) > RECOMMENDATION_FIXED_COUNT:
         dropped.extend(r.get("title", "") for r in recs[RECOMMENDATION_FIXED_COUNT:])
@@ -479,7 +499,7 @@ def render_moyu_green_bundle(
     year_month: str = "2026.10",
     interaction_question: str,
     interaction_invite: str,
-    recommendations: Sequence[Mapping[str, str]],
+    recommendations: Sequence[Mapping[str, str]] | None = None,
     page_slug: str = "article",
     run_root: str | Path | None = None,
     include_cover_card: bool = False,
@@ -721,8 +741,10 @@ def render_moyu_green_bundle(
         if rec_url:
             # 微信公众号官方规范：📌在<a>外，<a>带textvalue/data-itemshowtype/linktype/data-linktype
             title_node = f'<span leaf="">📌&nbsp;<a target="_blank" href="{_esc_attr(rec_url)}" textvalue="{_esc_attr(pure_title)}" data-itemshowtype="0" linktype="text" data-linktype="2" style="color: #1e293b; text-decoration: none; font-weight: 600;"><span leaf="">{_esc(pure_title)}</span></a></span>'
-        else:
+        elif pure_title:
             title_node = f'<span leaf="">📌&nbsp;{_esc(pure_title)}</span>'
+        else:
+            title_node = '<span leaf="">📌</span>'
         desc_node = f"""
       <p style="margin: 0; font-size: 12.5px; color: #4b5563; line-height: 1.6; text-align: left;"><span leaf="">{_esc(rec_desc)}</span></p>""" if rec_desc else ""
         rec_items_html.append(f"""    <section style="margin-bottom: {margin_b}; padding: 10px 0 12px;{border_style}">
@@ -907,8 +929,10 @@ def render_moyu_green_bundle(
             r_url = str(rec.get("url") or rec.get("link") or "").strip()
             if r_url:
                 delivery_md_lines.append(f"* [📌 {r_title}]({r_url})")
-            else:
+            elif r_title:
                 delivery_md_lines.append(f"* 📌 {r_title}")
+            else:
+                delivery_md_lines.append("* 📌 ")
             if r_desc:
                 delivery_md_lines.append(f"  {r_desc}")
             delivery_md_lines.append("")
@@ -1204,7 +1228,7 @@ def write_moyu_green_run_bundle(
     year_month: str = "2026.10",
     interaction_question: str,
     interaction_invite: str,
-    recommendations: Sequence[Mapping[str, str]],
+    recommendations: Sequence[Mapping[str, str]] | None = None,
     page_slug: str = "article",
     author: str = "controller",
     include_cover_card: bool = False,
@@ -1325,10 +1349,8 @@ def render_moyu_green_from_run(
     author: str = "controller",
 ) -> dict[str, Any]:
     """从 run 目录的 title-pack.json、article-brief.json、evidence-pack.json（及可选的 wechat-config.json）
-    自动提取分类标签、互动问题与 5 篇真实母本往期推荐，一键生成摸鱼绿三件套（纯净首屏 Mode B 无封面大卡）。
+    自动提取分类标签、互动问题与 5 篇往期推荐（默认 5 个空白 📌 占位条目），一键生成摸鱼绿三件套（纯净首屏 Mode B 无封面大卡）。
     """
-    from article_group.dna_engine import CANONICAL_MOTHER_TEXTS
-
     root = Path(run_root).resolve()
     draft_path = root / "draft.md"
     if not draft_path.is_file():
@@ -1396,16 +1418,8 @@ def render_moyu_green_from_run(
 
     recommendations = wx_cfg.get("recommendations") or brief.get("recommendations")
     if not recommendations:
-        recs: list[dict[str, str]] = []
-        for m in CANONICAL_MOTHER_TEXTS:
-            if m["title"] != title and work_name[:4] not in m["title"]:
-                recs.append({
-                    "title": f"《{m['title']}》",
-                    "desc": f"{m['archetype']}标杆深文：剥开名利场温情脉脉的面纱，把每一分现实代价算到骨头里。",
-                })
-            if len(recs) >= 5:
-                break
-        recommendations = recs
+        # 2026-10-17 用户定稿：往期推荐内容默认留空（5 个空白 📌 占位条目），供公众号后台人工选填
+        recommendations = [{"title": "", "desc": ""}] * RECOMMENDATION_FIXED_COUNT
 
     flags = load_wechat_render_flags(root)
 

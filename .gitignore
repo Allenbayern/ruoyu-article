@@ -133,4 +133,8 @@ docs/superpowers/specs/*
 !/state/
 /state/*
 !state/topic-backlog.jsonl
+
+# 选题雷达流水线与 SQLite 库
+topic_pool/
+!scripts/topic_pipeline/
 !state/topic-backlog.md

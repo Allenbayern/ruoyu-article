@@ -390,6 +390,112 @@ def check_assertion_ledger_coverage(
 
 
 # ==============================================================================
+# 5.1 叙述性细节溯源网（2026-10-16，case-009 复盘新增）
+# ==============================================================================
+
+# 为什么需要（case-009 复盘，2026-10-16）：
+# 被封存的那版 draft.md（sha256 191a079e…）含 ≥11 处**叙述性细节编造**——
+# 「你说你拿4000块…」的前半句、「对方嘴唇动到第几个节拍，我就该给出什么反应」、
+# 「肋骨与大腿因反复实摔导致半身淤青」、「踩在青石板上」、「几十米外」、
+# 「面红耳赤」、「收废品」「养女」、「几十亿投资」、「嘴里念着数字一二三四」、
+# 「小布包」（原文实为背包）等，在 15 个信源全语料里**逐字零命中**。
+# 而那一版**全量确定性门禁 PASS、独立 L2 复核 approve / 0 findings** —— 双重假阴性。
+# 根因：既有确定性门禁只覆盖「时间跨度 / 受众行为 / 带量词数字 / 直接引语」四类，
+# 对自由叙述中的具体细节（距离、身体部位、器物材质、前史身份、生理反应）没有抓手。
+#
+# 本网是**回归网**，不是通用真伪判定器：它只把「正文里出现、但全部信源里逐字不存在」
+# 的可证伪细节词挑出来清单化，交给作者 / 复核者逐条处置（改措辞 / 补信源 / 删）。
+# 词表显式、可扩展、有版本；它能覆盖已知失败类别，**不能**覆盖词表之外的编造——
+# 这一点必须如实报告，不许把它当"已证明全文无编造"的证据。
+
+NARRATIVE_DETAIL_PROBES: tuple[str, ...] = (
+    # 距离 / 尺寸
+    "几十米", "几米", "半米", "一米", "两米", "三米", "五米", "十米",
+    # 身体部位 / 伤情 / 生理
+    "肋骨", "大腿", "小腿", "脚踝", "膝盖", "后腰", "淤青", "红肿", "溃烂",
+    "骨折", "青筋", "水汽", "粗砂纸",
+    # 器物 / 材质 / 陈设（case-009 第二轮 L2 实测命中：石板／泥水／泥地／地牢／污泥／
+    # 龙德殿／禁卫军／王座／地砖／老花镜／手机屏幕／摄像机／灯光）
+    "青石板", "石板", "水泥地", "纱布", "绷带", "镣铐", "麻绳", "小布包",
+    "泥水", "泥地", "地牢", "污泥", "地砖", "王座", "禁卫军", "龙德殿",
+    "老花镜", "手机屏幕", "摄像机", "灯光", "钝刀", "深秋",
+    # 身份 / 职业（源文从未交代却被写成事实）
+    "外交官", "收废品", "养女", "私生子", "前妻", "改嫁", "下岗",
+    # 生理反应
+    "面红耳赤", "满脸通红", "热泪盈眶", "声泪俱下",
+    # 量级 / 计数动作
+    "几十亿", "一二三四", "大功率",
+)
+
+
+def load_run_source_corpus(run_root: str | Path) -> str:
+    """拼接 run 内 source-manifest 登记的全部信源正文，供叙述性细节溯源比对。
+
+    只读 manifest 里 ``artifact_path`` 指向且真实存在的文件；单个文件读失败不抛，
+    避免"有个坏信源就把整道门禁掀翻"。
+    """
+    root = Path(run_root)
+    parts: list[str] = []
+    manifest_path = root / "source-manifest.json"
+    if not manifest_path.is_file():
+        return ""
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    for source in manifest.get("sources") or []:
+        rel = source.get("artifact_path")
+        if not rel:
+            continue
+        candidate = root / rel
+        if candidate.is_file():
+            try:
+                parts.append(candidate.read_text(encoding="utf-8", errors="ignore"))
+            except Exception:
+                continue
+    return "\n".join(parts)
+
+
+def check_narrative_detail_provenance(
+    draft_text: str,
+    corpus_text: str,
+    *,
+    probes: tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    """挑出「正文写了、但全部信源里逐字不存在」的可证伪细节（见上方注释）。
+
+    返回 ``unsourced`` 清单：每条含 ``term`` 与前后各 28 字的 ``context``，
+    便于人工在上下文中判断这是编造、是措辞偏差，还是作者自己的比喻。
+    """
+    active = probes if probes is not None else NARRATIVE_DETAIL_PROBES
+    unsourced: list[dict[str, str]] = []
+    for term in active:
+        start = draft_text.find(term)
+        if start < 0:
+            continue
+        if term in corpus_text:
+            continue
+        end = start + len(term)
+        unsourced.append(
+            {
+                "term": term,
+                "context": draft_text[max(0, start - 28) : end + 28].replace("\n", " "),
+            }
+        )
+    return {
+        "schema_version": "narrative-detail-provenance-v1",
+        "passed": not unsourced,
+        "checked_probes": len(active),
+        "unsourced": unsourced,
+        "note": (
+            "回归网：只列「正文有、信源逐字无」的可证伪细节词，不判真伪；"
+            "清单需逐条处置（改措辞／补信源／删）。"
+            "命中为零**不等于**全文无编造——词表外的细节不在覆盖范围内。"
+        ),
+    }
+
+
+# ==============================================================================
 # 6. 开篇试写熔断机制 (Prose Pilot Melting Switch)
 # ==============================================================================
 

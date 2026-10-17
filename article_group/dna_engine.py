@@ -362,8 +362,9 @@ def audit_draft_dna(
             slogan_hits.append({"phrase": sc, "count": c})
             total_slogan_count += c
 
-    # 联动仓库权威 style_gate 与 anti_ai_gate
-    style_issues = scan_style(text)
+    # 联动仓库权威 style_gate 与 anti_ai_gate（排除已由 title_freeze 锁定的 H1 主标题，避免标题问句误触正文低创词）
+    style_scan_text = re.sub(r"^#\s+[^\n]*\n?", "", text, flags=re.MULTILINE)
+    style_issues = scan_style(style_scan_text)
     style_errors = [
         {"rule": issue.get("rule"), "reason": issue.get("reason"), "snippet": issue.get("match")}
         for issue in style_issues
@@ -457,6 +458,11 @@ def audit_draft_dna(
         )
     if style_errors:
         violations.append(f"触发 style_gate 红线 ({len(style_errors)} 处): {style_errors[:3]}")
+    if anti_ai_res.get("invisible_watermarks", {}).get("detected"):
+        violations.append(
+            f"检出隐形零宽字符水印 ({anti_ai_res['invisible_watermarks']['total_count']} 处): "
+            f"{anti_ai_res['invisible_watermarks'].get('breakdown')}"
+        )
     if anti_ai_score >= 45.0:
         violations.append(f"anti_ai_gate 综合分超标: {anti_ai_score:.1f} (阈值 < 45.0)")
     if dangling_imgs:
